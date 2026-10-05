@@ -130,7 +130,7 @@ function roadieRender(args, plan):
 
     # 3D view
     markdownPrint('### 3D View', '', roadieViewLinks(args), '')
-    elementModelRender(roadieView3D(plan, topo, ixOption, analysis, args, width, mathRound(width * 0.6)))
+    elementModelRender(roadieView3D(plan, topo, ixOption, analysis, args, width, mathRound(width * 0.75)))
 
     # Plan view
     markdownPrint('### Plan View', '')
@@ -615,8 +615,19 @@ function roadieFinishedRows(topo, samples, halfWidth):
 endfunction
 
 
-# Create a 3D view projection object
-function roadieProjection(topo, args, width, height):
+# The 3D view's padding around the topography, in pixels (room for the start and end labels)
+roadie3DPad = 16
+
+
+# Compute the height of the 3D view's start and end marker poles (unexaggerated)
+function roadie3DPoleHeight(topo, exaggeration):
+    return (objectGet(topo, 'maxZ') - objectGet(topo, 'minZ')) * 0.15 / exaggeration + objectGet(topo, 'spacing')
+endfunction
+
+
+# Create a 3D view projection object. The view's height is the topography's height at the fit scale, up to the
+# maximum height.
+function roadieProjection(topo, args, width, maxHeight):
     azimuth = objectGet(args, 'azimuth') * mathPi() / 180
     tilt = mathMax(5, mathMin(90, objectGet(args, 'tilt'))) * mathPi() / 180
     view = { \
@@ -632,16 +643,26 @@ function roadieProjection(topo, args, width, height):
         'uMid': 0, \
         'vMid': 0, \
         'width': width, \
-        'height': height \
+        'height': maxHeight \
     }
 
-    # Fit the topography to the view - the fit uses the topography's circumscribing cylinder about the view
-    # center (not its rotated bounding box), so the scale doesn't change as the view rotates
-    radius = mathSqrt(objectGet(topo, 'width') ** 2 + objectGet(topo, 'height') ** 2) * 0.5
-    halfZ = (objectGet(topo, 'maxZ') - objectGet(topo, 'minZ')) * 0.5 * objectGet(view, 'exaggeration')
-    halfU = radius
-    halfV = radius * objectGet(view, 'sinTilt') + halfZ * objectGet(view, 'cosTilt')
-    objectSet(view, 'scale', 0.92 * mathMin(width / mathMax(2 * halfU, 1e-9), height / mathMax(2 * halfV, 1e-9)))
+    # Fit the topography's bounding box as viewed from 30 degrees off its axes, with the marker poles above it.
+    # The scale doesn't change as the view rotates - views near the diagonals clip the topography's corners
+    # slightly.
+    topoWidth = objectGet(topo, 'width')
+    topoHeight = objectGet(topo, 'height')
+    exaggeration = objectGet(view, 'exaggeration')
+    halfZ = (objectGet(topo, 'maxZ') - objectGet(topo, 'minZ')) * 0.5 * exaggeration
+    cos30 = mathSqrt(3) * 0.5
+    halfXY = mathMax(topoWidth * cos30 + topoHeight * 0.5, topoWidth * 0.5 + topoHeight * cos30) * 0.5
+    vTop = halfXY * objectGet(view, 'sinTilt') + (halfZ + roadie3DPoleHeight(topo, exaggeration) * exaggeration) * \
+        objectGet(view, 'cosTilt')
+    vBottom = halfXY * objectGet(view, 'sinTilt') + halfZ * objectGet(view, 'cosTilt')
+    scale = mathMin((width - 2 * roadie3DPad) / mathMax(2 * halfXY, 1e-9), \
+        (maxHeight - 2 * roadie3DPad) / mathMax(vTop + vBottom, 1e-9))
+    objectSet(view, 'scale', scale)
+    objectSet(view, 'vMid', (vTop - vBottom) * 0.5)
+    objectSet(view, 'height', mathMin(maxHeight, mathCeil((vTop + vBottom) * scale + 2 * roadie3DPad)))
     return view
 endfunction
 
@@ -751,15 +772,15 @@ function roadie3DPolygon(view, points, color, bias, title):
 endfunction
 
 
-# Create the 3D view SVG element model
-function roadieView3D(plan, topo, ixOption, analysis, args, width, height):
+# Create the 3D view SVG element model - the view's height fits the topography, up to the maximum height
+function roadieView3D(plan, topo, ixOption, analysis, args, width, maxHeight):
     units = objectGet(plan, 'units')
     samples = objectGet(analysis, 'samples')
     option = arrayGet(objectGet(plan, 'options'), ixOption)
     section = objectGet(option, 'section')
     halfWidth = objectGet(section, 'width') * 0.5
     spacing = objectGet(topo, 'spacing')
-    view = roadieProjection(topo, args, width, height)
+    view = roadieProjection(topo, args, width, maxHeight)
     exaggeration = objectGet(view, 'exaggeration')
     items = []
 
@@ -957,7 +978,7 @@ function roadieView3D(plan, topo, ixOption, analysis, args, width, height):
     endfor
 
     # Start and end markers (always on top)
-    poleHeight = (objectGet(topo, 'maxZ') - minZ) * 0.15 / exaggeration + spacing
+    poleHeight = roadie3DPoleHeight(topo, exaggeration)
     for marker in [[objectGet(plan, 'start'), 'Start', '#1a8f3c'], [objectGet(plan, 'end'), 'End', '#c0392b']]:
         point = arrayGet(marker, 0)
         x = objectGet(point, 'x')
@@ -975,7 +996,7 @@ function roadieView3D(plan, topo, ixOption, analysis, args, width, height):
     # Compass
     arrayPush(elements, roadieCompass(view, width - 36, 36))
 
-    return roadieSvg(width, height, '3D view of the ' + objectGet(option, 'name') + ' road plan option', elements)
+    return roadieSvg(width, objectGet(view, 'height'), '3D view of the ' + objectGet(option, 'name') + ' road plan option', elements)
 endfunction
 
 

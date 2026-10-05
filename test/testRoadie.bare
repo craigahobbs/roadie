@@ -109,7 +109,7 @@ async function testRoadieMain_simple():
         ['markdownPrint', ['## Flat', '']], \
         ['markdownPrint', ['**Cost score: 14** - 40 m, 0.0% maximum grade, 0 design warnings', '']], \
         ['markdownPrint', ['### 3D View', '', roadieViewLinks(args), '']], \
-        ['elementModelRender', [roadieView3D(plan, topo, 0, analysis, args, 976, 586)]], \
+        ['elementModelRender', [roadieView3D(plan, topo, 0, analysis, args, 976, 732)]], \
         ['markdownPrint', ['### Plan View', '']], \
         ['elementModelRender', [roadiePlanView(plan, topo, [analysis], 0, 976)]], \
         ['markdownPrint', ['### Profile', '']], \
@@ -152,7 +152,7 @@ function testRoadieRender_complex():
         ['markdownPrint', [['The main option.'], '']], \
         ['markdownPrint', ['**Cost score: 48** - 86 ft, 100.0% maximum grade, 18 design warnings', '']], \
         ['markdownPrint', ['### 3D View', '', roadieViewLinks(args), '']], \
-        ['elementModelRender', [roadieView3D(plan, topo, 0, analysis, args, 976, 586)]], \
+        ['elementModelRender', [roadieView3D(plan, topo, 0, analysis, args, 976, 732)]], \
         ['markdownPrint', ['### Plan View', '']], \
         ['elementModelRender', [roadiePlanView(plan, topo, analyses, 0, 976)]], \
         ['markdownPrint', ['### Profile', '']], \
@@ -422,18 +422,18 @@ unittestRunTest('testRoadieSamplePoints')
 function testRoadieProjection():
     topo = roadieTopo(testRoadiePlanSimple())
     view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1}, 100, 100)
-    unittestEqual(mathRound(objectGet(view, 'scale'), 6), 1.626346)
+    unittestEqual(mathRound(objectGet(view, 'scale'), 6), 1.244486)
     unittestEqual(mathRound(objectGet(view, 'uMid'), 6), 0)
     unittestEqual(mathRound(objectGet(view, 'vMid'), 6), 0)
     point = roadieProject(view, 20, 20, 102)
     unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [50, 50, 0])
     point = roadieProject(view, 40, 40, 104)
-    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [82.526912, 17.473088, -2])
+    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [74.889727, 25.110273, -2])
 
     # Side view from the east (looking west) - north is screen right, farther west is deeper
     view = roadieProjection(topo, {'azimuth': 270, 'tilt': 0, 'exaggeration': 2}, 100, 100)
     point = roadieProject(view, 0, 40, 102)
-    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [82.526912, 47.165093, 19.923894])
+    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [74.889727, 47.60015, 19.923894])
 
     projected = roadieProjectPoints(view, [[0, 40, 102], [40, 0, 102]])
     unittestEqual(mathRound(arrayGet(projected, 1), 6), 0)
@@ -442,8 +442,16 @@ function testRoadieProjection():
     # The scale doesn't change as the view rotates
     for azimuth in [0, 30, 45, 60, 90, 135, 210, 330]:
         view = roadieProjection(topo, {'azimuth': azimuth, 'tilt': 35, 'exaggeration': 1.5}, 100, 100)
-        unittestEqual(mathRound(objectGet(view, 'scale'), 6), 1.626346)
+        unittestEqual(mathRound(objectGet(view, 'scale'), 6), 1.244486)
     endfor
+
+    # The view's height fits the topography (a low tilt), up to the maximum height (a top view)
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 10, 'exaggeration': 1.5}, 400, 300)
+    unittestEqual(objectGet(view, 'height'), 240)
+    unittestEqual(mathRound(objectGet(view, 'vMid'), 6), 7.6815)
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 90, 'exaggeration': 1.5}, 400, 300)
+    unittestEqual(objectGet(view, 'height'), 300)
+    unittestEqual(mathRound(objectGet(view, 'scale'), 6), 4.90474)
 endfunction
 unittestRunTest('testRoadieProjection')
 
@@ -462,7 +470,7 @@ function testRoadie3DPolygon():
     item = roadie3DPolygon(view, [[0, 0, 102], [40, 0, 102], [40, 40, 102], [0, 40, 102]], [100, 100, 100], 3, 'Tip')
     fill = roadieRGB([100, 100, 100], 0.5 + 0.6 * 0.7071)
     unittestEqual(mathRound(arrayGet(item, 0), 6), -3)
-    unittestDeepEqual(arrayGet(item, 1), roadieSvgPolygon([17.5, 82.5, 82.5, 82.5, 82.5, 17.5, 17.5, 17.5], fill, fill, 0.5, 'Tip'))
+    unittestDeepEqual(arrayGet(item, 1), roadieSvgPolygon([25.1, 74.9, 74.9, 74.9, 74.9, 25.1, 25.1, 25.1], fill, fill, 0.5, 'Tip'))
 endfunction
 unittestRunTest('testRoadie3DPolygon')
 
