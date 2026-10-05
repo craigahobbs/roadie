@@ -68,7 +68,7 @@ async function roadieCLIMain():
     rows = []
     ixOption = 0
     while ixOption < arrayLength(objectGet(plan, 'options')):
-        analysis = roadieAnalyze(plan, ixOption)
+        analysis = roadieAnalyze(plan, ixOption, topo)
         arrayPush(analyses, analysis)
         arrayPush(rows, { \
             'Option': objectGet(analysis, 'name'), \

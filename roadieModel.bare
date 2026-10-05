@@ -409,12 +409,15 @@ function roadieTopo(plan):
     nCols = arrayLength(arrayGet(rows, 0))
 
     # Compute the elevation range
-    minZ = null
-    maxZ = null
+    minZ = arrayGet(arrayGet(rows, 0), 0)
+    maxZ = minZ
     for row in rows:
         for z in row:
-            minZ = if(minZ == null, z, mathMin(minZ, z))
-            maxZ = if(maxZ == null, z, mathMax(maxZ, z))
+            if z < minZ:
+                minZ = z
+            elif z > maxZ:
+                maxZ = z
+            endif
         endfor
     endfor
 
@@ -633,7 +636,17 @@ function roadieSamples(plan, topo, option, alignment):
     cutSlope = objectGet(section, 'cutSlope', 1)
     fillSlope = objectGet(section, 'fillSlope', 1.5)
     rockCutSlope = objectGet(roadieCriteria(plan), 'rockCutSlope')
-    structures = objectGet(option, 'structures', [])
+    # The bridges and walls (each sample looks them up, so the other structures are filtered out once)
+    bridges = []
+    walls = []
+    for structure in objectGet(option, 'structures', []):
+        type = objectGet(structure, 'type')
+        if type == 'bridge':
+            arrayPush(bridges, structure)
+        elif type == 'retainingWall':
+            arrayPush(walls, structure)
+        endif
+    endfor
     rockFeatures = []
     for feature in objectGet(topo, 'features'):
         if objectGet(feature, 'type') == 'rock':
@@ -688,7 +701,7 @@ function roadieSamples(plan, topo, option, alignment):
         endfor
 
         # Compute the cross section
-        bridge = roadieStructureAt(structures, 'bridge', station, null) != null
+        bridge = arrayLength(bridges) > 0 && roadieStructureAt(bridges, 'bridge', station, null) != null
         if bridge:
             crossSection = roadieCrossSection(0, 0, halfWidth, cutSlope, fillSlope, false, false)
         else:
@@ -698,8 +711,8 @@ function roadieSamples(plan, topo, option, alignment):
                 halfWidth, \
                 if(rock, rockCutSlope, cutSlope), \
                 fillSlope, \
-                roadieStructureAt(structures, 'retainingWall', station, 'left') != null, \
-                roadieStructureAt(structures, 'retainingWall', station, 'right') != null \
+                arrayLength(walls) > 0 && roadieStructureAt(walls, 'retainingWall', station, 'left') != null, \
+                arrayLength(walls) > 0 && roadieStructureAt(walls, 'retainingWall', station, 'right') != null \
             )
         endif
 
@@ -779,14 +792,15 @@ function roadieSampleExcluded(exclusions, sample):
 endfunction
 
 
-# Analyze a road plan option - compute its geometry, earthwork, structures, cost, and warnings
-function roadieAnalyze(plan, ixOption):
+# Analyze a road plan option - compute its geometry, earthwork, structures, cost, and warnings. The optional
+# topography (from roadieTopo) avoids recomputing it for each option.
+function roadieAnalyze(plan, ixOption, topo):
     option = arrayGet(objectGet(plan, 'options'), ixOption)
     units = objectGet(plan, 'units')
     scale = roadieUnitScale(plan)
     criteria = roadieCriteria(plan)
     rates = roadieRates(plan)
-    topo = roadieTopo(plan)
+    topo = if(topo != null, topo, roadieTopo(plan))
     section = objectGet(option, 'section')
     width = objectGet(section, 'width')
     structures = objectGet(option, 'structures', [])
