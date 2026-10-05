@@ -414,8 +414,8 @@ endfunction
 
 
 # Get the topography's contour interval
-function roadieContourInterval(topo):
-    interval = objectGet(objectGet(topo, 'topography', {}), 'contourInterval')
+function roadieContourInterval(plan, topo):
+    interval = objectGet(objectGet(plan, 'topography'), 'contourInterval')
     if interval != null:
         return interval
     endif
@@ -460,17 +460,23 @@ function roadiePx(value):
 endfunction
 
 
-# Create an SVG polygon element model from a flat array of pixel coordinates
-function roadieSvgPolygon(coords, fill, stroke, strokeWidth, title):
+# Format a flat array of pixel coordinates as an SVG "points" attribute value
+function roadieSvgPoints(coords):
     pointStrs = []
     ixCoord = 0
     while ixCoord < arrayLength(coords):
         arrayPush(pointStrs, roadiePx(arrayGet(coords, ixCoord)) + ',' + roadiePx(arrayGet(coords, ixCoord + 1)))
         ixCoord = ixCoord + 2
     endwhile
+    return arrayJoin(pointStrs, ' ')
+endfunction
+
+
+# Create an SVG polygon element model from a flat array of pixel coordinates
+function roadieSvgPolygon(coords, fill, stroke, strokeWidth, title):
     element = { \
         'svg': 'polygon', \
-        'attr': {'points': arrayJoin(pointStrs, ' '), 'fill': fill, 'stroke': stroke, 'stroke-width': strokeWidth} \
+        'attr': {'points': roadieSvgPoints(coords), 'fill': fill, 'stroke': stroke, 'stroke-width': strokeWidth} \
     }
     if title != null:
         objectSet(element, 'elem', {'svg': 'title', 'elem': {'text': title}})
@@ -481,13 +487,7 @@ endfunction
 
 # Create an SVG polyline element model from a flat array of pixel coordinates
 function roadieSvgPolyline(coords, stroke, strokeWidth, dashArray):
-    pointStrs = []
-    ixCoord = 0
-    while ixCoord < arrayLength(coords):
-        arrayPush(pointStrs, roadiePx(arrayGet(coords, ixCoord)) + ',' + roadiePx(arrayGet(coords, ixCoord + 1)))
-        ixCoord = ixCoord + 2
-    endwhile
-    attr = {'points': arrayJoin(pointStrs, ' '), 'fill': 'none', 'stroke': stroke, 'stroke-width': strokeWidth, \
+    attr = {'points': roadieSvgPoints(coords), 'fill': 'none', 'stroke': stroke, 'stroke-width': strokeWidth, \
         'stroke-linejoin': 'round', 'stroke-linecap': 'round'}
     if dashArray != null:
         objectSet(attr, 'stroke-dasharray', dashArray)
@@ -771,8 +771,7 @@ function roadieView3D(plan, topo, ixOption, analysis, args, width, height):
     cellSize = step * spacing
     minZ = objectGet(topo, 'minZ')
     rangeZ = mathMax(objectGet(topo, 'maxZ') - minZ, 1e-9)
-    contourInterval = roadieContourInterval({'topography': objectGet(plan, 'topography'), 'minZ': minZ, \
-        'maxZ': objectGet(topo, 'maxZ')})
+    contourInterval = roadieContourInterval(plan, topo)
     contourColor = 'rgba(70,50,30,0.45)'
 
     # The grid columns of the cell corners
@@ -1018,8 +1017,7 @@ function roadiePlanView(plan, topo, analyses, ixOption, width):
     elements = []
 
     # Contours
-    contourInterval = roadieContourInterval({'topography': objectGet(plan, 'topography'), 'minZ': objectGet(topo, 'minZ'), \
-        'maxZ': objectGet(topo, 'maxZ')})
+    contourInterval = roadieContourInterval(plan, topo)
     rows = objectGet(topo, 'rows')
     minorPath = []
     indexPath = []
@@ -1112,15 +1110,14 @@ function roadiePlanView(plan, topo, analyses, ixOption, width):
             for sideInfo in [['left', 0, 1], ['right', 3, 2]]:
                 kind = objectGet(objectGet(sample, arrayGet(sideInfo, 0)), 'kind')
                 kindPrev = objectGet(objectGet(prev, arrayGet(sideInfo, 0)), 'kind')
+                ixEdge = arrayGet(sideInfo, 2)
                 if kind == 'wall' || kindPrev == 'wall':
-                    ixEdge = arrayGet(sideInfo, 2)
                     arrayPush(elements, roadieSvgPolyline([ \
                         arrayGet(prevCoords, ixEdge * 2), arrayGet(prevCoords, ixEdge * 2 + 1), \
                         arrayGet(coords, ixEdge * 2), arrayGet(coords, ixEdge * 2 + 1) \
                     ], '#333333', 3, null))
                 elif kind == 'cut' || kind == 'fill':
                     ixDay = arrayGet(sideInfo, 1)
-                    ixEdge = arrayGet(sideInfo, 2)
                     color = roadieRGB(objectGet(roadieColors, kind))
                     arrayPush(elements, roadieSvgPolygon([ \
                         arrayGet(prevCoords, ixEdge * 2), arrayGet(prevCoords, ixEdge * 2 + 1), \

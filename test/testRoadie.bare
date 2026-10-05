@@ -361,8 +361,8 @@ unittestRunTest('testRoadieNiceStep')
 
 
 function testRoadieContourInterval():
-    unittestEqual(roadieContourInterval({'topography': {'contourInterval': 3}, 'minZ': 0, 'maxZ': 100}), 3)
-    unittestEqual(roadieContourInterval({'topography': {}, 'minZ': 0, 'maxZ': 100}), 5)
+    unittestEqual(roadieContourInterval({'topography': {'contourInterval': 3}}, {'minZ': 0, 'maxZ': 100}), 3)
+    unittestEqual(roadieContourInterval({'topography': {}}, {'minZ': 0, 'maxZ': 100}), 5)
 endfunction
 unittestRunTest('testRoadieContourInterval')
 
