@@ -1,0 +1,177 @@
+# testRoadieCLI.bare - Roadie command-line evaluator tests
+
+include <dataTable.bare>
+include <schemaDoc.bare>
+include <unittest.bare>
+include <unittestMock.bare>
+include '../roadieCLI.bare'
+include 'testRoadieData.bare'
+
+
+async function testRoadieCLIMain_doc():
+    systemGlobalSet('vDoc', true)
+    unittestMockAll()
+    unittestEqual(roadieCLIMain(), 0)
+    unittestDeepEqual(unittestMockEnd(), [ \
+        ['markdownPrint', [schemaDocMarkdown(roadieTypes, 'RoadPlan')]] \
+    ])
+    systemGlobalSet('vDoc', null)
+endfunction
+unittestRunTest('testRoadieCLIMain_doc')
+
+
+async function testRoadieCLIMain_usage():
+    unittestMockAll()
+    unittestEqual(roadieCLIMain(), 1)
+    unittestDeepEqual(unittestMockEnd(), [ \
+        ['markdownPrint', ['usage: make evaluate FILE=<plan.json> [DETAIL=1]']] \
+    ])
+endfunction
+unittestRunTest('testRoadieCLIMain_usage')
+
+
+async function testRoadieCLIMain_fetchError():
+    systemGlobalSet('vFile', 'missing.json')
+    unittestMockAll({'systemFetch': {}})
+    unittestEqual(roadieCLIMain(), 1)
+    unittestDeepEqual(unittestMockEnd(), [ \
+        ['systemFetch', ['missing.json']], \
+        ['markdownPrint', ['**Error:** Could not load the road plan "missing.json"']] \
+    ])
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieCLIMain_fetchError')
+
+
+async function testRoadieCLIMain_invalid():
+    systemGlobalSet('vFile', 'invalid.json')
+    unittestMockAll({'systemFetch': {'invalid.json': '{"title": "Invalid"}'}})
+    unittestEqual(roadieCLIMain(), 1)
+    unittestDeepEqual(unittestMockEnd(), [ \
+        ['systemFetch', ['invalid.json']], \
+        ['markdownPrint', ['**Error:** The road plan "invalid.json" is invalid:', '', 'Required member "units" missing']] \
+    ])
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieCLIMain_invalid')
+
+
+async function testRoadieCLIMain_simple():
+    systemGlobalSet('vFile', 'simple.json')
+    unittestMockAll({'systemFetch': {'simple.json': jsonStringify(testRoadiePlanSimple())}})
+    unittestEqual(roadieCLIMain(), 0)
+    log = unittestMockEnd()
+
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    analysis = roadieAnalyze(plan, 0)
+    unittestDeepEqual(log, [ \
+        ['systemFetch', ['simple.json']], \
+        ['markdownPrint', [ \
+            '# Simple Plan', \
+            '', \
+            'Topography: 5 x 5 grid, 10 m spacing, 40 x 40 m, elevations 100.0 to 104.0 m', \
+            '' \
+        ]], \
+        ['markdownPrint', ['- start (0.0, 20.0): ground elevation 102.0']], \
+        ['markdownPrint', ['- end (40.0, 20.0): ground elevation 102.0']], \
+        ['markdownPrint', ['- Design criteria: maximum grade 12%, minimum radius 15 m, maximum wall height 6 m', '']], \
+        ['markdownPrint', ['## Options (lengths in m, volumes in m³)', '']], \
+        ['markdownPrint', [[ \
+            '| Option | Length | Max Grade | Cut | Fill | Borrow | Waste | Warnings | Cost Score |', \
+            '|--------|--------|-----------|-----|------|--------|-------|----------|------------|', \
+            '| Flat   | 40     | 0.0%      | 56  | 59   | 10     | 0     | 0        | 13.7       |' \
+        ], '']], \
+        ['markdownPrint', ['## Option 0: Flat', '']], \
+        ['markdownPrint', [roadieCostTable('meters', analysis), '']], \
+        ['markdownPrint', ['### Design Warnings', '']], \
+        ['markdownPrint', ['None', '']] \
+    ])
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieCLIMain_simple')
+
+
+async function testRoadieCLIMain_complex():
+    systemGlobalSet('vFile', 'complex.json')
+    systemGlobalSet('vDetail', true)
+    unittestMockAll({'systemFetch': {'complex.json': jsonStringify(testRoadiePlanComplex())}})
+    unittestEqual(roadieCLIMain(), 0)
+    log = unittestMockEnd()
+
+    plan = objectGet(roadieValidate(testRoadiePlanComplex()), 'plan')
+    analysisMain = roadieAnalyze(plan, 0)
+    analysisAlt = roadieAnalyze(plan, 1)
+    expected = [ \
+        ['systemFetch', ['complex.json']], \
+        ['markdownPrint', [ \
+            '# Complex Plan', \
+            '', \
+            'Topography: 9 x 9 grid, 10 ft spacing, 80 x 80 ft, elevations 100.0 to 164.0 ft', \
+            '' \
+        ]], \
+        ['markdownPrint', ['- start (-15.0, 20.0): ground elevation outside the topography']], \
+        ['markdownPrint', ['- end (75.0, 60.0): ground elevation 148.0']], \
+        ['markdownPrint', ['- Design criteria: maximum grade 10%, minimum radius 50 ft, maximum wall height 3 ft', '']], \
+        ['markdownPrint', ['## Options (lengths in ft, volumes in cy)', '']], \
+        ['markdownPrint', [[ \
+            '| Option | Length | Max Grade | Cut    | Fill | Borrow | Waste  | Warnings | Cost Score |', \
+            '|--------|--------|-----------|--------|------|--------|--------|----------|------------|', \
+            '| Main   | 86     | 100.0%    | 353    | 299  | 0      | 11     | 18       | 47.6       |', \
+            '| Alt    | 90     | 264.0%    | 19,237 | 102  | 0      | 16,634 | 8        | 471.1      |' \
+        ], '']], \
+        ['markdownPrint', ['## Option 0: Main', '']], \
+        ['markdownPrint', [roadieCostTable('feet', analysisMain), '']], \
+        ['markdownPrint', ['### Design Warnings', '']] \
+    ]
+    for warning in objectGet(analysisMain, 'warnings'):
+        arrayPush(expected, ['markdownPrint', ['- ' + warning]])
+    endfor
+    arrayExtend(expected, [ \
+        ['markdownPrint', ['']], \
+        ['markdownPrint', ['### Structures', '']], \
+        ['markdownPrint', [roadieStructuresTable('feet', arrayGet(objectGet(plan, 'options'), 0), analysisMain), '']], \
+        ['markdownPrint', ['### Stations', '']], \
+        ['markdownPrint', [roadieCLIStationTable(plan, analysisMain), '']], \
+        ['markdownPrint', ['## Option 1: Alt', '']], \
+        ['markdownPrint', [roadieCostTable('feet', analysisAlt), '']], \
+        ['markdownPrint', ['### Design Warnings', '']] \
+    ])
+    for warning in objectGet(analysisAlt, 'warnings'):
+        arrayPush(expected, ['markdownPrint', ['- ' + warning]])
+    endfor
+    arrayExtend(expected, [ \
+        ['markdownPrint', ['']], \
+        ['markdownPrint', ['### Stations', '']], \
+        ['markdownPrint', [roadieCLIStationTable(plan, analysisAlt), '']] \
+    ])
+    unittestDeepEqual(log, expected)
+    systemGlobalSet('vFile', null)
+    systemGlobalSet('vDetail', null)
+endfunction
+unittestRunTest('testRoadieCLIMain_complex')
+
+
+function testRoadieCLIStationTable():
+    plan = objectGet(roadieValidate(testRoadiePlanComplex()), 'plan')
+    analysis = roadieAnalyze(plan, 0)
+    lines = roadieCLIStationTable(plan, analysis)
+    unittestEqual(arrayLength(lines), 2 + 18)
+    unittestDeepEqual(arrayGet(lines, 0), \
+        '| Station | X    | Y    | Ground | Grade | Cut/Fill | Side Slope | Left                   | Right                   | Notes   |')
+    unittestDeepEqual(arrayGet(lines, 2), \
+        '| 0+00    | 0.0  | 20.0 | 116.0  | 114.0 | C 2.0    | 80%        | wall 6.0               | wall 2.0                |         |')
+    unittestDeepEqual(arrayGet(lines, 5), \
+        '| 0+17    | 16.6 | 20.0 | 116.0  | 114.0 | C 2.0    | 80%        | cut 5.0                | fill 9.0 (no daylight)  | rock    |')
+    unittestDeepEqual(arrayGet(lines, 19), \
+        '| 0+86    | 85.0 | 22.0 | 132.0  | 132.0 | C 0.0    | 0%         |                        |                         | outside |')
+endfunction
+unittestRunTest('testRoadieCLIStationTable')
+
+
+function testRoadieCLISide():
+    unittestEqual(roadieCLISide({'kind': 'wall', 'wall': 2.25}), 'wall 2.3')
+    unittestEqual(roadieCLISide({'kind': 'none'}), '')
+    unittestEqual(roadieCLISide({'kind': 'cut', 'offset': 3, 'daylight': true}), 'cut 3.0')
+    unittestEqual(roadieCLISide({'kind': 'fill', 'offset': 3, 'daylight': false}), 'fill 3.0 (no daylight)')
+endfunction
+unittestRunTest('testRoadieCLISide')

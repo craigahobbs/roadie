@@ -1,0 +1,1272 @@
+# roadie.bare - The Roadie road grading plan 3D viewer MarkdownUp application
+
+include <args.bare>
+include <dataTable.bare>
+include <schemaDoc.bare>
+include 'roadieModel.bare'
+
+
+# The application's URL arguments
+roadieArguments = argsValidate([ \
+    {'name': 'file', 'description': 'The road plan model JSON file URL'}, \
+    {'name': 'option', 'type': 'int', 'default': 0, 'description': 'The selected road plan option index'}, \
+    {'name': 'azimuth', 'type': 'float', 'default': 30, 'description': 'The 3D view direction, in compass degrees'}, \
+    {'name': 'tilt', 'type': 'float', 'default': 35, 'description': 'The 3D view elevation angle, in degrees'}, \
+    {'name': 'exaggeration', 'type': 'float', 'default': 1.5, 'description': 'The 3D view vertical exaggeration'}, \
+    {'name': 'doc', 'type': 'bool', 'default': false, 'explicit': true, 'description': 'Show the model documentation'} \
+])
+
+
+# The cost score explanation
+roadieScoreNote = 'The cost score is the estimated construction cost in thousands of nominal US dollars, ' + \
+    'computed from typical unit rates. Use it to compare plan options, not as a bid estimate.'
+
+
+# The application main entry point
+async function roadieMain():
+    args = argsParse(roadieArguments)
+    file = objectGet(args, 'file')
+
+    # Model documentation?
+    if objectGet(args, 'doc'):
+        documentSetTitle('Roadie Road Plan Model')
+        markdownPrint(argsLink(roadieArguments, 'Back', {'doc': null}), '')
+        markdownPrint(schemaDocMarkdown(roadieTypes, 'RoadPlan'))
+        return
+    endif
+
+    # No plan file? Show the usage.
+    if file == null:
+        documentSetTitle('Roadie')
+        markdownPrint( \
+            '# Roadie', \
+            '', \
+            'Roadie is a 3D viewer for road grading plan models. A road grading plan model contains the site', \
+            'topography, the road start and end points, and one or more road plan options.', \
+            '', \
+            'To create a road plan model from a topographic map image, run:', \
+            '', \
+            '~~~', \
+            'make plan FILE=<plan.png>', \
+            '~~~', \
+            '', \
+            'To view a road plan model, run:', \
+            '', \
+            '~~~', \
+            'make run FILE=<plan.json>', \
+            '~~~', \
+            '', \
+            'Or, view a road plan model URL with the "file" argument: [Example](#var.vFile=\'example/example.json\')', \
+            '', \
+            argsLink(roadieArguments, 'Road plan model documentation', {'doc': true}) \
+        )
+        return
+    endif
+
+    # Load the road plan model
+    planText = systemFetch(file)
+    planValue = if(planText != null, jsonParse(planText))
+    if planValue == null:
+        documentSetTitle('Roadie')
+        markdownPrint('# Roadie', '', '**Error:** Could not load the road plan "' + markdownEscape(file) + '"')
+        return
+    endif
+    validated = roadieValidate(planValue)
+    if objectHas(validated, 'error'):
+        documentSetTitle('Roadie')
+        markdownPrint('# Roadie', '', '**Error:** The road plan "' + markdownEscape(file) + '" is invalid:', '', \
+            markdownEscape(objectGet(validated, 'error')))
+        return
+    endif
+
+    # Render the road plan
+    roadieRender(args, objectGet(validated, 'plan'))
+endfunction
+
+
+# Render a road plan
+function roadieRender(args, plan):
+    file = objectGet(args, 'file')
+    units = objectGet(plan, 'units')
+    options = objectGet(plan, 'options')
+    ixOption = mathMax(0, mathMin(arrayLength(options) - 1, objectGet(args, 'option')))
+    option = arrayGet(options, ixOption)
+    topo = roadieTopo(plan)
+    width = mathMax(400, windowWidth() - 3 * documentFontSize())
+
+    # Analyze the options
+    analyses = []
+    ixAnalyze = 0
+    while ixAnalyze < arrayLength(options):
+        arrayPush(analyses, roadieAnalyze(plan, ixAnalyze))
+        ixAnalyze = ixAnalyze + 1
+    endwhile
+    analysis = arrayGet(analyses, ixOption)
+
+    # Title and description
+    documentSetTitle(objectGet(plan, 'title'))
+    markdownPrint('# ' + markdownEscape(objectGet(plan, 'title')), '')
+    if objectHas(plan, 'description'):
+        markdownPrint(objectGet(plan, 'description'), '')
+    endif
+
+    # Options comparison
+    markdownPrint('## Plan Options', '')
+    markdownPrint(roadieOptionsTable(plan, analyses, ixOption), '')
+
+    # The selected option
+    markdownPrint('## ' + markdownEscape(objectGet(option, 'name')), '')
+    if objectHas(option, 'description'):
+        markdownPrint(objectGet(option, 'description'), '')
+    endif
+    markdownPrint( \
+        '**Cost score: ' + roadieNumber(objectGet(analysis, 'score'), 0) + '** - ' + \
+            roadieNumber(objectGet(analysis, 'length'), 0) + ' ' + roadieUnitLabel(units, 'length') + ', ' + \
+            numberToFixed(objectGet(analysis, 'maxGrade'), 1) + '% maximum grade, ' + \
+            arrayLength(objectGet(analysis, 'warnings')) + ' design warning' + \
+            if(arrayLength(objectGet(analysis, 'warnings')) == 1, '', 's'), \
+        '' \
+    )
+
+    # 3D view
+    markdownPrint('### 3D View', '', roadieViewLinks(args), '')
+    elementModelRender(roadieView3D(plan, topo, ixOption, analysis, args, width, mathRound(width * 0.6)))
+
+    # Plan view
+    markdownPrint('### Plan View', '')
+    elementModelRender(roadiePlanView(plan, topo, analyses, ixOption, width))
+
+    # Profile
+    markdownPrint('### Profile', '')
+    elementModelRender(roadieProfileView(plan, option, analysis, width, 320))
+
+    # Cost breakdown
+    markdownPrint('### Cost', '', roadieScoreNote, '')
+    markdownPrint(roadieCostTable(units, analysis), '')
+
+    # Design warnings
+    markdownPrint('### Design Warnings', '')
+    warnings = objectGet(analysis, 'warnings')
+    if arrayLength(warnings) == 0:
+        markdownPrint('No design warnings.', '')
+    else:
+        for warning in warnings:
+            markdownPrint('- ' + markdownEscape(warning))
+        endfor
+        markdownPrint('')
+    endif
+
+    # Structures
+    structures = objectGet(option, 'structures', [])
+    if arrayLength(structures) > 0:
+        markdownPrint('### Structures', '')
+        markdownPrint(roadieStructuresTable(units, option, analysis), '')
+    endif
+
+    # Source topographic map image
+    image = objectGet(plan, 'image')
+    if image != null:
+        ixSlash = stringLastIndexOf(file, '/')
+        imageURL = if(ixSlash == -1, image, stringSlice(file, 0, ixSlash + 1) + image)
+        markdownPrint('### Source Map', '', '![The source topographic map](' + urlEncode(imageURL) + ')', '')
+    endif
+
+    # Footer
+    markdownPrint('---', '', argsLink(roadieArguments, 'Road plan model documentation', {'doc': true}))
+endfunction
+
+
+# Create the 3D view control links
+function roadieViewLinks(args):
+    azimuth = objectGet(args, 'azimuth')
+    tilt = objectGet(args, 'tilt')
+    exaggeration = objectGet(args, 'exaggeration')
+    return 'Rotate ' + \
+        argsLink(roadieArguments, 'Left', {'azimuth': (azimuth + 345) % 360}) + ' | ' + \
+        argsLink(roadieArguments, 'Right', {'azimuth': (azimuth + 15) % 360}) + \
+        ' — Tilt ' + \
+        argsLink(roadieArguments, 'Up', {'tilt': mathMin(90, tilt + 10)}) + ' | ' + \
+        argsLink(roadieArguments, 'Down', {'tilt': mathMax(10, tilt - 10)}) + \
+        ' — Exaggeration ' + \
+        argsLink(roadieArguments, 'More', {'exaggeration': mathMin(5, exaggeration + 0.5)}) + ' | ' + \
+        argsLink(roadieArguments, 'Less', {'exaggeration': mathMax(1, exaggeration - 0.5)}) + \
+        ' — ' + \
+        argsLink(roadieArguments, 'Top', {'azimuth': 0, 'tilt': 90}) + ' | ' + \
+        argsLink(roadieArguments, 'Reset', {'azimuth': null, 'tilt': null, 'exaggeration': null})
+endfunction
+
+
+# Create the options comparison table Markdown lines
+function roadieOptionsTable(plan, analyses, ixOption):
+    units = objectGet(plan, 'units')
+    lengthUnit = roadieUnitLabel(units, 'length')
+    volumeUnit = roadieUnitLabel(units, 'volume')
+    areaUnit = roadieUnitLabel(units, 'area')
+
+    # Find the lowest score
+    minScore = null
+    for analysis in analyses:
+        minScore = if(minScore == null, objectGet(analysis, 'score'), mathMin(minScore, objectGet(analysis, 'score')))
+    endfor
+
+    rows = []
+    for analysis, ixAnalysis in analyses:
+        name = markdownEscape(objectGet(analysis, 'name'))
+        borrow = objectGet(analysis, 'borrow')
+        waste = objectGet(analysis, 'waste')
+        net = if(borrow > 0, roadieNumber(roadieDisplayQuantity(units, 'volume', borrow), 0) + ' import', \
+            roadieNumber(roadieDisplayQuantity(units, 'volume', waste), 0) + ' export')
+        arrayPush(rows, { \
+            'Option': if(ixAnalysis == ixOption, '**' + name + '**', argsLink(roadieArguments, name, {'option': ixAnalysis})), \
+            'Length (' + lengthUnit + ')': roadieNumber(objectGet(analysis, 'length'), 0), \
+            'Max Grade': numberToFixed(objectGet(analysis, 'maxGrade'), 1) + '%', \
+            'Cut (' + volumeUnit + ')': roadieNumber(roadieDisplayQuantity(units, 'volume', objectGet(analysis, 'cut')), 0), \
+            'Fill (' + volumeUnit + ')': roadieNumber(roadieDisplayQuantity(units, 'volume', objectGet(analysis, 'fill')), 0), \
+            'Net (' + volumeUnit + ')': net, \
+            'Walls (' + areaUnit + ')': roadieNumber(objectGet(analysis, 'wallArea'), 0), \
+            'Warnings': '' + arrayLength(objectGet(analysis, 'warnings')), \
+            'Cost Score': '**' + roadieNumber(objectGet(analysis, 'score'), 0) + '**', \
+            'Relative': if(minScore > 0, '+' + numberToFixed(100 * (objectGet(analysis, 'score') / minScore - 1), 0) + '%', '') \
+        })
+    endfor
+    return dataTableMarkdown(rows, { \
+        'fields': objectKeys(arrayGet(rows, 0)), \
+        'formats': { \
+            'Option': {'markdown': true}, \
+            'Cost Score': {'markdown': true, 'align': 'right'} \
+        } \
+    })
+endfunction
+
+
+# Create the cost breakdown table Markdown lines
+function roadieCostTable(units, analysis):
+    total = objectGet(analysis, 'total')
+    rows = []
+    for cost in objectGet(analysis, 'costs'):
+        if objectGet(cost, 'cost') > 0:
+            type = objectGet(cost, 'type')
+            arrayPush(rows, { \
+                'Item': objectGet(cost, 'name'), \
+                'Quantity': if(type != null, roadieNumber(roadieDisplayQuantity(units, type, objectGet(cost, 'quantity')), 0) + ' ' + \
+                    roadieUnitLabel(units, type), ''), \
+                'Cost Score': roadieNumber(objectGet(cost, 'cost') / 1000, 1), \
+                'Share': numberToFixed(100 * objectGet(cost, 'cost') / total, 1) + '%' \
+            })
+        endif
+    endfor
+    arrayPush(rows, {'Item': '**Total**', 'Quantity': '', 'Cost Score': '**' + roadieNumber(total / 1000, 1) + '**', 'Share': ''})
+    return dataTableMarkdown(rows, { \
+        'fields': ['Item', 'Quantity', 'Cost Score', 'Share'], \
+        'formats': { \
+            'Item': {'markdown': true}, \
+            'Quantity': {'align': 'right'}, \
+            'Cost Score': {'markdown': true, 'align': 'right'}, \
+            'Share': {'align': 'right'} \
+        } \
+    })
+endfunction
+
+
+# Create the structures table Markdown lines
+function roadieStructuresTable(units, option, analysis):
+    samples = objectGet(analysis, 'samples')
+    lengthUnit = roadieUnitLabel(units, 'length')
+    rows = []
+    for structure in objectGet(option, 'structures'):
+        type = objectGet(structure, 'type')
+        station = objectGet(structure, 'station')
+        endStation = objectGet(structure, 'endStation')
+        detail = ''
+        if type == 'retainingWall':
+            maxHeight = 0
+            for sample in samples:
+                if objectGet(sample, 'station') >= station && objectGet(sample, 'station') <= endStation:
+                    maxHeight = mathMax(maxHeight, objectGet(objectGet(sample, 'left'), 'wall'), objectGet(objectGet(sample, 'right'), 'wall'))
+                endif
+            endfor
+            detail = 'Maximum height ' + numberToFixed(maxHeight, 1) + ' ' + lengthUnit
+        elif type == 'culvert':
+            detail = 'Diameter ' + mathRound(objectGet(structure, 'diameter', roadieUnitLength({'units': units}, 0.45, 1.5)), 2) + \
+                ' ' + lengthUnit
+        elif type == 'bridge':
+            detail = 'Span ' + numberToFixed(endStation - station, 0) + ' ' + lengthUnit
+        endif
+        arrayPush(rows, { \
+            'Type': objectGet(roadieStructureNames, type), \
+            'Name': objectGet(structure, 'name', ''), \
+            'Station': roadieStation(station, units) + if(endStation != null, ' to ' + roadieStation(endStation, units), ''), \
+            'Side': objectGet(structure, 'side', if(type == 'retainingWall', 'both', if(type == 'turnout', 'right', ''))), \
+            'Detail': detail \
+        })
+    endfor
+    return dataTableMarkdown(rows, {'fields': ['Type', 'Name', 'Station', 'Side', 'Detail']})
+endfunction
+
+
+# The structure type display names
+roadieStructureNames = { \
+    'retainingWall': 'Retaining wall', \
+    'bridge': 'Bridge', \
+    'culvert': 'Culvert', \
+    'turnout': 'Turnout' \
+}
+
+
+#
+# Drawing utilities
+#
+
+
+# The drawing colors
+roadieColors = { \
+    'asphalt': [70, 72, 76], \
+    'bridge': [120, 104, 88], \
+    'concrete': [190, 190, 185], \
+    'cut': [196, 120, 64], \
+    'fill': [218, 184, 96], \
+    'gravel': [150, 146, 136], \
+    'native': [168, 140, 100], \
+    'wall': [160, 160, 158] \
+}
+
+
+# Format a color array as a CSS rgb() color, with an optional brightness factor
+function roadieRGB(color, brightness):
+    factor = if(brightness != null, brightness, 1)
+    return 'rgb(' + \
+        mathRound(mathMax(0, mathMin(255, arrayGet(color, 0) * factor))) + ',' + \
+        mathRound(mathMax(0, mathMin(255, arrayGet(color, 1) * factor))) + ',' + \
+        mathRound(mathMax(0, mathMin(255, arrayGet(color, 2) * factor))) + ')'
+endfunction
+
+
+# Compute the terrain color for a normalized elevation (0 to 1)
+function roadieTerrainColor(fraction):
+    low = [96, 148, 84]
+    mid = [176, 178, 112]
+    high = [178, 142, 104]
+    if fraction < 0.5:
+        t = mathMax(0, fraction) * 2
+        a = low
+        b = mid
+    else:
+        t = mathMin(1, fraction) * 2 - 1
+        a = mid
+        b = high
+    endif
+    return [ \
+        arrayGet(a, 0) + (arrayGet(b, 0) - arrayGet(a, 0)) * t, \
+        arrayGet(a, 1) + (arrayGet(b, 1) - arrayGet(a, 1)) * t, \
+        arrayGet(a, 2) + (arrayGet(b, 2) - arrayGet(a, 2)) * t \
+    ]
+endfunction
+
+
+# The light direction - from the northwest, 45 degrees above the horizon
+roadieLight = [-0.5, 0.5, 0.7071]
+
+
+# Compute the brightness of a surface normal vector
+function roadieBrightness(nx, ny, nz):
+    length = mathSqrt(nx * nx + ny * ny + nz * nz)
+    if length == 0:
+        return 1
+    endif
+    dot = (nx * arrayGet(roadieLight, 0) + ny * arrayGet(roadieLight, 1) + nz * arrayGet(roadieLight, 2)) / length
+    if mathAbs(nz / length) < 0.1:
+        dot = mathAbs(dot)
+    elif nz < 0:
+        dot = -dot
+    endif
+    return 0.5 + 0.6 * mathMax(0, dot)
+endfunction
+
+
+# Compute the brightness of a polygon of world points ([x, y, z] arrays)
+function roadiePolygonBrightness(points):
+    a = arrayGet(points, 0)
+    b = arrayGet(points, 1)
+    c = arrayGet(points, 2)
+    d = arrayGet(points, arrayLength(points) - 1)
+    ux = arrayGet(c, 0) - arrayGet(a, 0)
+    uy = arrayGet(c, 1) - arrayGet(a, 1)
+    uz = arrayGet(c, 2) - arrayGet(a, 2)
+    vx = arrayGet(d, 0) - arrayGet(b, 0)
+    vy = arrayGet(d, 1) - arrayGet(b, 1)
+    vz = arrayGet(d, 2) - arrayGet(b, 2)
+    return roadieBrightness(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx)
+endfunction
+
+
+# Compute a "nice" step size (1, 2, or 5 times a power of ten) for a range and approximate count
+function roadieNiceStep(range, count):
+    rough = mathMax(range, 1e-9) / count
+    power = 10 ** mathFloor(mathLog(rough, 10))
+    for multiple in [1, 2, 5]:
+        if multiple * power >= rough:
+            return multiple * power
+        endif
+    endfor
+    return 10 * power
+endfunction
+
+
+# Get the topography's contour interval
+function roadieContourInterval(topo):
+    interval = objectGet(objectGet(topo, 'topography', {}), 'contourInterval')
+    if interval != null:
+        return interval
+    endif
+    return roadieNiceStep(objectGet(topo, 'maxZ') - objectGet(topo, 'minZ'), 25)
+endfunction
+
+
+# Compute a grid cell's contour segments at a level. The cell's corner elevations are given clockwise
+# from the northwest corner. Returns an array of [fx1, fy1, fx2, fy2] segments in cell fractions, where
+# fx increases to the east and fy increases to the south.
+function roadieCellContours(zNW, zNE, zSE, zSW, level):
+    corners = [[0, 0, zNW], [1, 0, zNE], [1, 1, zSE], [0, 1, zSW]]
+    crossings = []
+    for corner, ixCorner in corners:
+        next = arrayGet(corners, (ixCorner + 1) % 4)
+        z1 = arrayGet(corner, 2)
+        z2 = arrayGet(next, 2)
+        if (z1 >= level) != (z2 >= level):
+            t = (level - z1) / (z2 - z1)
+            arrayPush(crossings, [ \
+                arrayGet(corner, 0) + (arrayGet(next, 0) - arrayGet(corner, 0)) * t, \
+                arrayGet(corner, 1) + (arrayGet(next, 1) - arrayGet(corner, 1)) * t \
+            ])
+        endif
+    endfor
+    segments = []
+    ixCrossing = 0
+    while ixCrossing + 1 < arrayLength(crossings):
+        p1 = arrayGet(crossings, ixCrossing)
+        p2 = arrayGet(crossings, ixCrossing + 1)
+        arrayPush(segments, [arrayGet(p1, 0), arrayGet(p1, 1), arrayGet(p2, 0), arrayGet(p2, 1)])
+        ixCrossing = ixCrossing + 2
+    endwhile
+    return segments
+endfunction
+
+
+# Format a pixel coordinate
+function roadiePx(value):
+    return numberToFixed(value, 1, true)
+endfunction
+
+
+# Create an SVG polygon element model from a flat array of pixel coordinates
+function roadieSvgPolygon(coords, fill, stroke, strokeWidth, title):
+    pointStrs = []
+    ixCoord = 0
+    while ixCoord < arrayLength(coords):
+        arrayPush(pointStrs, roadiePx(arrayGet(coords, ixCoord)) + ',' + roadiePx(arrayGet(coords, ixCoord + 1)))
+        ixCoord = ixCoord + 2
+    endwhile
+    element = { \
+        'svg': 'polygon', \
+        'attr': {'points': arrayJoin(pointStrs, ' '), 'fill': fill, 'stroke': stroke, 'stroke-width': strokeWidth} \
+    }
+    if title != null:
+        objectSet(element, 'elem', {'svg': 'title', 'elem': {'text': title}})
+    endif
+    return element
+endfunction
+
+
+# Create an SVG polyline element model from a flat array of pixel coordinates
+function roadieSvgPolyline(coords, stroke, strokeWidth, dashArray):
+    pointStrs = []
+    ixCoord = 0
+    while ixCoord < arrayLength(coords):
+        arrayPush(pointStrs, roadiePx(arrayGet(coords, ixCoord)) + ',' + roadiePx(arrayGet(coords, ixCoord + 1)))
+        ixCoord = ixCoord + 2
+    endwhile
+    attr = {'points': arrayJoin(pointStrs, ' '), 'fill': 'none', 'stroke': stroke, 'stroke-width': strokeWidth, \
+        'stroke-linejoin': 'round', 'stroke-linecap': 'round'}
+    if dashArray != null:
+        objectSet(attr, 'stroke-dasharray', dashArray)
+    endif
+    return {'svg': 'polyline', 'attr': attr}
+endfunction
+
+
+# Create an SVG text element model
+function roadieSvgText(text, x, y, size, anchor, fill, bold):
+    attr = { \
+        'x': roadiePx(x), \
+        'y': roadiePx(y), \
+        'font-size': size, \
+        'font-family': 'sans-serif', \
+        'text-anchor': anchor, \
+        'dominant-baseline': 'middle', \
+        'fill': fill, \
+        'stroke': 'white', \
+        'stroke-width': 3, \
+        'paint-order': 'stroke' \
+    }
+    if bold:
+        objectSet(attr, 'font-weight', 'bold')
+    endif
+    return {'svg': 'text', 'attr': attr, 'elem': {'text': text}}
+endfunction
+
+
+# Create an SVG drawing element model
+function roadieSvg(width, height, label, elements):
+    return { \
+        'svg': 'svg', \
+        'attr': { \
+            'width': width, \
+            'height': height, \
+            'viewBox': '0 0 ' + width + ' ' + height, \
+            'role': 'img', \
+            'aria-label': label, \
+            'style': 'background: #f4f1ea; border: 1px solid #ccc; display: block;' \
+        }, \
+        'elem': elements \
+    }
+endfunction
+
+
+# Get a road sample's points: [left daylight, left edge, right edge, right daylight] as [x, y, z] arrays,
+# plus the left and right wall bottom points (null if no wall)
+function roadieSamplePoints(sample, halfWidth):
+    x = objectGet(sample, 'x')
+    y = objectGet(sample, 'y')
+    z = objectGet(sample, 'z')
+    nx = -objectGet(sample, 'dy')
+    ny = objectGet(sample, 'dx')
+    left = objectGet(sample, 'left')
+    right = objectGet(sample, 'right')
+    offsetLeft = halfWidth + objectGet(left, 'offset')
+    offsetRight = halfWidth + objectGet(right, 'offset')
+    return [ \
+        [x + nx * offsetLeft, y + ny * offsetLeft, z + objectGet(left, 'drop')], \
+        [x + nx * halfWidth, y + ny * halfWidth, z], \
+        [x - nx * halfWidth, y - ny * halfWidth, z], \
+        [x - nx * offsetRight, y - ny * offsetRight, z + objectGet(right, 'drop')] \
+    ]
+endfunction
+
+
+#
+# 3D view
+#
+
+
+# The maximum number of 3D grid cells per side
+roadieMax3DCells = 80
+
+
+# Compute the finished grade topography rows - the original grid with the road and its slopes applied
+function roadieFinishedRows(topo, samples, halfWidth):
+    rows = jsonParse(jsonStringify(objectGet(topo, 'rows')))
+    spacing = objectGet(topo, 'spacing')
+    nRows = objectGet(topo, 'nRows')
+    nCols = objectGet(topo, 'nCols')
+    interval = objectGet(arrayGet(samples, 1), 'station') - objectGet(arrayGet(samples, 0), 'station')
+    for sample in samples:
+        if objectGet(sample, 'bridge') || objectGet(sample, 'outside'):
+            continue
+        endif
+        x = objectGet(sample, 'x')
+        y = objectGet(sample, 'y')
+        z = objectGet(sample, 'z')
+        dx = objectGet(sample, 'dx')
+        dy = objectGet(sample, 'dy')
+        left = objectGet(sample, 'left')
+        right = objectGet(sample, 'right')
+        extentLeft = halfWidth + objectGet(left, 'offset')
+        extentRight = halfWidth + objectGet(right, 'offset')
+        radius = mathMax(extentLeft, extentRight) + interval
+        colMin = mathMax(0, mathCeil((x - radius) / spacing))
+        colMax = mathMin(nCols - 1, mathFloor((x + radius) / spacing))
+        rowMin = mathMax(0, mathCeil((nRows - 1) - (y + radius) / spacing))
+        rowMax = mathMin(nRows - 1, mathFloor((nRows - 1) - (y - radius) / spacing))
+        row = rowMin
+        while row <= rowMax:
+            gy = (nRows - 1 - row) * spacing
+            col = colMin
+            while col <= colMax:
+                gx = col * spacing
+                along = (gx - x) * dx + (gy - y) * dy
+                offset = (gx - x) * -dy + (gy - y) * dx
+                if mathAbs(along) <= interval * 0.5 && offset <= extentLeft && offset >= -extentRight:
+                    if mathAbs(offset) <= halfWidth:
+                        arraySet(arrayGet(rows, row), col, z)
+                    else:
+                        side = if(offset > 0, left, right)
+                        fraction = (mathAbs(offset) - halfWidth) / objectGet(side, 'offset')
+                        arraySet(arrayGet(rows, row), col, z + objectGet(side, 'drop') * fraction)
+                    endif
+                endif
+                col = col + 1
+            endwhile
+            row = row + 1
+        endwhile
+    endfor
+    return rows
+endfunction
+
+
+# Create a 3D view projection object
+function roadieProjection(topo, args, width, height):
+    azimuth = objectGet(args, 'azimuth') * mathPi() / 180
+    tilt = mathMax(5, mathMin(90, objectGet(args, 'tilt'))) * mathPi() / 180
+    view = { \
+        'cosAz': mathCos(azimuth), \
+        'sinAz': mathSin(azimuth), \
+        'cosTilt': mathCos(tilt), \
+        'sinTilt': mathSin(tilt), \
+        'exaggeration': objectGet(args, 'exaggeration'), \
+        'xc': objectGet(topo, 'width') * 0.5, \
+        'yc': objectGet(topo, 'height') * 0.5, \
+        'zc': (objectGet(topo, 'minZ') + objectGet(topo, 'maxZ')) * 0.5, \
+        'scale': 1, \
+        'uMid': 0, \
+        'vMid': 0, \
+        'width': width, \
+        'height': height \
+    }
+
+    # Fit the topography to the view - the fit uses the topography's circumscribing cylinder about the view
+    # center (not its rotated bounding box), so the scale doesn't change as the view rotates
+    radius = mathSqrt(objectGet(topo, 'width') ** 2 + objectGet(topo, 'height') ** 2) * 0.5
+    halfZ = (objectGet(topo, 'maxZ') - objectGet(topo, 'minZ')) * 0.5 * objectGet(view, 'exaggeration')
+    halfU = radius
+    halfV = radius * objectGet(view, 'sinTilt') + halfZ * objectGet(view, 'cosTilt')
+    objectSet(view, 'scale', 0.92 * mathMin(width / mathMax(2 * halfU, 1e-9), height / mathMax(2 * halfV, 1e-9)))
+    return view
+endfunction
+
+
+# Project a world point to the view - returns [px, py, depth] (larger depth is farther away)
+function roadieProject(view, x, y, z):
+    x0 = x - objectGet(view, 'xc')
+    y0 = y - objectGet(view, 'yc')
+    z0 = (z - objectGet(view, 'zc')) * objectGet(view, 'exaggeration')
+    cosAz = objectGet(view, 'cosAz')
+    sinAz = objectGet(view, 'sinAz')
+    u = x0 * cosAz - y0 * sinAz
+    v = x0 * sinAz + y0 * cosAz
+    up = v * objectGet(view, 'sinTilt') + z0 * objectGet(view, 'cosTilt')
+    depth = v * objectGet(view, 'cosTilt') - z0 * objectGet(view, 'sinTilt')
+    scale = objectGet(view, 'scale')
+    return [ \
+        objectGet(view, 'width') * 0.5 + (u - objectGet(view, 'uMid')) * scale, \
+        objectGet(view, 'height') * 0.5 - (up - objectGet(view, 'vMid')) * scale, \
+        depth \
+    ]
+endfunction
+
+
+# Project world points ([x, y, z] arrays) to a flat pixel coordinate array and the average depth
+function roadieProjectPoints(view, points):
+    coords = []
+    depth = 0
+    for point in points:
+        projected = roadieProject(view, arrayGet(point, 0), arrayGet(point, 1), arrayGet(point, 2))
+        arrayPush(coords, arrayGet(projected, 0), arrayGet(projected, 1))
+        depth = depth + arrayGet(projected, 2)
+    endfor
+    return [coords, depth / arrayLength(points)]
+endfunction
+
+
+# Compare two depth-sorted 3D items (farthest first)
+function roadieCompareDepth(a, b):
+    return arrayGet(b, 0) - arrayGet(a, 0)
+endfunction
+
+
+# Create a 3D shaded polygon item ([depth, element]) from world points
+function roadie3DPolygon(view, points, color, bias, title):
+    projected = roadieProjectPoints(view, points)
+    exaggeration = objectGet(view, 'exaggeration')
+    worldPoints = []
+    for point in points:
+        arrayPush(worldPoints, [arrayGet(point, 0), arrayGet(point, 1), arrayGet(point, 2) * exaggeration])
+    endfor
+    fill = roadieRGB(color, roadiePolygonBrightness(worldPoints))
+    return [arrayGet(projected, 1) - bias, roadieSvgPolygon(arrayGet(projected, 0), fill, fill, 0.5, title)]
+endfunction
+
+
+# Create the 3D view SVG element model
+function roadieView3D(plan, topo, ixOption, analysis, args, width, height):
+    units = objectGet(plan, 'units')
+    samples = objectGet(analysis, 'samples')
+    option = arrayGet(objectGet(plan, 'options'), ixOption)
+    section = objectGet(option, 'section')
+    halfWidth = objectGet(section, 'width') * 0.5
+    spacing = objectGet(topo, 'spacing')
+    view = roadieProjection(topo, args, width, height)
+    exaggeration = objectGet(view, 'exaggeration')
+    items = []
+
+    # Terrain cells
+    rows = roadieFinishedRows(topo, samples, halfWidth)
+    nRows = objectGet(topo, 'nRows')
+    nCols = objectGet(topo, 'nCols')
+    step = mathCeil((mathMax(nRows, nCols) - 1) / roadieMax3DCells)
+    cellSize = step * spacing
+    minZ = objectGet(topo, 'minZ')
+    rangeZ = mathMax(objectGet(topo, 'maxZ') - minZ, 1e-9)
+    contourInterval = roadieContourInterval({'topography': objectGet(plan, 'topography'), 'minZ': minZ, \
+        'maxZ': objectGet(topo, 'maxZ')})
+    contourColor = 'rgba(70,50,30,0.45)'
+    row = 0
+    while row < nRows - 1:
+        row2 = mathMin(nRows - 1, row + step)
+        y1 = (nRows - 1 - row) * spacing
+        y2 = (nRows - 1 - row2) * spacing
+        col = 0
+        while col < nCols - 1:
+            col2 = mathMin(nCols - 1, col + step)
+            x1 = col * spacing
+            x2 = col2 * spacing
+            zNW = arrayGet(arrayGet(rows, row), col)
+            zNE = arrayGet(arrayGet(rows, row), col2)
+            zSE = arrayGet(arrayGet(rows, row2), col2)
+            zSW = arrayGet(arrayGet(rows, row2), col)
+            projected = roadieProjectPoints(view, [[x1, y1, zNW], [x2, y1, zNE], [x2, y2, zSE], [x1, y2, zSW]])
+
+            # Shade the cell by its elevation and slope
+            cellWidth = x2 - x1
+            cellHeight = y1 - y2
+            dzdx = ((zNE + zSE) - (zNW + zSW)) * 0.5 / cellWidth * exaggeration
+            dzdy = ((zNW + zNE) - (zSW + zSE)) * 0.5 / cellHeight * exaggeration
+            zAvg = (zNW + zNE + zSE + zSW) * 0.25
+            fill = roadieRGB(roadieTerrainColor((zAvg - minZ) / rangeZ), roadieBrightness(-dzdx, -dzdy, 1))
+            cellElements = [roadieSvgPolygon(arrayGet(projected, 0), fill, fill, 0.6)]
+
+            # Cell contours
+            level = mathCeil(mathMin(zNW, zNE, zSE, zSW) / contourInterval) * contourInterval
+            zMax = mathMax(zNW, zNE, zSE, zSW)
+            while level <= zMax:
+                for segment in roadieCellContours(zNW, zNE, zSE, zSW, level):
+                    p1 = roadieProject(view, x1 + arrayGet(segment, 0) * cellWidth, y1 - arrayGet(segment, 1) * cellHeight, level)
+                    p2 = roadieProject(view, x1 + arrayGet(segment, 2) * cellWidth, y1 - arrayGet(segment, 3) * cellHeight, level)
+                    isIndex = mathAbs(level / contourInterval / 5 - mathRound(level / contourInterval / 5)) < 1e-6
+                    arrayPush(cellElements, roadieSvgPolyline( \
+                        [arrayGet(p1, 0), arrayGet(p1, 1), arrayGet(p2, 0), arrayGet(p2, 1)], \
+                        contourColor, if(isIndex, 1.2, 0.5) \
+                    ))
+                endfor
+                level = level + contourInterval
+            endwhile
+            arrayPush(items, [arrayGet(projected, 1), cellElements])
+            col = col2
+        endwhile
+        row = row2
+    endwhile
+
+    # Features
+    for feature in objectGet(topo, 'features'):
+        type = objectGet(feature, 'type')
+        points = objectGet(feature, 'points')
+        if type != 'stream':
+            points = arrayCopy(points)
+            arrayPush(points, arrayGet(points, 0))
+        endif
+        stroke = if(type == 'stream', '#2a6fdb', if(type == 'rock', '#555555', '#d0312d'))
+        for point, ixPoint in points:
+            if ixPoint > 0:
+                prev = arrayGet(points, ixPoint - 1)
+                x1 = objectGet(prev, 'x')
+                y1 = objectGet(prev, 'y')
+                x2 = objectGet(point, 'x')
+                y2 = objectGet(point, 'y')
+                count = mathMax(1, mathCeil(mathSqrt((x2 - x1) ** 2 + (y2 - y1) ** 2) / (cellSize * 0.5)))
+                ixStep = 0
+                while ixStep < count:
+                    xa = x1 + (x2 - x1) * ixStep / count
+                    ya = y1 + (y2 - y1) * ixStep / count
+                    xb = x1 + (x2 - x1) * (ixStep + 1) / count
+                    yb = y1 + (y2 - y1) * (ixStep + 1) / count
+                    za = roadieElevation(topo, xa, ya)
+                    zb = roadieElevation(topo, xb, yb)
+                    if za != null && zb != null:
+                        projected = roadieProjectPoints(view, [[xa, ya, za], [xb, yb, zb]])
+                        arrayPush(items, [arrayGet(projected, 1) - cellSize * 0.5, \
+                            roadieSvgPolyline(arrayGet(projected, 0), stroke, if(type == 'stream', 2.5, 1.5), \
+                                if(type == 'stream', null, '4 3'))])
+                    endif
+                    ixStep = ixStep + 1
+                endwhile
+            endif
+        endfor
+    endfor
+
+    # Road
+    bias = cellSize
+    surfaceColor = objectGet(roadieColors, objectGet(section, 'surface', 'gravel'))
+    deckDepth = roadieUnitLength(plan, 1, 3)
+    prevPoints = null
+    for sample, ixSample in samples:
+        points = roadieSamplePoints(sample, halfWidth)
+        if ixSample > 0:
+            prev = arrayGet(samples, ixSample - 1)
+            bridge = objectGet(prev, 'bridge') && objectGet(sample, 'bridge')
+            title = roadieStation(objectGet(sample, 'station'), units) + ': grade ' + \
+                numberToFixed(objectGet(sample, 'z'), 1) + ', ground ' + numberToFixed(objectGet(sample, 'ground'), 1) + ', ' + \
+                if(objectGet(sample, 'ground') >= objectGet(sample, 'z'), 'cut ', 'fill ') + \
+                numberToFixed(mathAbs(objectGet(sample, 'ground') - objectGet(sample, 'z')), 1)
+
+            # Road surface (or bridge deck)
+            surfacePoints = [arrayGet(prevPoints, 1), arrayGet(points, 1), arrayGet(points, 2), arrayGet(prevPoints, 2)]
+            arrayPush(items, roadie3DPolygon(view, surfacePoints, \
+                if(bridge, objectGet(roadieColors, 'bridge'), surfaceColor), bias, title))
+            if bridge:
+                for ixEdge in [1, 2]:
+                    edgePrev = arrayGet(prevPoints, ixEdge)
+                    edge = arrayGet(points, ixEdge)
+                    arrayPush(items, roadie3DPolygon(view, [ \
+                        edgePrev, edge, \
+                        [arrayGet(edge, 0), arrayGet(edge, 1), arrayGet(edge, 2) - deckDepth], \
+                        [arrayGet(edgePrev, 0), arrayGet(edgePrev, 1), arrayGet(edgePrev, 2) - deckDepth] \
+                    ], objectGet(roadieColors, 'bridge'), bias * 1.1, null))
+                endfor
+                prevPoints = points
+                continue
+            endif
+
+            # Side slopes and walls
+            for sideInfo in [['left', 0, 1], ['right', 3, 2]]:
+                side = objectGet(sample, arrayGet(sideInfo, 0))
+                sidePrev = objectGet(prev, arrayGet(sideInfo, 0))
+                kind = objectGet(side, 'kind')
+                kindPrev = objectGet(sidePrev, 'kind')
+                ixDaylight = arrayGet(sideInfo, 1)
+                ixEdge = arrayGet(sideInfo, 2)
+                edgePrev = arrayGet(prevPoints, ixEdge)
+                edge = arrayGet(points, ixEdge)
+                if kind == 'wall' || kindPrev == 'wall':
+                    arrayPush(items, roadie3DPolygon(view, [ \
+                        edgePrev, edge, \
+                        [arrayGet(edge, 0), arrayGet(edge, 1), arrayGet(edge, 2) + objectGet(side, 'drop')], \
+                        [arrayGet(edgePrev, 0), arrayGet(edgePrev, 1), arrayGet(edgePrev, 2) + objectGet(sidePrev, 'drop')] \
+                    ], objectGet(roadieColors, 'wall'), bias * 0.9, null))
+                elif kind != 'none' || kindPrev != 'none':
+                    slopeKind = if(kind != 'none', kind, kindPrev)
+                    arrayPush(items, roadie3DPolygon(view, \
+                        [edgePrev, arrayGet(prevPoints, ixDaylight), arrayGet(points, ixDaylight), edge], \
+                        objectGet(roadieColors, slopeKind), bias * 0.9, null))
+                endif
+            endfor
+        endif
+        prevPoints = points
+    endfor
+
+    # Culverts
+    for structure in objectGet(option, 'structures', []):
+        if objectGet(structure, 'type') == 'culvert':
+            sample = roadieSampleAt(samples, objectGet(structure, 'station'))
+            points = roadieSamplePoints(sample, halfWidth)
+            projected = roadieProjectPoints(view, [arrayGet(points, 0), arrayGet(points, 3)])
+            arrayPush(items, [arrayGet(projected, 1) - bias * 1.2, \
+                roadieSvgPolyline(arrayGet(projected, 0), '#2a6fdb', 4, null)])
+        endif
+    endfor
+
+    # Sort the items by depth, farthest first
+    arraySort(items, roadieCompareDepth)
+    elements = []
+    for item in items:
+        arrayPush(elements, arrayGet(item, 1))
+    endfor
+
+    # Start and end markers (always on top)
+    poleHeight = (objectGet(topo, 'maxZ') - minZ) * 0.15 / exaggeration + spacing
+    for marker in [[objectGet(plan, 'start'), 'Start', '#1a8f3c'], [objectGet(plan, 'end'), 'End', '#c0392b']]:
+        point = arrayGet(marker, 0)
+        x = objectGet(point, 'x')
+        y = objectGet(point, 'y')
+        z = roadieElevation(topo, x, y)
+        z = if(z == null, minZ, z)
+        base = roadieProject(view, x, y, z)
+        top = roadieProject(view, x, y, z + poleHeight)
+        arrayPush(elements, roadieSvgPolyline([arrayGet(base, 0), arrayGet(base, 1), arrayGet(top, 0), arrayGet(top, 1)], \
+            arrayGet(marker, 2), 2.5, null))
+        arrayPush(elements, roadieSvgText(objectGet(point, 'label', arrayGet(marker, 1)), arrayGet(top, 0), arrayGet(top, 1) - 9, \
+            13, 'middle', arrayGet(marker, 2), true))
+    endfor
+
+    # Compass
+    arrayPush(elements, roadieCompass(view, width - 36, 36))
+
+    return roadieSvg(width, height, '3D view of the ' + objectGet(option, 'name') + ' road plan option', elements)
+endfunction
+
+
+# Create a compass element model showing north for a view
+function roadieCompass(view, cx, cy):
+    north = roadieProject(view, objectGet(view, 'xc'), objectGet(view, 'yc') + 1, objectGet(view, 'zc'))
+    center = roadieProject(view, objectGet(view, 'xc'), objectGet(view, 'yc'), objectGet(view, 'zc'))
+    dx = arrayGet(north, 0) - arrayGet(center, 0)
+    dy = arrayGet(north, 1) - arrayGet(center, 1)
+    length = mathSqrt(dx * dx + dy * dy)
+    ux = dx / length
+    uy = dy / length
+    return [ \
+        {'svg': 'circle', 'attr': {'cx': cx, 'cy': cy, 'r': 22, 'fill': 'white', 'fill-opacity': 0.8, 'stroke': '#888'}}, \
+        roadieSvgPolygon( \
+            [cx + ux * 18, cy + uy * 18, cx - uy * 6, cy + ux * 6, cx + uy * 6, cy - ux * 6], \
+            '#c0392b', '#c0392b', 1 \
+        ), \
+        roadieSvgText('N', cx - ux * 12, cy - uy * 12, 11, 'middle', '#333', true) \
+    ]
+endfunction
+
+
+#
+# Plan view
+#
+
+
+# Create the plan view SVG element model
+function roadiePlanView(plan, topo, analyses, ixOption, width):
+    units = objectGet(plan, 'units')
+    spacing = objectGet(topo, 'spacing')
+    nRows = objectGet(topo, 'nRows')
+    nCols = objectGet(topo, 'nCols')
+    topoHeight = objectGet(topo, 'height')
+    pad = 10
+    scale = (width - 2 * pad) / objectGet(topo, 'width')
+    height = mathRound(topoHeight * scale + 2 * pad)
+    elements = []
+
+    # Contours
+    contourInterval = roadieContourInterval({'topography': objectGet(plan, 'topography'), 'minZ': objectGet(topo, 'minZ'), \
+        'maxZ': objectGet(topo, 'maxZ')})
+    rows = objectGet(topo, 'rows')
+    minorPath = []
+    indexPath = []
+    row = 0
+    while row < nRows - 1:
+        rowTop = arrayGet(rows, row)
+        rowBottom = arrayGet(rows, row + 1)
+        col = 0
+        while col < nCols - 1:
+            zNW = arrayGet(rowTop, col)
+            zNE = arrayGet(rowTop, col + 1)
+            zSE = arrayGet(rowBottom, col + 1)
+            zSW = arrayGet(rowBottom, col)
+            level = mathCeil(mathMin(zNW, zNE, zSE, zSW) / contourInterval) * contourInterval
+            zMax = mathMax(zNW, zNE, zSE, zSW)
+            while level <= zMax:
+                isIndex = mathAbs(level / contourInterval / 5 - mathRound(level / contourInterval / 5)) < 1e-6
+                for segment in roadieCellContours(zNW, zNE, zSE, zSW, level):
+                    arrayPush(if(isIndex, indexPath, minorPath), \
+                        'M' + roadiePx(pad + (col + arrayGet(segment, 0)) * spacing * scale) + ' ' + \
+                            roadiePx(pad + (row + arrayGet(segment, 1)) * spacing * scale) + \
+                        'L' + roadiePx(pad + (col + arrayGet(segment, 2)) * spacing * scale) + ' ' + \
+                            roadiePx(pad + (row + arrayGet(segment, 3)) * spacing * scale))
+                endfor
+                level = level + contourInterval
+            endwhile
+            col = col + 1
+        endwhile
+        row = row + 1
+    endwhile
+    arrayPush(elements, {'svg': 'path', 'attr': {'d': arrayJoin(minorPath, ''), 'fill': 'none', 'stroke': '#b89a72', 'stroke-width': 0.6}})
+    arrayPush(elements, {'svg': 'path', 'attr': {'d': arrayJoin(indexPath, ''), 'fill': 'none', 'stroke': '#8a6a45', 'stroke-width': 1.3}})
+
+    # Features
+    for feature in objectGet(topo, 'features'):
+        type = objectGet(feature, 'type')
+        coords = []
+        sumX = 0
+        sumY = 0
+        for point in objectGet(feature, 'points'):
+            px = pad + objectGet(point, 'x') * scale
+            py = pad + (topoHeight - objectGet(point, 'y')) * scale
+            arrayPush(coords, px, py)
+            sumX = sumX + px
+            sumY = sumY + py
+        endfor
+        if type == 'stream':
+            arrayPush(elements, roadieSvgPolyline(coords, '#2a6fdb', 2.5, null))
+        elif type == 'rock':
+            arrayPush(elements, roadieSvgPolygon(coords, 'rgba(110,110,110,0.35)', '#555555', 1))
+        else:
+            arrayPush(elements, roadieSvgPolygon(coords, 'rgba(208,49,45,0.12)', '#d0312d', 1.5))
+        endif
+        name = objectGet(feature, 'name')
+        if name != null:
+            count = arrayLength(objectGet(feature, 'points'))
+            arrayPush(elements, roadieSvgText(name, sumX / count, sumY / count, 11, 'middle', \
+                if(type == 'stream', '#1d4f9e', '#444'), false))
+        endif
+    endfor
+
+    # Other options' centerlines
+    for analysis, ixAnalysis in analyses:
+        if ixAnalysis != ixOption:
+            coords = []
+            for point in objectGet(analysis, 'alignment'):
+                arrayPush(coords, pad + objectGet(point, 'x') * scale, pad + (topoHeight - objectGet(point, 'y')) * scale)
+            endfor
+            arrayPush(elements, roadieSvgPolyline(coords, '#777777', 1.5, '6 4'))
+        endif
+    endfor
+
+    # The selected option's footprint
+    analysis = arrayGet(analyses, ixOption)
+    option = arrayGet(objectGet(plan, 'options'), ixOption)
+    section = objectGet(option, 'section')
+    halfWidth = objectGet(section, 'width') * 0.5
+    samples = objectGet(analysis, 'samples')
+    surfaceFill = roadieRGB(objectGet(roadieColors, objectGet(section, 'surface', 'gravel')))
+    bridgeFill = roadieRGB(objectGet(roadieColors, 'bridge'))
+    prevCoords = null
+    for sample, ixSample in samples:
+        coords = []
+        for point in roadieSamplePoints(sample, halfWidth):
+            arrayPush(coords, pad + arrayGet(point, 0) * scale, pad + (topoHeight - arrayGet(point, 1)) * scale)
+        endfor
+        if ixSample > 0:
+            prev = arrayGet(samples, ixSample - 1)
+            for sideInfo in [['left', 0, 1], ['right', 3, 2]]:
+                kind = objectGet(objectGet(sample, arrayGet(sideInfo, 0)), 'kind')
+                kindPrev = objectGet(objectGet(prev, arrayGet(sideInfo, 0)), 'kind')
+                if kind == 'wall' || kindPrev == 'wall':
+                    ixEdge = arrayGet(sideInfo, 2)
+                    arrayPush(elements, roadieSvgPolyline([ \
+                        arrayGet(prevCoords, ixEdge * 2), arrayGet(prevCoords, ixEdge * 2 + 1), \
+                        arrayGet(coords, ixEdge * 2), arrayGet(coords, ixEdge * 2 + 1) \
+                    ], '#333333', 3, null))
+                elif kind == 'cut' || kind == 'fill':
+                    ixDay = arrayGet(sideInfo, 1)
+                    ixEdge = arrayGet(sideInfo, 2)
+                    color = roadieRGB(objectGet(roadieColors, kind))
+                    arrayPush(elements, roadieSvgPolygon([ \
+                        arrayGet(prevCoords, ixEdge * 2), arrayGet(prevCoords, ixEdge * 2 + 1), \
+                        arrayGet(prevCoords, ixDay * 2), arrayGet(prevCoords, ixDay * 2 + 1), \
+                        arrayGet(coords, ixDay * 2), arrayGet(coords, ixDay * 2 + 1), \
+                        arrayGet(coords, ixEdge * 2), arrayGet(coords, ixEdge * 2 + 1) \
+                    ], color, color, 0.5))
+                endif
+            endfor
+            fill = if(objectGet(prev, 'bridge') && objectGet(sample, 'bridge'), bridgeFill, surfaceFill)
+            arrayPush(elements, roadieSvgPolygon([ \
+                arrayGet(prevCoords, 2), arrayGet(prevCoords, 3), arrayGet(coords, 2), arrayGet(coords, 3), \
+                arrayGet(coords, 4), arrayGet(coords, 5), arrayGet(prevCoords, 4), arrayGet(prevCoords, 5) \
+            ], fill, fill, 0.5))
+        endif
+        prevCoords = coords
+    endfor
+
+    # Culverts
+    for structure in objectGet(option, 'structures', []):
+        if objectGet(structure, 'type') == 'culvert':
+            sample = roadieSampleAt(samples, objectGet(structure, 'station'))
+            points = roadieSamplePoints(sample, halfWidth)
+            pointLeft = arrayGet(points, 0)
+            pointRight = arrayGet(points, 3)
+            arrayPush(elements, roadieSvgPolyline([ \
+                pad + arrayGet(pointLeft, 0) * scale, pad + (topoHeight - arrayGet(pointLeft, 1)) * scale, \
+                pad + arrayGet(pointRight, 0) * scale, pad + (topoHeight - arrayGet(pointRight, 1)) * scale \
+            ], '#2a6fdb', 3, null))
+        endif
+    endfor
+
+    # Station ticks
+    length = objectGet(analysis, 'length')
+    tickStep = roadieNiceStep(length, 8)
+    station = tickStep
+    while station < length:
+        sample = roadieSampleAt(samples, station)
+        px = pad + objectGet(sample, 'x') * scale
+        py = pad + (topoHeight - objectGet(sample, 'y')) * scale
+        arrayPush(elements, {'svg': 'circle', 'attr': {'cx': roadiePx(px), 'cy': roadiePx(py), 'r': 2.5, 'fill': '#222'}})
+        arrayPush(elements, roadieSvgText(roadieStation(station, units), px + 6, py - 8, 10, 'start', '#222', false))
+        station = station + tickStep
+    endwhile
+
+    # Start and end markers
+    for marker in [[objectGet(plan, 'start'), 'Start', '#1a8f3c'], [objectGet(plan, 'end'), 'End', '#c0392b']]:
+        point = arrayGet(marker, 0)
+        px = pad + objectGet(point, 'x') * scale
+        py = pad + (topoHeight - objectGet(point, 'y')) * scale
+        arrayPush(elements, {'svg': 'circle', 'attr': {'cx': roadiePx(px), 'cy': roadiePx(py), 'r': 6, \
+            'fill': arrayGet(marker, 2), 'stroke': 'white', 'stroke-width': 2}})
+        arrayPush(elements, roadieSvgText(objectGet(point, 'label', arrayGet(marker, 1)), px, py - 14, 13, 'middle', \
+            arrayGet(marker, 2), true))
+    endfor
+
+    # Scale bar
+    barLength = roadieNiceStep(objectGet(topo, 'width'), 5)
+    barPx = barLength * scale
+    barY = height - pad - 12
+    arrayPush(elements, {'svg': 'rect', 'attr': {'x': pad + 8, 'y': barY - 14, 'width': roadiePx(barPx + 16), 'height': 26, \
+        'fill': 'white', 'fill-opacity': 0.8}})
+    arrayPush(elements, roadieSvgPolyline([pad + 16, barY, pad + 16 + barPx, barY], '#222', 3, null))
+    arrayPush(elements, roadieSvgText(roadieNumber(barLength, 0) + ' ' + roadieUnitLabel(units, 'length') + \
+        ' — contours ' + numberToFixed(contourInterval, 2, true) + ' ' + roadieUnitLabel(units, 'length'), \
+        pad + 16, barY - 7, 10, 'start', '#222', false))
+
+    # North arrow
+    arrayPush(elements, roadieSvgPolygon([width - 30, pad + 8, width - 37, pad + 28, width - 23, pad + 28], '#222', '#222', 1))
+    arrayPush(elements, roadieSvgText('N', width - 30, pad + 38, 11, 'middle', '#222', true))
+
+    return roadieSvg(width, height, 'Plan view of the ' + objectGet(option, 'name') + ' road plan option', elements)
+endfunction
+
+
+#
+# Profile view
+#
+
+
+# Create the profile view SVG element model
+function roadieProfileView(plan, option, analysis, width, height):
+    units = objectGet(plan, 'units')
+    lengthUnit = roadieUnitLabel(units, 'length')
+    samples = objectGet(analysis, 'samples')
+    length = mathMax(objectGet(analysis, 'length'), 1e-9)
+    maxGrade = objectGet(roadieCriteria(plan), 'maxGrade')
+    elements = []
+
+    # Elevation range
+    minZ = null
+    maxZ = null
+    for sample in samples:
+        low = mathMin(objectGet(sample, 'z'), objectGet(sample, 'ground'))
+        high = mathMax(objectGet(sample, 'z'), objectGet(sample, 'ground'))
+        minZ = if(minZ == null, low, mathMin(minZ, low))
+        maxZ = if(maxZ == null, high, mathMax(maxZ, high))
+    endfor
+    zStep = roadieNiceStep(maxZ - minZ, 6)
+    minZ = mathFloor(minZ / zStep) * zStep - zStep
+    maxZ = mathCeil(maxZ / zStep) * zStep
+
+    # Plot area
+    left = 64
+    right = width - 16
+    top = 16
+    bottom = height - 40
+    xScale = (right - left) / length
+    yScale = (bottom - top) / (maxZ - minZ)
+
+    # Grid and axes
+    z = minZ
+    while z <= maxZ + 1e-9:
+        py = bottom - (z - minZ) * yScale
+        arrayPush(elements, roadieSvgPolyline([left, py, right, py], '#dddddd', 1, null))
+        arrayPush(elements, roadieSvgText(roadieNumber(z, 0), left - 6, py, 10, 'end', '#444', false))
+        z = z + zStep
+    endwhile
+    stationStep = roadieNiceStep(length, 10)
+    station = 0
+    while station <= length + 1e-9:
+        px = left + station * xScale
+        arrayPush(elements, roadieSvgPolyline([px, top, px, bottom], '#dddddd', 1, null))
+        arrayPush(elements, roadieSvgText(roadieStation(station, units), px, bottom + 14, 10, 'middle', '#444', false))
+        station = station + stationStep
+    endwhile
+    arrayPush(elements, roadieSvgText('Station', (left + right) * 0.5, height - 10, 11, 'middle', '#444', true))
+    arrayPush(elements, roadieSvgText('Elevation (' + lengthUnit + ') — vertical exaggeration ' + \
+        numberToFixed(yScale / xScale, 1, true) + 'x', left + 6, top + 8, 11, 'start', '#444', true))
+
+    # Cut and fill areas
+    ixRun = 0
+    while ixRun < arrayLength(samples) - 1:
+        sample = arrayGet(samples, ixRun)
+        isCut = objectGet(sample, 'ground') >= objectGet(sample, 'z')
+        isBridge = objectGet(sample, 'bridge')
+        ixEnd = ixRun + 1
+        while ixEnd < arrayLength(samples) - 1 && \
+                (objectGet(arrayGet(samples, ixEnd), 'ground') >= objectGet(arrayGet(samples, ixEnd), 'z')) == isCut && \
+                objectGet(arrayGet(samples, ixEnd), 'bridge') == isBridge:
+            ixEnd = ixEnd + 1
+        endwhile
+        if !isBridge:
+            gradeCoords = []
+            groundCoords = []
+            ixSample = ixRun
+            while ixSample <= ixEnd:
+                runSample = arrayGet(samples, ixSample)
+                px = left + objectGet(runSample, 'station') * xScale
+                arrayPush(gradeCoords, px, bottom - (objectGet(runSample, 'z') - minZ) * yScale)
+                arrayPush(groundCoords, bottom - (objectGet(runSample, 'ground') - minZ) * yScale, px)
+                ixSample = ixSample + 1
+            endwhile
+            arrayExtend(gradeCoords, arrayReverse(groundCoords))
+            color = roadieRGB(objectGet(roadieColors, if(isCut, 'cut', 'fill')))
+            arrayPush(elements, roadieSvgPolygon(gradeCoords, color, color, 0.5))
+        endif
+        ixRun = ixEnd
+    endwhile
+
+    # Ground line
+    groundCoords = []
+    for sample in samples:
+        arrayPush(groundCoords, left + objectGet(sample, 'station') * xScale, bottom - (objectGet(sample, 'ground') - minZ) * yScale)
+    endfor
+    arrayPush(elements, roadieSvgPolyline(groundCoords, '#6b4a2b', 1.5, null))
+
+    # Structures
+    for structure in objectGet(option, 'structures', []):
+        type = objectGet(structure, 'type')
+        station = objectGet(structure, 'station')
+        endStation = objectGet(structure, 'endStation', station)
+        px1 = left + station * xScale
+        px2 = left + endStation * xScale
+        if type == 'bridge':
+            sample1 = roadieSampleAt(samples, station)
+            sample2 = roadieSampleAt(samples, endStation)
+            py1 = bottom - (objectGet(sample1, 'z') - minZ) * yScale
+            py2 = bottom - (objectGet(sample2, 'z') - minZ) * yScale
+            arrayPush(elements, roadieSvgPolygon([px1, py1, px2, py2, px2, py2 + 6, px1, py1 + 6], '#786858', '#786858', 1))
+            arrayPush(elements, roadieSvgText('Bridge', (px1 + px2) * 0.5, mathMin(py1, py2) - 10, 10, 'middle', '#444', true))
+        elif type == 'culvert':
+            sample = roadieSampleAt(samples, station)
+            py = bottom - (objectGet(sample, 'ground') - minZ) * yScale
+            arrayPush(elements, {'svg': 'circle', 'attr': {'cx': roadiePx(px1), 'cy': roadiePx(py), 'r': 5, \
+                'fill': 'white', 'stroke': '#2a6fdb', 'stroke-width': 2.5}})
+        else:
+            color = if(type == 'retainingWall', '#555555', '#2a8f8f')
+            arrayPush(elements, {'svg': 'rect', 'attr': {'x': roadiePx(px1), 'y': bottom - 8, 'width': roadiePx(mathMax(2, px2 - px1)), \
+                'height': 8, 'fill': color}})
+            arrayPush(elements, roadieSvgText(if(type == 'retainingWall', 'Wall', 'Turnout'), (px1 + px2) * 0.5, bottom - 16, 10, \
+                'middle', color, true))
+        endif
+    endfor
+
+    # Grade line - steep segments are highlighted
+    for grade in objectGet(analysis, 'grades'):
+        steep = mathAbs(objectGet(grade, 'grade')) > maxGrade + 1e-6
+        sample1 = roadieAlignmentPointAt(analysis, objectGet(grade, 'station'))
+        sample2 = roadieAlignmentPointAt(analysis, objectGet(grade, 'endStation'))
+        arrayPush(elements, roadieSvgPolyline([ \
+            left + objectGet(grade, 'station') * xScale, bottom - (objectGet(sample1, 'z') - minZ) * yScale, \
+            left + objectGet(grade, 'endStation') * xScale, bottom - (objectGet(sample2, 'z') - minZ) * yScale \
+        ], if(steep, '#e01e1e', '#1f2d3d'), if(steep, 3, 2), null))
+    endfor
+
+    # Legend
+    legendX = right - 250
+    for legend, ixLegend in [['Cut', roadieRGB(objectGet(roadieColors, 'cut'))], ['Fill', roadieRGB(objectGet(roadieColors, 'fill'))], \
+            ['Ground', '#6b4a2b'], ['Grade', '#1f2d3d'], ['Over ' + numberToFixed(maxGrade, 1, true) + '%', '#e01e1e']]:
+        lx = legendX + ixLegend * 50
+        arrayPush(elements, {'svg': 'rect', 'attr': {'x': lx, 'y': top + 2, 'width': 10, 'height': 10, 'fill': arrayGet(legend, 1)}})
+        arrayPush(elements, roadieSvgText(arrayGet(legend, 0), lx + 13, top + 8, 10, 'start', '#444', false))
+    endfor
+
+    return roadieSvg(width, height, 'Profile of the ' + objectGet(option, 'name') + ' road plan option', elements)
+endfunction
+
+
+# Find the alignment point at a station
+function roadieAlignmentPointAt(analysis, station):
+    for point in objectGet(analysis, 'alignment'):
+        if objectGet(point, 'station') >= station - 1e-9:
+            return point
+        endif
+    endfor
+endfunction

@@ -1,0 +1,427 @@
+# testRoadieModel.bare - Road plan model tests
+
+include <unittest.bare>
+include '../roadieModel.bare'
+include 'testRoadieData.bare'
+
+
+#
+# Validation
+#
+
+
+function testRoadieValidate():
+    validated = roadieValidate(testRoadiePlanSimple())
+    unittestDeepEqual(validated, {'plan': testRoadiePlanSimple()})
+endfunction
+unittestRunTest('testRoadieValidate')
+
+
+function testRoadieValidate_schemaError():
+    plan = testRoadiePlanSimple()
+    objectDelete(plan, 'title')
+    unittestDeepEqual(roadieValidate(plan), {'error': 'Required member "title" missing'})
+endfunction
+unittestRunTest('testRoadieValidate_schemaError')
+
+
+function testRoadieValidate_raggedRows():
+    plan = testRoadiePlanSimple()
+    arrayPop(arrayGet(objectGet(objectGet(plan, 'topography'), 'elevations'), 2))
+    unittestDeepEqual(roadieValidate(plan), {'error': 'Elevation row 2 has 4 elevations, expected 5'})
+endfunction
+unittestRunTest('testRoadieValidate_raggedRows')
+
+
+function testRoadieValidate_structureEndStation():
+    plan = testRoadiePlanSimple()
+    option = arrayGet(objectGet(plan, 'options'), 0)
+    objectSet(option, 'structures', [{'type': 'culvert', 'station': 5}, {'type': 'bridge', 'station': 10, 'endStation': 10}])
+    unittestDeepEqual(roadieValidate(plan), \
+        {'error': 'Option "Flat" bridge at station 10 requires an endStation greater than its station'})
+    objectSet(option, 'structures', [{'type': 'retainingWall', 'station': 10}])
+    unittestDeepEqual(roadieValidate(plan), \
+        {'error': 'Option "Flat" retainingWall at station 10 requires an endStation greater than its station'})
+endfunction
+unittestRunTest('testRoadieValidate_structureEndStation')
+
+
+function testRoadieCriteria():
+    unittestDeepEqual(roadieCriteria(testRoadiePlanSimple()), \
+        {'maxGrade': 12, 'minRadius': 15, 'rockCutSlope': 0.5, 'maxWallHeight': 6})
+    unittestDeepEqual(roadieCriteria(testRoadiePlanComplex()), \
+        {'maxGrade': 10, 'minRadius': 50, 'rockCutSlope': 0.5, 'maxWallHeight': 3})
+endfunction
+unittestRunTest('testRoadieCriteria')
+
+
+function testRoadieRates():
+    plan = testRoadiePlanSimple()
+    rates = roadieRates(plan)
+    unittestDeepEqual(rates, roadieDefaultRates)
+    objectSet(plan, 'costRates', {'gravel': 25})
+    rates = roadieRates(plan)
+    unittestEqual(objectGet(rates, 'gravel'), 25)
+    unittestEqual(objectGet(rates, 'asphalt'), 40)
+    unittestEqual(objectGet(roadieDefaultRates, 'gravel'), 19)
+endfunction
+unittestRunTest('testRoadieRates')
+
+
+function testRoadieUnits():
+    unittestEqual(roadieUnitScale(testRoadiePlanSimple()), 1)
+    unittestEqual(roadieUnitScale(testRoadiePlanComplex()), 0.3048)
+    unittestEqual(roadieUnitLength(testRoadiePlanSimple(), 3, 10), 3)
+    unittestEqual(roadieUnitLength(testRoadiePlanComplex(), 3, 10), 10)
+endfunction
+unittestRunTest('testRoadieUnits')
+
+
+#
+# Topography
+#
+
+
+function testRoadieTopo():
+    topo = roadieTopo(testRoadiePlanSimple())
+    unittestEqual(objectGet(topo, 'spacing'), 10)
+    unittestEqual(objectGet(topo, 'nRows'), 5)
+    unittestEqual(objectGet(topo, 'nCols'), 5)
+    unittestEqual(objectGet(topo, 'width'), 40)
+    unittestEqual(objectGet(topo, 'height'), 40)
+    unittestEqual(objectGet(topo, 'minZ'), 100)
+    unittestEqual(objectGet(topo, 'maxZ'), 104)
+    unittestDeepEqual(objectGet(topo, 'features'), [])
+    unittestEqual(arrayLength(objectGet(roadieTopo(testRoadiePlanComplex()), 'features')), 5)
+endfunction
+unittestRunTest('testRoadieTopo')
+
+
+function testRoadieElevation():
+    plan = testRoadiePlanSimple()
+    rows = objectGet(objectGet(plan, 'topography'), 'elevations')
+    arraySet(arrayGet(rows, 0), 4, 110)
+    topo = roadieTopo(plan)
+
+    # Grid points and interpolation
+    unittestEqual(roadieElevation(topo, 0, 0), 100)
+    unittestEqual(roadieElevation(topo, 0, 40), 104)
+    unittestEqual(roadieElevation(topo, 40, 40), 110)
+    unittestEqual(mathRound(roadieElevation(topo, 15, 25), 6), 102.5)
+    unittestEqual(mathRound(roadieElevation(topo, 35, 35), 6), 105)
+
+    # Outside
+    unittestEqual(roadieElevation(topo, -1, 10), null)
+    unittestEqual(roadieElevation(topo, 10, -1), null)
+    unittestEqual(roadieElevation(topo, 41, 10), null)
+    unittestEqual(roadieElevation(topo, 10, 41), null)
+endfunction
+unittestRunTest('testRoadieElevation')
+
+
+function testRoadieGradient():
+    topo = roadieTopo(testRoadiePlanSimple())
+    unittestDeepEqual(roadieGradient(topo, 20, 20), [0, 0.1])
+    unittestDeepEqual(roadieGradient(topo, 0, 0), [0, 0.1])
+    unittestDeepEqual(roadieGradient(topo, 40, 40), [0, 0.1])
+endfunction
+unittestRunTest('testRoadieGradient')
+
+
+function testRoadiePointInPolygon():
+    square = [{'x': 0, 'y': 0}, {'x': 10, 'y': 0}, {'x': 10, 'y': 10}, {'x': 0, 'y': 10}]
+    unittestEqual(roadiePointInPolygon(5, 5, square), true)
+    unittestEqual(roadiePointInPolygon(15, 5, square), false)
+    unittestEqual(roadiePointInPolygon(5, -5, square), false)
+endfunction
+unittestRunTest('testRoadiePointInPolygon')
+
+
+function testRoadieSegmentIntersect():
+    unittestEqual(roadieSegmentIntersect(0, 0, 10, 0, 5, -5, 5, 5), 0.5)
+    unittestEqual(roadieSegmentIntersect(0, 0, 10, 0, 0, 1, 10, 1), null)
+    unittestEqual(roadieSegmentIntersect(0, 0, 10, 0, 15, -5, 15, 5), null)
+endfunction
+unittestRunTest('testRoadieSegmentIntersect')
+
+
+#
+# Cross sections
+#
+
+
+function testRoadieLinearAreas():
+    unittestDeepEqual(roadieLinearAreas(1, 3, 10), [20, 0])
+    unittestDeepEqual(roadieLinearAreas(-1, -3, 10), [0, 20])
+    unittestDeepEqual(roadieLinearAreas(-1, 3, 8), [9, 1])
+    unittestDeepEqual(roadieLinearAreas(0, 0, 8), [0, 0])
+endfunction
+unittestRunTest('testRoadieLinearAreas')
+
+
+function testRoadieSideSection():
+    # Wall
+    unittestDeepEqual(roadieSideSection(-2, 0, 1, 1.5, true), \
+        {'kind': 'wall', 'offset': 0, 'drop': -2, 'wall': 2, 'cut': 0, 'fill': 0, 'daylight': true})
+
+    # Cut on flat ground
+    unittestDeepEqual(roadieSideSection(2, 0, 1, 1.5, false), \
+        {'kind': 'cut', 'offset': 2, 'drop': 2, 'wall': 0, 'cut': 2, 'fill': 0, 'daylight': true})
+
+    # Cut on ground steeper than the cut slope
+    unittestDeepEqual(roadieSideSection(2, 2, 1, 1.5, false), \
+        {'kind': 'cut', 'offset': 6, 'drop': 6, 'wall': 0, 'cut': 30, 'fill': 0, 'daylight': false})
+
+    # Fill on flat ground
+    unittestDeepEqual(roadieSideSection(-2, 0, 1, 2, false), \
+        {'kind': 'fill', 'offset': 4, 'drop': -2, 'wall': 0, 'cut': 0, 'fill': 4, 'daylight': true})
+
+    # Fill on ground steeper than the fill slope
+    unittestDeepEqual(roadieSideSection(-2, -1, 1, 2, false), \
+        {'kind': 'fill', 'offset': 12, 'drop': -6, 'wall': 0, 'cut': 0, 'fill': 60, 'daylight': false})
+
+    # At grade
+    unittestDeepEqual(roadieSideSection(0, 0.5, 1, 1.5, false), \
+        {'kind': 'none', 'offset': 0, 'drop': 0, 'wall': 0, 'cut': 0, 'fill': 0, 'daylight': true})
+endfunction
+unittestRunTest('testRoadieSideSection')
+
+
+function testRoadieCrossSection():
+    section = roadieCrossSection(0, 0.5, 2, 1, 1, false, true)
+    unittestDeepEqual(section, { \
+        'cut': 2, \
+        'fill': 1, \
+        'left': {'kind': 'cut', 'offset': 2, 'drop': 2, 'wall': 0, 'cut': 1, 'fill': 0, 'daylight': true}, \
+        'right': {'kind': 'wall', 'offset': 0, 'drop': -1, 'wall': 1, 'cut': 0, 'fill': 0, 'daylight': true} \
+    })
+endfunction
+unittestRunTest('testRoadieCrossSection')
+
+
+#
+# Road analysis
+#
+
+
+function testRoadieAlignment():
+    plan = testRoadiePlanComplex()
+    topo = roadieTopo(plan)
+    alignment = roadieAlignment(topo, arrayGet(objectGet(plan, 'options'), 1))
+    unittestDeepEqual(alignment, [ \
+        {'x': 0, 'y': 40, 'z': 132, 'station': 0}, \
+        {'x': 40, 'y': 40, 'z': 132, 'station': 40}, \
+        {'x': 90, 'y': 40, 'z': 0, 'station': 90} \
+    ])
+endfunction
+unittestRunTest('testRoadieAlignment')
+
+
+function testRoadieStructureAt():
+    wall = {'type': 'retainingWall', 'station': 10, 'endStation': 20, 'side': 'left'}
+    wallBoth = {'type': 'retainingWall', 'station': 30, 'endStation': 40}
+    culvert = {'type': 'culvert', 'station': 50}
+    structures = [wall, wallBoth, culvert]
+    unittestDeepEqual(roadieStructureAt(structures, 'retainingWall', 15, 'left'), wall)
+    unittestEqual(roadieStructureAt(structures, 'retainingWall', 15, 'right'), null)
+    unittestDeepEqual(roadieStructureAt(structures, 'retainingWall', 35, 'right'), wallBoth)
+    unittestEqual(roadieStructureAt(structures, 'retainingWall', 25, 'right'), null)
+    unittestDeepEqual(roadieStructureAt(structures, 'culvert', 50, null), culvert)
+    unittestEqual(roadieStructureAt(structures, 'bridge', 50, null), null)
+endfunction
+unittestRunTest('testRoadieStructureAt')
+
+
+function testRoadieAnalyze_simple():
+    plan = testRoadiePlanSimple()
+    analysis = roadieAnalyze(plan, 0)
+    samples = objectGet(analysis, 'samples')
+    unittestEqual(arrayLength(samples), 13)
+    unittestDeepEqual(arrayGet(samples, 6), { \
+        'station': 20, \
+        'x': 20, \
+        'y': 20, \
+        'z': 102, \
+        'ground': 102, \
+        'dx': 1, \
+        'dy': 0, \
+        'slope': 0.1, \
+        'outside': false, \
+        'rock': false, \
+        'bridge': false, \
+        'cut': objectGet(arrayGet(samples, 6), 'cut'), \
+        'fill': objectGet(arrayGet(samples, 6), 'fill'), \
+        'left': roadieSideSection(0.5, 0.1, 1, 1.5, false), \
+        'right': roadieSideSection(-0.5, -0.1, 1, 1.5, false) \
+    })
+
+    # Plane cross section: road 1.25 cut and 1.25 fill, left cut slope 0.5 * 0.5 / 0.9, right fill slope
+    # 0.5 * 0.5 / (2 / 3 - 0.1)
+    unittestEqual(mathRound(objectGet(arrayGet(samples, 6), 'cut'), 6), mathRound(1.25 + 0.25 / 1.8, 6))
+    unittestEqual(mathRound(objectGet(arrayGet(samples, 6), 'fill'), 6), mathRound(1.25 + 0.25 / (2 * (2 / 3 - 0.1)), 6))
+    unittestEqual(objectGet(analysis, 'name'), 'Flat')
+    unittestEqual(objectGet(analysis, 'length'), 40)
+    unittestEqual(mathRound(objectGet(analysis, 'cut'), 4), mathRound(40 * (1.25 + 0.25 / 1.8), 4))
+    unittestEqual(mathRound(objectGet(analysis, 'fill'), 4), mathRound(40 * (1.25 + 0.25 / (2 * (2 / 3 - 0.1))), 4))
+    unittestEqual(mathRound(objectGet(analysis, 'borrow'), 4), \
+        mathRound(objectGet(analysis, 'fill') - 0.87 * objectGet(analysis, 'cut'), 4))
+    unittestEqual(objectGet(analysis, 'waste'), 0)
+    unittestEqual(objectGet(analysis, 'maxGrade'), 0)
+    unittestEqual(objectGet(analysis, 'minRadius'), null)
+    unittestEqual(objectGet(analysis, 'wallArea'), 0)
+    unittestEqual(objectGet(analysis, 'bridgeLength'), 0)
+    unittestEqual(objectGet(analysis, 'culvertCount'), 0)
+    unittestDeepEqual(objectGet(analysis, 'grades'), [{'station': 0, 'endStation': 40, 'grade': 0}])
+    unittestDeepEqual(objectGet(analysis, 'warnings'), [])
+
+    # Costs
+    costs = objectGet(analysis, 'costs')
+    unittestEqual(arrayLength(costs), 14)
+    unittestDeepEqual(arrayGet(costs, 7), {'name': 'Surfacing (gravel)', 'quantity': 400, 'type': 'area', 'cost': 7600})
+    unittestDeepEqual(arrayGet(costs, 8), {'name': 'Ditches and cross drains', 'quantity': 40, 'type': 'length', 'cost': 1800})
+    subtotal = 0
+    for cost, ixCost in costs:
+        if ixCost < 13:
+            subtotal = subtotal + objectGet(cost, 'cost')
+        endif
+    endfor
+    unittestDeepEqual(arrayGet(costs, 13), {'name': 'Mobilization', 'quantity': null, 'type': null, 'cost': subtotal * 0.1})
+    unittestEqual(mathRound(objectGet(analysis, 'total'), 6), mathRound(subtotal * 1.1, 6))
+    unittestEqual(objectGet(analysis, 'score'), objectGet(analysis, 'total') / 1000)
+    unittestEqual(mathRound(objectGet(analysis, 'score'), 3), 13.667)
+endfunction
+unittestRunTest('testRoadieAnalyze_simple')
+
+
+function testRoadieAnalyze_complex():
+    plan = objectGet(roadieValidate(testRoadiePlanComplex()), 'plan')
+    analysis = roadieAnalyze(plan, 0)
+    unittestEqual(objectGet(analysis, 'name'), 'Main')
+    unittestEqual(mathRound(objectGet(analysis, 'length'), 4), mathRound(70 + mathSqrt(5) + 14, 4))
+    unittestEqual(arrayLength(objectGet(analysis, 'samples')), 27)
+    unittestEqual(objectGet(analysis, 'maxGrade'), 100)
+    unittestEqual(mathRound(objectGet(analysis, 'minRadius'), 4), 6.25)
+    unittestEqual(objectGet(analysis, 'bridgeLength'), 4)
+    unittestEqual(objectGet(analysis, 'culvertCount'), 2)
+    unittestEqual(objectGet(analysis, 'borrow'), 0)
+    unittestEqual(mathRound(objectGet(analysis, 'waste'), 2), 305.59)
+    unittestEqual(mathRound(objectGet(analysis, 'wallArea'), 2), 53.07)
+    unittestEqual(mathRound(objectGet(analysis, 'score'), 2), 47.58)
+    unittestDeepEqual(objectGet(analysis, 'warnings'), [ \
+        'Grade 20.0% exceeds the maximum grade (10%) from 0+40 to 0+50', \
+        'Grade 100.0% exceeds the maximum grade (10%) from 0+70 to 0+86', \
+        'Curve radius 6 ft at 0+70 is less than the minimum radius (50 ft)', \
+        'The alignment start is 15 ft from the plan start point', \
+        'The road grade at the start is 2.0 ft below the ground', \
+        'The alignment end is 39 ft from the plan end point', \
+        'The road is outside the topography from 0+83 to 0+86', \
+        'The road crosses an exclusion area from 0+63 to 0+66', \
+        'The fill slope does not daylight (retaining wall needed) from 0+07 to 0+30', \
+        'The fill slope does not daylight (retaining wall needed) from 0+40 to 0+43', \
+        'The fill slope does not daylight (retaining wall needed) from 0+53 to 0+80', \
+        'The cut slope does not daylight (retaining wall needed) from 0+07 to 0+13', \
+        'The cut slope does not daylight (retaining wall needed) from 0+27 to 0+43', \
+        'The cut slope does not daylight (retaining wall needed) from 0+53 to 0+73', \
+        'The retaining wall exceeds the maximum wall height from 0+00 to 0+03', \
+        'The bridge deck is below the ground from 0+46 to 0+50', \
+        'The stream crossing at 0+45 has no culvert or bridge', \
+        'The culvert at 2+00 is beyond the end of the road' \
+    ])
+
+    # Rock, bridge, outside, and wall samples
+    samples = objectGet(analysis, 'samples')
+    unittestEqual(objectGet(arrayGet(samples, 6), 'rock'), true)
+    unittestEqual(objectGet(arrayGet(samples, 14), 'bridge'), true)
+    unittestEqual(objectGet(arrayGet(samples, 26), 'outside'), true)
+    unittestEqual(objectGet(objectGet(arrayGet(samples, 11), 'right'), 'kind'), 'wall')
+
+    # Quantities
+    costs = objectGet(analysis, 'costs')
+    unittestDeepEqual(arrayGet(costs, 9), \
+        {'name': 'Culverts (2)', 'quantity': 29, 'type': 'length', 'cost': objectGet(arrayGet(costs, 9), 'cost')})
+    unittestDeepEqual(arrayGet(costs, 11), \
+        {'name': 'Bridges', 'quantity': 40, 'type': 'area', 'cost': 40 * 0.3048 * 0.3048 * 2700})
+endfunction
+unittestRunTest('testRoadieAnalyze_complex')
+
+
+function testRoadieAnalyze_groundAlignment():
+    plan = objectGet(roadieValidate(testRoadiePlanComplex()), 'plan')
+    analysis = roadieAnalyze(plan, 1)
+    unittestEqual(objectGet(analysis, 'name'), 'Alt')
+    unittestEqual(objectGet(analysis, 'minRadius'), null)
+    unittestDeepEqual(objectGet(analysis, 'grades'), [ \
+        {'station': 0, 'endStation': 40, 'grade': 0}, \
+        {'station': 40, 'endStation': 90, 'grade': -264} \
+    ])
+    unittestDeepEqual(objectGet(analysis, 'warnings'), [ \
+        'Grade 264.0% exceeds the maximum grade (10%) from 0+40 to 0+90', \
+        'The alignment start is 25 ft from the plan start point', \
+        'The alignment end is 25 ft from the plan end point', \
+        'The road is outside the topography from 0+83 to 0+90', \
+        'The fill slope does not daylight (retaining wall needed) from 0+00 to 0+40', \
+        'The Creek A crossing at 0+12 has no culvert or bridge', \
+        'The stream crossing at 0+45 has no culvert or bridge', \
+        'The Creek C crossing at 0+48 has no culvert or bridge' \
+    ])
+endfunction
+unittestRunTest('testRoadieAnalyze_groundAlignment')
+
+
+function testRoadieSampleAt():
+    samples = [{'station': 0}, {'station': 5}, {'station': 10}]
+    unittestDeepEqual(roadieSampleAt(samples, -3), {'station': 0})
+    unittestDeepEqual(roadieSampleAt(samples, 6), {'station': 5})
+    unittestDeepEqual(roadieSampleAt(samples, 8), {'station': 10})
+    unittestDeepEqual(roadieSampleAt(samples, 30), {'station': 10})
+endfunction
+unittestRunTest('testRoadieSampleAt')
+
+
+#
+# Formatting
+#
+
+
+function testRoadieUnitLabel():
+    unittestEqual(roadieUnitLabel('feet', 'length'), 'ft')
+    unittestEqual(roadieUnitLabel('meters', 'length'), 'm')
+    unittestEqual(roadieUnitLabel('feet', 'area'), 'sf')
+    unittestEqual(roadieUnitLabel('meters', 'area'), 'm²')
+    unittestEqual(roadieUnitLabel('feet', 'volume'), 'cy')
+    unittestEqual(roadieUnitLabel('meters', 'volume'), 'm³')
+    unittestEqual(roadieUnitLabel('feet', 'haul'), 'cy-mi')
+    unittestEqual(roadieUnitLabel('meters', 'haul'), 'm³-km')
+endfunction
+unittestRunTest('testRoadieUnitLabel')
+
+
+function testRoadieDisplayQuantity():
+    unittestEqual(roadieDisplayQuantity('feet', 'volume', 54), 2)
+    unittestEqual(roadieDisplayQuantity('meters', 'volume', 54), 54)
+    unittestEqual(roadieDisplayQuantity('feet', 'haul', 27 * 5280 * 3), 3)
+    unittestEqual(roadieDisplayQuantity('meters', 'haul', 3000), 3)
+    unittestEqual(roadieDisplayQuantity('feet', 'area', 10), 10)
+endfunction
+unittestRunTest('testRoadieDisplayQuantity')
+
+
+function testRoadieStation():
+    unittestEqual(roadieStation(0, 'feet'), '0+00')
+    unittestEqual(roadieStation(1250.4, 'feet'), '12+50')
+    unittestEqual(roadieStation(1205, 'feet'), '12+05')
+    unittestEqual(roadieStation(1250, 'meters'), '1+250')
+    unittestEqual(roadieStation(1005, 'meters'), '1+005')
+endfunction
+unittestRunTest('testRoadieStation')
+
+
+function testRoadieNumber():
+    unittestEqual(roadieNumber(0, 0), '0')
+    unittestEqual(roadieNumber(999, 0), '999')
+    unittestEqual(roadieNumber(1234567.891, 0), '1,234,568')
+    unittestEqual(roadieNumber(1234.5, 1), '1,234.5')
+    unittestEqual(roadieNumber(-1234.5, 1), '-1,234.5')
+    unittestEqual(roadieNumber(-0.01, 1), '0.0')
+endfunction
+unittestRunTest('testRoadieNumber')

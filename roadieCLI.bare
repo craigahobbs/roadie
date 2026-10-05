@@ -1,0 +1,161 @@
+# roadieCLI.bare - The Roadie road plan model command-line evaluator
+#
+# Usage:
+#   bare -m roadieCLI.bare -c 'return roadieCLIMain()' -v vFile "'plan.json'" [-v vDetail true] [-v vDoc true]
+
+include 'roadie.bare'
+
+
+# The command-line evaluator main entry point - returns the process exit code
+async function roadieCLIMain():
+    # Model documentation?
+    if systemGlobalGet('vDoc'):
+        markdownPrint(schemaDocMarkdown(roadieTypes, 'RoadPlan'))
+        return 0
+    endif
+
+    # Load and validate the road plan model
+    file = systemGlobalGet('vFile')
+    if file == null:
+        markdownPrint('usage: make evaluate FILE=<plan.json> [DETAIL=1]')
+        return 1
+    endif
+    planText = systemFetch(file)
+    planValue = if(planText != null, jsonParse(planText))
+    if planValue == null:
+        markdownPrint('**Error:** Could not load the road plan "' + file + '"')
+        return 1
+    endif
+    validated = roadieValidate(planValue)
+    if objectHas(validated, 'error'):
+        markdownPrint('**Error:** The road plan "' + file + '" is invalid:', '', objectGet(validated, 'error'))
+        return 1
+    endif
+    plan = objectGet(validated, 'plan')
+    units = objectGet(plan, 'units')
+    lengthUnit = roadieUnitLabel(units, 'length')
+    volumeUnit = roadieUnitLabel(units, 'volume')
+    topo = roadieTopo(plan)
+    criteria = roadieCriteria(plan)
+
+    # Plan summary
+    markdownPrint( \
+        '# ' + objectGet(plan, 'title'), \
+        '', \
+        'Topography: ' + objectGet(topo, 'nCols') + ' x ' + objectGet(topo, 'nRows') + ' grid, ' + \
+            numberToFixed(objectGet(topo, 'spacing'), 2, true) + ' ' + lengthUnit + ' spacing, ' + \
+            roadieNumber(objectGet(topo, 'width'), 0) + ' x ' + roadieNumber(objectGet(topo, 'height'), 0) + ' ' + lengthUnit + \
+            ', elevations ' + roadieNumber(objectGet(topo, 'minZ'), 1) + ' to ' + roadieNumber(objectGet(topo, 'maxZ'), 1) + \
+            ' ' + lengthUnit, \
+        '' \
+    )
+    for endpoint in ['start', 'end']:
+        point = objectGet(plan, endpoint)
+        ground = roadieElevation(topo, objectGet(point, 'x'), objectGet(point, 'y'))
+        markdownPrint('- ' + endpoint + ' (' + numberToFixed(objectGet(point, 'x'), 1) + ', ' + \
+            numberToFixed(objectGet(point, 'y'), 1) + '): ground elevation ' + \
+            if(ground != null, numberToFixed(ground, 1), 'outside the topography'))
+    endfor
+    markdownPrint( \
+        '- Design criteria: maximum grade ' + numberToFixed(objectGet(criteria, 'maxGrade'), 1, true) + '%, minimum radius ' + \
+            numberToFixed(objectGet(criteria, 'minRadius'), 1, true) + ' ' + lengthUnit + ', maximum wall height ' + \
+            numberToFixed(objectGet(criteria, 'maxWallHeight'), 1, true) + ' ' + lengthUnit, \
+        '' \
+    )
+
+    # Options comparison
+    analyses = []
+    rows = []
+    ixOption = 0
+    while ixOption < arrayLength(objectGet(plan, 'options')):
+        analysis = roadieAnalyze(plan, ixOption)
+        arrayPush(analyses, analysis)
+        arrayPush(rows, { \
+            'Option': objectGet(analysis, 'name'), \
+            'Length': roadieNumber(objectGet(analysis, 'length'), 0), \
+            'Max Grade': numberToFixed(objectGet(analysis, 'maxGrade'), 1) + '%', \
+            'Cut': roadieNumber(roadieDisplayQuantity(units, 'volume', objectGet(analysis, 'cut')), 0), \
+            'Fill': roadieNumber(roadieDisplayQuantity(units, 'volume', objectGet(analysis, 'fill')), 0), \
+            'Borrow': roadieNumber(roadieDisplayQuantity(units, 'volume', objectGet(analysis, 'borrow')), 0), \
+            'Waste': roadieNumber(roadieDisplayQuantity(units, 'volume', objectGet(analysis, 'waste')), 0), \
+            'Warnings': '' + arrayLength(objectGet(analysis, 'warnings')), \
+            'Cost Score': roadieNumber(objectGet(analysis, 'score'), 1) \
+        })
+        ixOption = ixOption + 1
+    endwhile
+    markdownPrint('## Options (lengths in ' + lengthUnit + ', volumes in ' + volumeUnit + ')', '')
+    markdownPrint(dataTableMarkdown(rows, {'fields': objectKeys(arrayGet(rows, 0))}), '')
+
+    # Option details
+    for analysis, ixAnalysis in analyses:
+        option = arrayGet(objectGet(plan, 'options'), ixAnalysis)
+        markdownPrint('## Option ' + ixAnalysis + ': ' + objectGet(analysis, 'name'), '')
+        markdownPrint(roadieCostTable(units, analysis), '')
+        markdownPrint('### Design Warnings', '')
+        warnings = objectGet(analysis, 'warnings')
+        if arrayLength(warnings) == 0:
+            markdownPrint('None', '')
+        else:
+            for warning in warnings:
+                markdownPrint('- ' + warning)
+            endfor
+            markdownPrint('')
+        endif
+        if arrayLength(objectGet(option, 'structures', [])) > 0:
+            markdownPrint('### Structures', '')
+            markdownPrint(roadieStructuresTable(units, option, analysis), '')
+        endif
+        if systemGlobalGet('vDetail'):
+            markdownPrint('### Stations', '')
+            markdownPrint(roadieCLIStationTable(plan, analysis), '')
+        endif
+    endfor
+    return 0
+endfunction
+
+
+# Create the station detail table Markdown lines
+function roadieCLIStationTable(plan, analysis):
+    units = objectGet(plan, 'units')
+    samples = objectGet(analysis, 'samples')
+    length = objectGet(analysis, 'length')
+    step = roadieNiceStep(length, 40)
+    rows = []
+    station = 0
+    while station <= length + step * 0.5:
+        sample = roadieSampleAt(samples, mathMin(station, length))
+        left = objectGet(sample, 'left')
+        right = objectGet(sample, 'right')
+        depth = objectGet(sample, 'ground') - objectGet(sample, 'z')
+        arrayPush(rows, { \
+            'Station': roadieStation(objectGet(sample, 'station'), units), \
+            'X': numberToFixed(objectGet(sample, 'x'), 1), \
+            'Y': numberToFixed(objectGet(sample, 'y'), 1), \
+            'Ground': numberToFixed(objectGet(sample, 'ground'), 1), \
+            'Grade': numberToFixed(objectGet(sample, 'z'), 1), \
+            'Cut/Fill': if(depth >= 0, 'C ', 'F ') + numberToFixed(mathAbs(depth), 1), \
+            'Side Slope': numberToFixed(100 * mathAbs(objectGet(sample, 'slope')), 0) + '%', \
+            'Left': roadieCLISide(left), \
+            'Right': roadieCLISide(right), \
+            'Notes': arrayJoin(arrayFlat([ \
+                if(objectGet(sample, 'bridge'), ['bridge'], []), \
+                if(objectGet(sample, 'rock'), ['rock'], []), \
+                if(objectGet(sample, 'outside'), ['outside'], []) \
+            ]), ', ') \
+        })
+        station = station + step
+    endwhile
+    return dataTableMarkdown(rows, {'fields': objectKeys(arrayGet(rows, 0))})
+endfunction
+
+
+# Format a cross section side for the station detail table
+function roadieCLISide(side):
+    kind = objectGet(side, 'kind')
+    if kind == 'wall':
+        return 'wall ' + numberToFixed(objectGet(side, 'wall'), 1)
+    elif kind == 'none':
+        return ''
+    endif
+    return kind + ' ' + numberToFixed(objectGet(side, 'offset'), 1) + if(objectGet(side, 'daylight'), '', ' (no daylight)')
+endfunction

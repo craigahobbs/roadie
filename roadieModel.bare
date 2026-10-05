@@ -1,0 +1,1151 @@
+# roadieModel.bare - The Roadie road grading plan model: schema, validation, earthwork, and cost analysis
+
+include <schema.bare>
+include <schemaParser.bare>
+
+
+# The road grading plan model's Schema Markdown type model
+roadieTypes = schemaParse( \
+    '# A road grading plan model. A plan contains the site topography, the road start and end points, and', \
+    '# one or more road plan options. All lengths and elevations are in the plan\'s units.', \
+    'struct RoadPlan', \
+    '', \
+    '    # The plan title', \
+    '    string(len > 0) title', \
+    '', \
+    '    # The plan description Markdown text lines', \
+    '    optional string[] description', \
+    '', \
+    '    # The source topographic map image URL, relative to the plan JSON file', \
+    '    optional string(len > 0) image', \
+    '', \
+    '    # The unit of all lengths and elevations', \
+    '    Units units', \
+    '', \
+    '    # The site topography', \
+    '    Topography topography', \
+    '', \
+    '    # The road start point', \
+    '    Point start', \
+    '', \
+    '    # The road end point', \
+    '    Point end', \
+    '', \
+    '    # The road design criteria', \
+    '    optional DesignCriteria criteria', \
+    '', \
+    '    # The cost rate overrides', \
+    '    optional CostRates costRates', \
+    '', \
+    '    # The road plan options', \
+    '    RoadOption[len > 0] options', \
+    '', \
+    '', \
+    '# A linear unit', \
+    'enum Units', \
+    '    feet', \
+    '    meters', \
+    '', \
+    '', \
+    '# A site topography elevation grid. The grid\'s southwest corner is the origin of the plan\'s', \
+    '# coordinate system - "x" increases to the east and "y" increases to the north.', \
+    'struct Topography', \
+    '', \
+    '    # The distance between adjacent grid points', \
+    '    float(> 0) spacing', \
+    '', \
+    '    # The elevation grid rows, ordered north to south (top to bottom of the map). Each row\'s', \
+    '    # elevations are ordered west to east. The elevation at row "r" and column "c" is located at', \
+    '    # x = c * spacing and y = (rowCount - 1 - r) * spacing.', \
+    '    ElevationRow[len > 1] elevations', \
+    '', \
+    '    # The contour interval for display (default is computed from the elevation range)', \
+    '    optional float(> 0) contourInterval', \
+    '', \
+    '    # The site\'s topographic features', \
+    '    optional Feature[] features', \
+    '', \
+    '', \
+    '# A row of grid elevations, west to east', \
+    'typedef float[len > 1] ElevationRow', \
+    '', \
+    '', \
+    '# A point in plan coordinates', \
+    'struct Point', \
+    '', \
+    '    # The east coordinate', \
+    '    float x', \
+    '', \
+    '    # The north coordinate', \
+    '    float y', \
+    '', \
+    '    # The point label', \
+    '    optional string(len > 0) label', \
+    '', \
+    '', \
+    '# A topographic feature', \
+    'struct Feature', \
+    '', \
+    '    # The feature type', \
+    '    FeatureType type', \
+    '', \
+    '    # The feature\'s polyline (stream) or polygon (rock, exclusion) points', \
+    '    Point[len > 1] points', \
+    '', \
+    '    # The feature name', \
+    '    optional string(len > 0) name', \
+    '', \
+    '', \
+    '# A topographic feature type', \
+    'enum FeatureType', \
+    '', \
+    '    # A stream, drainage, or water course polyline - road crossings need a culvert or bridge', \
+    '    stream', \
+    '', \
+    '    # A rock outcrop polygon - excavation within it is rock excavation', \
+    '    rock', \
+    '', \
+    '    # An area polygon the road must avoid (building, wetland, property line, etc.)', \
+    '    exclusion', \
+    '', \
+    '', \
+    '# The road design criteria', \
+    'struct DesignCriteria', \
+    '', \
+    '    # The maximum road grade, in percent (default is 12)', \
+    '    optional float(> 0) maxGrade', \
+    '', \
+    '    # The minimum centerline curve radius (default is 50 feet / 15 meters)', \
+    '    optional float(> 0) minRadius', \
+    '', \
+    '    # The rock cut slope ratio, horizontal run per unit of vertical rise (default is 0.5)', \
+    '    optional float(> 0) rockCutSlope', \
+    '', \
+    '    # The maximum retaining wall height (default is 20 feet / 6 meters)', \
+    '    optional float(> 0) maxWallHeight', \
+    '', \
+    '', \
+    '# Cost rate overrides, in nominal US dollars per metric unit', \
+    'struct CostRates', \
+    '', \
+    '    # Clearing and grubbing, per square meter of disturbed area', \
+    '    optional float(>= 0) clearing', \
+    '', \
+    '    # Common excavation, per cubic meter (bank measure)', \
+    '    optional float(>= 0) excavation', \
+    '', \
+    '    # Rock excavation, per cubic meter (bank measure)', \
+    '    optional float(>= 0) rockExcavation', \
+    '', \
+    '    # Embankment placement and compaction, per cubic meter', \
+    '    optional float(>= 0) embankment', \
+    '', \
+    '    # Imported borrow fill, per cubic meter', \
+    '    optional float(>= 0) borrow', \
+    '', \
+    '    # Excess excavation disposal, per cubic meter', \
+    '    optional float(>= 0) waste', \
+    '', \
+    '    # Overhaul beyond the free haul distance, per cubic meter-kilometer', \
+    '    optional float(>= 0) overhaul', \
+    '', \
+    '    # The free haul distance, in meters', \
+    '    optional float(>= 0) freeHaul', \
+    '', \
+    '    # The compacted fill volume per unit of common excavation (shrinkage)', \
+    '    optional float(> 0) shrink', \
+    '', \
+    '    # The compacted fill volume per unit of rock excavation (swell)', \
+    '    optional float(> 0) swell', \
+    '', \
+    '    # Native surface finish grading, per square meter', \
+    '    optional float(>= 0) native', \
+    '', \
+    '    # Aggregate surfacing, per square meter', \
+    '    optional float(>= 0) gravel', \
+    '', \
+    '    # Asphalt paving, per square meter', \
+    '    optional float(>= 0) asphalt', \
+    '', \
+    '    # Concrete paving, per square meter', \
+    '    optional float(>= 0) concrete', \
+    '', \
+    '    # Roadside ditches and cross drains, per meter of road', \
+    '    optional float(>= 0) drainage', \
+    '', \
+    '    # Culvert pipe, per meter of length per meter of diameter', \
+    '    optional float(>= 0) culvert', \
+    '', \
+    '    # Culvert inlet and outlet treatment, per culvert', \
+    '    optional float(>= 0) culvertEnds', \
+    '', \
+    '    # Retaining wall, per square meter of wall face', \
+    '    optional float(>= 0) retainingWall', \
+    '', \
+    '    # Bridge, per square meter of deck', \
+    '    optional float(>= 0) bridge', \
+    '', \
+    '    # Erosion control and revegetation, per square meter of disturbed area', \
+    '    optional float(>= 0) erosionControl', \
+    '', \
+    '    # Mobilization, as a fraction of the other costs', \
+    '    optional float(>= 0) mobilization', \
+    '', \
+    '', \
+    '# A road plan option', \
+    'struct RoadOption', \
+    '', \
+    '    # The option name', \
+    '    string(len > 0) name', \
+    '', \
+    '    # The option description Markdown text lines', \
+    '    optional string[] description', \
+    '', \
+    '    # The road cross section', \
+    '    RoadSection section', \
+    '', \
+    '    # The road centerline alignment points, from the start point to the end point. Curves are', \
+    '    # represented by closely-spaced points.', \
+    '    AlignmentPoint[len > 1] alignment', \
+    '', \
+    '    # The special engineering structures', \
+    '    optional Structure[] structures', \
+    '', \
+    '', \
+    '# A road cross section', \
+    'struct RoadSection', \
+    '', \
+    '    # The finished road width, including shoulders', \
+    '    float(> 0) width', \
+    '', \
+    '    # The cut slope ratio, horizontal run per unit of vertical rise (default is 1)', \
+    '    optional float(> 0) cutSlope', \
+    '', \
+    '    # The fill slope ratio, horizontal run per unit of vertical drop (default is 1.5)', \
+    '    optional float(> 0) fillSlope', \
+    '', \
+    '    # The road surface (default is "gravel")', \
+    '    optional Surface surface', \
+    '', \
+    '', \
+    '# A road surface type', \
+    'enum Surface', \
+    '    native', \
+    '    gravel', \
+    '    asphalt', \
+    '    concrete', \
+    '', \
+    '', \
+    '# A road centerline alignment point', \
+    'struct AlignmentPoint', \
+    '', \
+    '    # The east coordinate', \
+    '    float x', \
+    '', \
+    '    # The north coordinate', \
+    '    float y', \
+    '', \
+    '    # The finished grade elevation of the centerline (default is the ground elevation)', \
+    '    optional float z', \
+    '', \
+    '', \
+    '# A special engineering structure. Stations are distances along the road centerline from the', \
+    '# first alignment point.', \
+    'struct Structure', \
+    '', \
+    '    # The structure type', \
+    '    StructureType type', \
+    '', \
+    '    # The structure\'s station (starting station for walls, bridges, and turnouts)', \
+    '    float(>= 0) station', \
+    '', \
+    '    # The structure\'s ending station (required for walls, bridges, and turnouts)', \
+    '    optional float(>= 0) endStation', \
+    '', \
+    '    # The side of the road, facing from the start toward the end (walls and turnouts, default', \
+    '    # is "both" for walls and "right" for turnouts)', \
+    '    optional Side side', \
+    '', \
+    '    # The culvert pipe diameter (default is 1.5 feet / 0.45 meters)', \
+    '    optional float(> 0) diameter', \
+    '', \
+    '    # The structure name', \
+    '    optional string(len > 0) name', \
+    '', \
+    '', \
+    '# A special engineering structure type', \
+    'enum StructureType', \
+    '', \
+    '    # A retaining wall supports a fill or cut where the side slope is too steep to daylight', \
+    '    retainingWall', \
+    '', \
+    '    # A bridge spans a stream or ravine - there is no earthwork within the span', \
+    '    bridge', \
+    '', \
+    '    # A culvert carries a stream or ditch water under the road', \
+    '    culvert', \
+    '', \
+    '    # A turnout widens a single-lane road for passing (10 feet / 3 meters)', \
+    '    turnout', \
+    '', \
+    '', \
+    '# A side of the road', \
+    'enum Side', \
+    '    left', \
+    '    right', \
+    '    both' \
+)
+
+
+# The default cost rates, in nominal US dollars per metric unit
+roadieDefaultRates = { \
+    'clearing': 2, \
+    'excavation': 20, \
+    'rockExcavation': 100, \
+    'embankment': 6.5, \
+    'borrow': 26, \
+    'waste': 10, \
+    'overhaul': 2.5, \
+    'freeHaul': 150, \
+    'shrink': 0.87, \
+    'swell': 1.1, \
+    'native': 1.5, \
+    'gravel': 19, \
+    'asphalt': 40, \
+    'concrete': 90, \
+    'drainage': 45, \
+    'culvert': 875, \
+    'culvertEnds': 6000, \
+    'retainingWall': 650, \
+    'bridge': 2700, \
+    'erosionControl': 0.75, \
+    'mobilization': 0.1 \
+}
+
+
+# The meters per foot
+roadieMetersPerFoot = 0.3048
+
+
+# Get the meters per plan unit
+function roadieUnitScale(plan):
+    return if(objectGet(plan, 'units') == 'feet', roadieMetersPerFoot, 1)
+endfunction
+
+
+# Get a length in plan units from a length in meters ("feet" value for feet plans)
+function roadieUnitLength(plan, meters, feet):
+    return if(objectGet(plan, 'units') == 'feet', feet, meters)
+endfunction
+
+
+# Validate a road plan model - returns an object with "plan" on success, or "error" on failure
+function roadieValidate(planValue):
+    validated = schemaValidateEx(roadieTypes, 'RoadPlan', planValue)
+    error = objectGet(validated, 'error')
+    if error != null:
+        return {'error': error}
+    endif
+    plan = objectGet(validated, 'result')
+
+    # Elevation rows must all be the same length
+    rows = objectGet(objectGet(plan, 'topography'), 'elevations')
+    nCols = arrayLength(arrayGet(rows, 0))
+    for row, ixRow in rows:
+        if arrayLength(row) != nCols:
+            return {'error': 'Elevation row ' + ixRow + ' has ' + arrayLength(row) + ' elevations, expected ' + nCols}
+        endif
+    endfor
+
+    # Structure ranges
+    for option in objectGet(plan, 'options'):
+        for structure in objectGet(option, 'structures', []):
+            type = objectGet(structure, 'type')
+            if type != 'culvert':
+                endStation = objectGet(structure, 'endStation')
+                if endStation == null || endStation <= objectGet(structure, 'station'):
+                    return {'error': 'Option "' + objectGet(option, 'name') + '" ' + type + ' at station ' + \
+                        objectGet(structure, 'station') + ' requires an endStation greater than its station'}
+                endif
+            endif
+        endfor
+    endfor
+
+    return {'plan': plan}
+endfunction
+
+
+# Get the plan's design criteria, with defaults, in plan units
+function roadieCriteria(plan):
+    criteria = objectGet(plan, 'criteria', {})
+    return { \
+        'maxGrade': objectGet(criteria, 'maxGrade', 12), \
+        'minRadius': objectGet(criteria, 'minRadius', roadieUnitLength(plan, 15, 50)), \
+        'rockCutSlope': objectGet(criteria, 'rockCutSlope', 0.5), \
+        'maxWallHeight': objectGet(criteria, 'maxWallHeight', roadieUnitLength(plan, 6, 20)) \
+    }
+endfunction
+
+
+# Get the plan's cost rates, with defaults
+function roadieRates(plan):
+    rates = objectCopy(roadieDefaultRates)
+    objectAssign(rates, objectGet(plan, 'costRates', {}))
+    return rates
+endfunction
+
+
+#
+# Topography
+#
+
+
+# Create a topography grid object from a plan
+function roadieTopo(plan):
+    topography = objectGet(plan, 'topography')
+    rows = objectGet(topography, 'elevations')
+    spacing = objectGet(topography, 'spacing')
+    nRows = arrayLength(rows)
+    nCols = arrayLength(arrayGet(rows, 0))
+
+    # Compute the elevation range
+    minZ = null
+    maxZ = null
+    for row in rows:
+        for z in row:
+            minZ = if(minZ == null, z, mathMin(minZ, z))
+            maxZ = if(maxZ == null, z, mathMax(maxZ, z))
+        endfor
+    endfor
+
+    return { \
+        'rows': rows, \
+        'spacing': spacing, \
+        'nRows': nRows, \
+        'nCols': nCols, \
+        'width': (nCols - 1) * spacing, \
+        'height': (nRows - 1) * spacing, \
+        'minZ': minZ, \
+        'maxZ': maxZ, \
+        'features': objectGet(topography, 'features', []) \
+    }
+endfunction
+
+
+# Get the ground elevation at a point (bilinear interpolation), or null if outside the grid
+function roadieElevation(topo, x, y):
+    spacing = objectGet(topo, 'spacing')
+    tolerance = spacing * 1e-6
+    if x < -tolerance || y < -tolerance || x > objectGet(topo, 'width') + tolerance || \
+            y > objectGet(topo, 'height') + tolerance:
+        return null
+    endif
+    nRows = objectGet(topo, 'nRows')
+    nCols = objectGet(topo, 'nCols')
+    fCol = x / spacing
+    fRow = (nRows - 1) - y / spacing
+    col = mathMax(0, mathMin(nCols - 2, mathFloor(fCol)))
+    row = mathMax(0, mathMin(nRows - 2, mathFloor(fRow)))
+    tx = mathMax(0, mathMin(1, fCol - col))
+    ty = mathMax(0, mathMin(1, fRow - row))
+    rows = objectGet(topo, 'rows')
+    rowTop = arrayGet(rows, row)
+    rowBottom = arrayGet(rows, row + 1)
+    zTop = arrayGet(rowTop, col) * (1 - tx) + arrayGet(rowTop, col + 1) * tx
+    zBottom = arrayGet(rowBottom, col) * (1 - tx) + arrayGet(rowBottom, col + 1) * tx
+    return zTop * (1 - ty) + zBottom * ty
+endfunction
+
+
+# Get the ground elevation gradient [dz/dx, dz/dy] at a point within the grid
+function roadieGradient(topo, x, y):
+    h = objectGet(topo, 'spacing') * 0.5
+    width = objectGet(topo, 'width')
+    height = objectGet(topo, 'height')
+    x1 = mathMax(0, x - h)
+    x2 = mathMin(width, x + h)
+    y1 = mathMax(0, y - h)
+    y2 = mathMin(height, y + h)
+    yc = mathMax(0, mathMin(height, y))
+    xc = mathMax(0, mathMin(width, x))
+    dzdx = (roadieElevation(topo, x2, yc) - roadieElevation(topo, x1, yc)) / (x2 - x1)
+    dzdy = (roadieElevation(topo, xc, y2) - roadieElevation(topo, xc, y1)) / (y2 - y1)
+    return [dzdx, dzdy]
+endfunction
+
+
+# Test if a point is inside a polygon of point objects
+function roadiePointInPolygon(x, y, points):
+    inside = false
+    count = arrayLength(points)
+    j = count - 1
+    for point, i in points:
+        pointJ = arrayGet(points, j)
+        xi = objectGet(point, 'x')
+        yi = objectGet(point, 'y')
+        xj = objectGet(pointJ, 'x')
+        yj = objectGet(pointJ, 'y')
+        if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = !inside
+        endif
+        j = i
+    endfor
+    return inside
+endfunction
+
+
+# Compute the intersection of segments p1-p2 and p3-p4 - returns the fraction along p1-p2, or null
+function roadieSegmentIntersect(x1, y1, x2, y2, x3, y3, x4, y4):
+    denom = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3)
+    if denom == 0:
+        return null
+    endif
+    t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / denom
+    u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / denom
+    if t < 0 || t > 1 || u < 0 || u > 1:
+        return null
+    endif
+    return t
+endfunction
+
+
+#
+# Cross sections
+#
+
+
+# Compute the positive and negative areas of a linearly-varying depth over a length
+function roadieLinearAreas(v1, v2, length):
+    if v1 >= 0 && v2 >= 0:
+        return [(v1 + v2) * 0.5 * length, 0]
+    elif v1 <= 0 && v2 <= 0:
+        return [0, -(v1 + v2) * 0.5 * length]
+    endif
+    positive = mathMax(v1, v2)
+    negative = -mathMin(v1, v2)
+    lengthPositive = length * positive / (positive + negative)
+    return [0.5 * positive * lengthPositive, 0.5 * negative * (length - lengthPositive)]
+endfunction
+
+
+# Compute one side of a road cross section beyond the road edge.
+#
+# depth - the ground elevation minus the grade elevation at the road edge (positive is cut)
+# rise - the ground's rise per unit of outward offset
+#
+# Returns the side object: "kind" is 'cut', 'fill', 'wall', or 'none'; "offset" is the slope's
+# horizontal width beyond the road edge; "drop" is the slope's elevation change from the road edge to
+# the daylight point; "wall" is the retaining wall height; "cut" and "fill" are the side's areas; and
+# "daylight" is false if the slope does not meet the ground.
+function roadieSideSection(depth, rise, cutSlope, fillSlope, isWall):
+    if isWall:
+        return {'kind': 'wall', 'offset': 0, 'drop': depth, 'wall': mathAbs(depth), 'cut': 0, 'fill': 0, 'daylight': true}
+    elif depth > 0:
+        approach = 1 / cutSlope - rise
+        daylight = approach > 1e-6
+        offset = if(daylight, depth / approach, 3 * depth * cutSlope)
+        area = depth * offset - approach * offset * offset * 0.5
+        return {'kind': 'cut', 'offset': offset, 'drop': offset / cutSlope, 'wall': 0, 'cut': area, 'fill': 0, 'daylight': daylight}
+    elif depth < 0:
+        approach = rise + 1 / fillSlope
+        daylight = approach > 1e-6
+        offset = if(daylight, -depth / approach, -3 * depth * fillSlope)
+        area = -depth * offset - approach * offset * offset * 0.5
+        return {'kind': 'fill', 'offset': offset, 'drop': -offset / fillSlope, 'wall': 0, 'cut': 0, 'fill': area, 'daylight': daylight}
+    endif
+    return {'kind': 'none', 'offset': 0, 'drop': 0, 'wall': 0, 'cut': 0, 'fill': 0, 'daylight': true}
+endfunction
+
+
+# Compute a road cross section.
+#
+# depth - the ground elevation minus the grade elevation at the centerline (positive is cut)
+# slope - the ground's rise per unit of offset to the left
+# halfWidth - half of the road width
+#
+# Returns the cross section object with total "cut" and "fill" areas and the "left" and "right" sides.
+function roadieCrossSection(depth, slope, halfWidth, cutSlope, fillSlope, wallLeft, wallRight):
+    depthLeft = depth + slope * halfWidth
+    depthRight = depth - slope * halfWidth
+    roadAreas = roadieLinearAreas(depthRight, depthLeft, 2 * halfWidth)
+    left = roadieSideSection(depthLeft, slope, cutSlope, fillSlope, wallLeft)
+    right = roadieSideSection(depthRight, -slope, cutSlope, fillSlope, wallRight)
+    return { \
+        'cut': arrayGet(roadAreas, 0) + objectGet(left, 'cut') + objectGet(right, 'cut'), \
+        'fill': arrayGet(roadAreas, 1) + objectGet(left, 'fill') + objectGet(right, 'fill'), \
+        'left': left, \
+        'right': right \
+    }
+endfunction
+
+
+#
+# Road analysis
+#
+
+
+# Compute an option's alignment - point objects with "x", "y", "z", and "station"
+function roadieAlignment(topo, option):
+    points = []
+    station = 0
+    prev = null
+    for point in objectGet(option, 'alignment'):
+        x = objectGet(point, 'x')
+        y = objectGet(point, 'y')
+        if prev != null:
+            station = station + mathSqrt((x - objectGet(prev, 'x')) ** 2 + (y - objectGet(prev, 'y')) ** 2)
+        endif
+        z = objectGet(point, 'z')
+        if z == null:
+            z = roadieElevation(topo, x, y)
+            z = if(z == null, 0, z)
+        endif
+        prev = {'x': x, 'y': y, 'z': z, 'station': station}
+        arrayPush(points, prev)
+    endfor
+    return points
+endfunction
+
+
+# Find the structures of a type covering a station
+function roadieStructureAt(structures, type, station, side):
+    for structure in structures:
+        if objectGet(structure, 'type') == type && station >= objectGet(structure, 'station') && \
+                station <= objectGet(structure, 'endStation', objectGet(structure, 'station')):
+            structureSide = objectGet(structure, 'side', 'both')
+            if side == null || structureSide == 'both' || structureSide == side:
+                return structure
+            endif
+        endif
+    endfor
+    return null
+endfunction
+
+
+# The maximum number of cross section samples
+roadieMaxSamples = 2000
+
+
+# Compute an option's cross section samples
+function roadieSamples(plan, topo, option, alignment):
+    section = objectGet(option, 'section')
+    halfWidth = objectGet(section, 'width') * 0.5
+    cutSlope = objectGet(section, 'cutSlope', 1)
+    fillSlope = objectGet(section, 'fillSlope', 1.5)
+    rockCutSlope = objectGet(roadieCriteria(plan), 'rockCutSlope')
+    structures = objectGet(option, 'structures', [])
+    rockFeatures = []
+    for feature in objectGet(topo, 'features'):
+        if objectGet(feature, 'type') == 'rock':
+            arrayPush(rockFeatures, objectGet(feature, 'points'))
+        endif
+    endfor
+
+    # Compute the sample interval
+    length = objectGet(arrayGet(alignment, arrayLength(alignment) - 1), 'station')
+    count = mathMax(1, mathMin(roadieMaxSamples, mathCeil(length / (objectGet(topo, 'spacing') / 3))))
+    interval = length / count
+
+    # Compute each sample
+    samples = []
+    ixSegment = 0
+    ixSample = 0
+    while ixSample <= count:
+        station = ixSample * interval
+
+        # Find the alignment segment containing the station
+        while ixSegment < arrayLength(alignment) - 2 && objectGet(arrayGet(alignment, ixSegment + 1), 'station') < station:
+            ixSegment = ixSegment + 1
+        endwhile
+        p1 = arrayGet(alignment, ixSegment)
+        p2 = arrayGet(alignment, ixSegment + 1)
+        segmentLength = objectGet(p2, 'station') - objectGet(p1, 'station')
+        t = if(segmentLength > 0, mathMax(0, mathMin(1, (station - objectGet(p1, 'station')) / segmentLength)), 0)
+        x = objectGet(p1, 'x') + (objectGet(p2, 'x') - objectGet(p1, 'x')) * t
+        y = objectGet(p1, 'y') + (objectGet(p2, 'y') - objectGet(p1, 'y')) * t
+        z = objectGet(p1, 'z') + (objectGet(p2, 'z') - objectGet(p1, 'z')) * t
+        dx = if(segmentLength > 0, (objectGet(p2, 'x') - objectGet(p1, 'x')) / segmentLength, 1)
+        dy = if(segmentLength > 0, (objectGet(p2, 'y') - objectGet(p1, 'y')) / segmentLength, 0)
+
+        # Ground elevation and cross slope (outside the grid, the ground is at grade)
+        ground = roadieElevation(topo, x, y)
+        outside = ground == null
+        slope = 0
+        if outside:
+            ground = z
+        else:
+            gradient = roadieGradient(topo, x, y)
+            slope = -dy * arrayGet(gradient, 0) + dx * arrayGet(gradient, 1)
+        endif
+
+        # Rock?
+        rock = false
+        for rockPoints in rockFeatures:
+            if roadiePointInPolygon(x, y, rockPoints):
+                rock = true
+                break
+            endif
+        endfor
+
+        # Compute the cross section
+        bridge = roadieStructureAt(structures, 'bridge', station, null) != null
+        if bridge:
+            crossSection = roadieCrossSection(0, 0, halfWidth, cutSlope, fillSlope, false, false)
+        else:
+            crossSection = roadieCrossSection( \
+                ground - z, \
+                slope, \
+                halfWidth, \
+                if(rock, rockCutSlope, cutSlope), \
+                fillSlope, \
+                roadieStructureAt(structures, 'retainingWall', station, 'left') != null, \
+                roadieStructureAt(structures, 'retainingWall', station, 'right') != null \
+            )
+        endif
+
+        arrayPush(samples, { \
+            'station': station, \
+            'x': x, \
+            'y': y, \
+            'z': z, \
+            'ground': ground, \
+            'dx': dx, \
+            'dy': dy, \
+            'slope': slope, \
+            'outside': outside, \
+            'rock': rock, \
+            'bridge': bridge, \
+            'cut': objectGet(crossSection, 'cut'), \
+            'fill': objectGet(crossSection, 'fill'), \
+            'left': objectGet(crossSection, 'left'), \
+            'right': objectGet(crossSection, 'right') \
+        })
+        ixSample = ixSample + 1
+    endwhile
+
+    return samples
+endfunction
+
+
+# Add a warning for each run of samples matching a predicate
+function roadieRunWarnings(warnings, samples, units, predicate, message):
+    runStart = null
+    runEnd = null
+    for sample in samples:
+        if predicate(sample):
+            runStart = if(runStart == null, objectGet(sample, 'station'), runStart)
+            runEnd = objectGet(sample, 'station')
+        elif runStart != null:
+            arrayPush(warnings, message + ' from ' + roadieStation(runStart, units) + ' to ' + roadieStation(runEnd, units))
+            runStart = null
+        endif
+    endfor
+    if runStart != null:
+        arrayPush(warnings, message + ' from ' + roadieStation(runStart, units) + ' to ' + roadieStation(runEnd, units))
+    endif
+endfunction
+
+
+# Sample predicates for run warnings
+function roadieSampleOutside(sample):
+    return objectGet(sample, 'outside')
+endfunction
+
+function roadieSampleFillNoDaylight(sample):
+    return (objectGet(objectGet(sample, 'left'), 'kind') == 'fill' && !objectGet(objectGet(sample, 'left'), 'daylight')) || \
+        (objectGet(objectGet(sample, 'right'), 'kind') == 'fill' && !objectGet(objectGet(sample, 'right'), 'daylight'))
+endfunction
+
+function roadieSampleCutNoDaylight(sample):
+    return (objectGet(objectGet(sample, 'left'), 'kind') == 'cut' && !objectGet(objectGet(sample, 'left'), 'daylight')) || \
+        (objectGet(objectGet(sample, 'right'), 'kind') == 'cut' && !objectGet(objectGet(sample, 'right'), 'daylight'))
+endfunction
+
+function roadieSampleBridgeBuried(sample):
+    return objectGet(sample, 'bridge') && objectGet(sample, 'ground') > objectGet(sample, 'z')
+endfunction
+
+function roadieSampleWallHigh(maxWallHeight, sample):
+    return mathMax(objectGet(objectGet(sample, 'left'), 'wall'), objectGet(objectGet(sample, 'right'), 'wall')) > maxWallHeight
+endfunction
+
+function roadieSampleExcluded(exclusions, sample):
+    for exclusion in exclusions:
+        if roadiePointInPolygon(objectGet(sample, 'x'), objectGet(sample, 'y'), exclusion):
+            return true
+        endif
+    endfor
+    return false
+endfunction
+
+
+# Analyze a road plan option - compute its geometry, earthwork, structures, cost, and warnings
+function roadieAnalyze(plan, ixOption):
+    option = arrayGet(objectGet(plan, 'options'), ixOption)
+    units = objectGet(plan, 'units')
+    scale = roadieUnitScale(plan)
+    criteria = roadieCriteria(plan)
+    rates = roadieRates(plan)
+    topo = roadieTopo(plan)
+    section = objectGet(option, 'section')
+    width = objectGet(section, 'width')
+    structures = objectGet(option, 'structures', [])
+    alignment = roadieAlignment(topo, option)
+    samples = roadieSamples(plan, topo, option, alignment)
+    length = objectGet(arrayGet(alignment, arrayLength(alignment) - 1), 'station')
+    warnings = []
+
+    # Segment grades
+    grades = []
+    maxGrade = 0
+    for point, ixPoint in alignment:
+        if ixPoint > 0:
+            prev = arrayGet(alignment, ixPoint - 1)
+            run = objectGet(point, 'station') - objectGet(prev, 'station')
+            if run > 0:
+                grade = 100 * (objectGet(point, 'z') - objectGet(prev, 'z')) / run
+                arrayPush(grades, {'station': objectGet(prev, 'station'), 'endStation': objectGet(point, 'station'), 'grade': grade})
+                maxGrade = mathMax(maxGrade, mathAbs(grade))
+            endif
+        endif
+    endfor
+
+    # Grade warnings (merge consecutive steep segments)
+    runStart = null
+    runMax = 0
+    for grade, ixGrade in grades:
+        steep = mathAbs(objectGet(grade, 'grade')) > objectGet(criteria, 'maxGrade') + 1e-6
+        if steep:
+            runStart = if(runStart == null, objectGet(grade, 'station'), runStart)
+            runMax = mathMax(runMax, mathAbs(objectGet(grade, 'grade')))
+        endif
+        if runStart != null && (!steep || ixGrade == arrayLength(grades) - 1):
+            runEnd = objectGet(grade, if(steep, 'endStation', 'station'))
+            arrayPush(warnings, 'Grade ' + numberToFixed(runMax, 1) + '% exceeds the maximum grade (' + \
+                numberToFixed(objectGet(criteria, 'maxGrade'), 1, true) + '%) from ' + \
+                roadieStation(runStart, units) + ' to ' + roadieStation(runEnd, units))
+            runStart = null
+            runMax = 0
+        endif
+    endfor
+
+    # Curve radii
+    minRadius = null
+    minRadiusStation = null
+    for point, ixPoint in alignment:
+        if ixPoint > 0 && ixPoint < arrayLength(alignment) - 1:
+            pa = arrayGet(alignment, ixPoint - 1)
+            pc = arrayGet(alignment, ixPoint + 1)
+            ax = objectGet(pa, 'x')
+            ay = objectGet(pa, 'y')
+            bx = objectGet(point, 'x')
+            by = objectGet(point, 'y')
+            cx = objectGet(pc, 'x')
+            cy = objectGet(pc, 'y')
+            cross = mathAbs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax))
+            if cross > 1e-9:
+                lenAB = mathSqrt((bx - ax) ** 2 + (by - ay) ** 2)
+                lenBC = mathSqrt((cx - bx) ** 2 + (cy - by) ** 2)
+                lenAC = mathSqrt((cx - ax) ** 2 + (cy - ay) ** 2)
+                radius = lenAB * lenBC * lenAC / (2 * cross)
+                if minRadius == null || radius < minRadius:
+                    minRadius = radius
+                    minRadiusStation = objectGet(point, 'station')
+                endif
+            endif
+        endif
+    endfor
+    if minRadius != null && minRadius < objectGet(criteria, 'minRadius'):
+        arrayPush(warnings, 'Curve radius ' + numberToFixed(minRadius, 0) + ' ' + roadieUnitLabel(units, 'length') + \
+            ' at ' + roadieStation(minRadiusStation, units) + ' is less than the minimum radius (' + \
+            numberToFixed(objectGet(criteria, 'minRadius'), 0) + ' ' + roadieUnitLabel(units, 'length') + ')')
+    endif
+
+    # Start and end points
+    tolerance = mathMax(width, objectGet(topo, 'spacing'))
+    first = arrayGet(alignment, 0)
+    last = arrayGet(alignment, arrayLength(alignment) - 1)
+    for endpoint in [ \
+        ['start', objectGet(plan, 'start'), first], \
+        ['end', objectGet(plan, 'end'), last] \
+    ]:
+        planPoint = arrayGet(endpoint, 1)
+        alignPoint = arrayGet(endpoint, 2)
+        distance = mathSqrt((objectGet(planPoint, 'x') - objectGet(alignPoint, 'x')) ** 2 + \
+            (objectGet(planPoint, 'y') - objectGet(alignPoint, 'y')) ** 2)
+        if distance > tolerance:
+            arrayPush(warnings, 'The alignment ' + arrayGet(endpoint, 0) + ' is ' + numberToFixed(distance, 0) + ' ' + \
+                roadieUnitLabel(units, 'length') + ' from the plan ' + arrayGet(endpoint, 0) + ' point')
+        endif
+
+        # The road must tie in to the ground at its ends
+        ground = roadieElevation(topo, objectGet(alignPoint, 'x'), objectGet(alignPoint, 'y'))
+        if ground != null && mathAbs(objectGet(alignPoint, 'z') - ground) > roadieUnitLength(plan, 0.3, 1):
+            arrayPush(warnings, 'The road grade at the ' + arrayGet(endpoint, 0) + ' is ' + \
+                numberToFixed(mathAbs(objectGet(alignPoint, 'z') - ground), 1) + ' ' + roadieUnitLabel(units, 'length') + \
+                if(objectGet(alignPoint, 'z') > ground, ' above', ' below') + ' the ground')
+        endif
+    endfor
+
+    # Sample warnings
+    exclusions = []
+    for feature in objectGet(topo, 'features'):
+        if objectGet(feature, 'type') == 'exclusion':
+            arrayPush(exclusions, objectGet(feature, 'points'))
+        endif
+    endfor
+    roadieRunWarnings(warnings, samples, units, roadieSampleOutside, 'The road is outside the topography')
+    roadieRunWarnings(warnings, samples, units, systemPartial(roadieSampleExcluded, exclusions), \
+        'The road crosses an exclusion area')
+    roadieRunWarnings(warnings, samples, units, roadieSampleFillNoDaylight, \
+        'The fill slope does not daylight (retaining wall needed)')
+    roadieRunWarnings(warnings, samples, units, roadieSampleCutNoDaylight, \
+        'The cut slope does not daylight (retaining wall needed)')
+    roadieRunWarnings(warnings, samples, units, systemPartial(roadieSampleWallHigh, objectGet(criteria, 'maxWallHeight')), \
+        'The retaining wall exceeds the maximum wall height')
+    roadieRunWarnings(warnings, samples, units, roadieSampleBridgeBuried, 'The bridge deck is below the ground')
+
+    # Stream crossings
+    for feature in objectGet(topo, 'features'):
+        if objectGet(feature, 'type') == 'stream':
+            streamPoints = objectGet(feature, 'points')
+            for point, ixPoint in alignment:
+                if ixPoint > 0:
+                    prev = arrayGet(alignment, ixPoint - 1)
+                    for streamPoint, ixStream in streamPoints:
+                        if ixStream > 0:
+                            streamPrev = arrayGet(streamPoints, ixStream - 1)
+                            t = roadieSegmentIntersect( \
+                                objectGet(prev, 'x'), objectGet(prev, 'y'), objectGet(point, 'x'), objectGet(point, 'y'), \
+                                objectGet(streamPrev, 'x'), objectGet(streamPrev, 'y'), \
+                                objectGet(streamPoint, 'x'), objectGet(streamPoint, 'y') \
+                            )
+                            if t != null:
+                                station = objectGet(prev, 'station') + t * (objectGet(point, 'station') - objectGet(prev, 'station'))
+                                crossed = roadieStructureAt(structures, 'bridge', station, null) != null
+                                for structure in structures:
+                                    if objectGet(structure, 'type') == 'culvert' && \
+                                            mathAbs(objectGet(structure, 'station') - station) <= tolerance:
+                                        crossed = true
+                                    endif
+                                endfor
+                                if !crossed:
+                                    arrayPush(warnings, 'The ' + objectGet(feature, 'name', 'stream') + ' crossing at ' + \
+                                        roadieStation(station, units) + ' has no culvert or bridge')
+                                endif
+                            endif
+                        endif
+                    endfor
+                endif
+            endfor
+        endif
+    endfor
+
+    # Earthwork, area, and mass haul quantities (plan units)
+    shrink = objectGet(rates, 'shrink')
+    swell = objectGet(rates, 'swell')
+    cutCommon = 0
+    cutRock = 0
+    fillVolume = 0
+    clearingArea = 0
+    slopeArea = 0
+    wallArea = 0
+    surfaceLength = 0
+    mass = 0
+    haul = 0
+    for sample, ixSample in samples:
+        if ixSample > 0:
+            prev = arrayGet(samples, ixSample - 1)
+            ds = objectGet(sample, 'station') - objectGet(prev, 'station')
+            intervalCut = (objectGet(prev, 'cut') + objectGet(sample, 'cut')) * 0.5 * ds
+            intervalRock = (if(objectGet(prev, 'rock'), objectGet(prev, 'cut'), 0) + \
+                if(objectGet(sample, 'rock'), objectGet(sample, 'cut'), 0)) * 0.5 * ds
+            intervalFill = (objectGet(prev, 'fill') + objectGet(sample, 'fill')) * 0.5 * ds
+            cutRock = cutRock + intervalRock
+            cutCommon = cutCommon + intervalCut - intervalRock
+            fillVolume = fillVolume + intervalFill
+            massPrev = mass
+            mass = mass + (intervalCut - intervalRock) * shrink + intervalRock * swell - intervalFill
+            haul = haul + mathAbs(massPrev + mass) * 0.5 * ds
+
+            # Areas
+            for side in ['left', 'right']:
+                sidePrev = objectGet(prev, side)
+                sideCur = objectGet(sample, side)
+                slopeWidth = (objectGet(sidePrev, 'offset') + objectGet(sideCur, 'offset')) * 0.5
+                slopeArea = slopeArea + slopeWidth * ds
+                wallArea = wallArea + (objectGet(sidePrev, 'wall') + objectGet(sideCur, 'wall')) * 0.5 * ds
+            endfor
+            if !(objectGet(prev, 'bridge') && objectGet(sample, 'bridge')):
+                surfaceLength = surfaceLength + ds
+            endif
+        endif
+    endfor
+    clearingArea = slopeArea + surfaceLength * width
+
+    # Structures
+    bridgeLength = 0
+    turnoutArea = 0
+    culverts = []
+    turnoutWidth = roadieUnitLength(plan, 3, 10)
+    for structure in structures:
+        type = objectGet(structure, 'type')
+        station = objectGet(structure, 'station')
+        if station > length || objectGet(structure, 'endStation', station) > length:
+            arrayPush(warnings, 'The ' + type + ' at ' + roadieStation(station, units) + ' is beyond the end of the road')
+        endif
+        if type == 'bridge':
+            bridgeLength = bridgeLength + objectGet(structure, 'endStation') - station
+        elif type == 'turnout':
+            turnoutSides = if(objectGet(structure, 'side', 'right') == 'both', 2, 1)
+            turnoutArea = turnoutArea + (objectGet(structure, 'endStation') - station) * turnoutWidth * turnoutSides
+        elif type == 'culvert':
+            # The culvert length spans the road and its fill slopes
+            sample = roadieSampleAt(samples, station)
+            culvertLength = width
+            for side in ['left', 'right']:
+                sideSection = objectGet(sample, side)
+                if objectGet(sideSection, 'kind') == 'fill':
+                    culvertLength = culvertLength + objectGet(sideSection, 'offset')
+                endif
+            endfor
+            diameter = objectGet(structure, 'diameter', roadieUnitLength(plan, 0.45, 1.5))
+            arrayPush(culverts, {'length': culvertLength, 'diameter': diameter})
+        endif
+    endfor
+    clearingArea = clearingArea + turnoutArea
+    surfaceArea = surfaceLength * width + turnoutArea
+
+    # Mass balance (compacted fill measure)
+    supply = cutCommon * shrink + cutRock * swell
+    borrow = mathMax(0, fillVolume - supply)
+    waste = mathMax(0, supply - fillVolume)
+    overhaul = mathMax(0, haul - objectGet(rates, 'freeHaul') / scale * mathMax(supply, fillVolume))
+
+    # Cost items
+    scale2 = scale * scale
+    scale3 = scale2 * scale
+    surface = objectGet(section, 'surface', 'gravel')
+    culvertLength = 0
+    culvertCost = 0
+    for culvert in culverts:
+        culvertLength = culvertLength + objectGet(culvert, 'length')
+        culvertCost = culvertCost + objectGet(culvert, 'length') * scale * objectGet(culvert, 'diameter') * scale * \
+            objectGet(rates, 'culvert') + objectGet(rates, 'culvertEnds')
+    endfor
+    costs = [ \
+        roadieCostItem('Clearing and grubbing', clearingArea, 'area', clearingArea * scale2 * objectGet(rates, 'clearing')), \
+        roadieCostItem('Common excavation', cutCommon, 'volume', cutCommon * scale3 * objectGet(rates, 'excavation')), \
+        roadieCostItem('Rock excavation', cutRock, 'volume', cutRock * scale3 * objectGet(rates, 'rockExcavation')), \
+        roadieCostItem('Embankment', fillVolume, 'volume', fillVolume * scale3 * objectGet(rates, 'embankment')), \
+        roadieCostItem('Borrow (import)', borrow, 'volume', borrow * scale3 * objectGet(rates, 'borrow')), \
+        roadieCostItem('Waste (export)', waste, 'volume', waste * scale3 * objectGet(rates, 'waste')), \
+        roadieCostItem('Overhaul', overhaul, 'haul', overhaul * scale3 * 0.001 * objectGet(rates, 'overhaul')), \
+        roadieCostItem('Surfacing (' + surface + ')', surfaceArea, 'area', surfaceArea * scale2 * objectGet(rates, surface)), \
+        roadieCostItem('Ditches and cross drains', surfaceLength, 'length', surfaceLength * scale * objectGet(rates, 'drainage')), \
+        roadieCostItem('Culverts (' + arrayLength(culverts) + ')', culvertLength, 'length', culvertCost), \
+        roadieCostItem('Retaining walls', wallArea, 'area', wallArea * scale2 * objectGet(rates, 'retainingWall')), \
+        roadieCostItem('Bridges', bridgeLength * width, 'area', bridgeLength * width * scale2 * objectGet(rates, 'bridge')), \
+        roadieCostItem('Erosion control', clearingArea, 'area', clearingArea * scale2 * objectGet(rates, 'erosionControl')) \
+    ]
+    subtotal = 0
+    for cost in costs:
+        subtotal = subtotal + objectGet(cost, 'cost')
+    endfor
+    mobilization = subtotal * objectGet(rates, 'mobilization')
+    arrayPush(costs, roadieCostItem('Mobilization', null, null, mobilization))
+    total = subtotal + mobilization
+
+    return { \
+        'name': objectGet(option, 'name'), \
+        'length': length, \
+        'alignment': alignment, \
+        'samples': samples, \
+        'grades': grades, \
+        'maxGrade': maxGrade, \
+        'minRadius': minRadius, \
+        'cut': cutCommon + cutRock, \
+        'fill': fillVolume, \
+        'borrow': borrow, \
+        'waste': waste, \
+        'wallArea': wallArea, \
+        'bridgeLength': bridgeLength, \
+        'culvertCount': arrayLength(culverts), \
+        'costs': costs, \
+        'total': total, \
+        'score': total / 1000, \
+        'warnings': warnings \
+    }
+endfunction
+
+
+# Find the sample nearest a station
+function roadieSampleAt(samples, station):
+    last = arrayLength(samples) - 1
+    interval = objectGet(arrayGet(samples, last), 'station') / last
+    ixSample = mathMax(0, mathMin(last, mathRound(station / interval)))
+    return arrayGet(samples, ixSample)
+endfunction
+
+
+# Create a cost item object
+function roadieCostItem(name, quantity, quantityType, cost):
+    return {'name': name, 'quantity': quantity, 'type': quantityType, 'cost': cost}
+endfunction
+
+
+#
+# Formatting
+#
+
+
+# Get a quantity type's display unit label
+function roadieUnitLabel(units, quantityType):
+    if quantityType == 'length':
+        return if(units == 'feet', 'ft', 'm')
+    elif quantityType == 'area':
+        return if(units == 'feet', 'sf', 'm²')
+    elif quantityType == 'volume':
+        return if(units == 'feet', 'cy', 'm³')
+    endif
+    return if(units == 'feet', 'cy-mi', 'm³-km')
+endfunction
+
+
+# Convert a quantity from plan units to display units
+function roadieDisplayQuantity(units, quantityType, quantity):
+    if quantityType == 'volume':
+        return if(units == 'feet', quantity / 27, quantity)
+    elif quantityType == 'haul':
+        return if(units == 'feet', quantity / 27 / 5280, quantity / 1000)
+    endif
+    return quantity
+endfunction
+
+
+# Format a station - distance along the road centerline (e.g. "12+50" feet or "1+250" meters)
+function roadieStation(station, units):
+    base = if(units == 'feet', 100, 1000)
+    digits = if(units == 'feet', 2, 3)
+    rounded = mathRound(station)
+    major = mathFloor(rounded / base)
+    minor = '' + (rounded - major * base)
+    return major + '+' + stringRepeat('0', digits - stringLength(minor)) + minor
+endfunction
+
+
+# Format a number with thousands separators
+function roadieNumber(value, digits):
+    text = numberToFixed(mathAbs(value), digits)
+    ixDot = stringIndexOf(text, '.')
+    intText = if(ixDot == -1, text, stringSlice(text, 0, ixDot))
+    fracText = if(ixDot == -1, '', stringSlice(text, ixDot))
+    groups = []
+    while stringLength(intText) > 3:
+        arrayPush(groups, stringSlice(intText, stringLength(intText) - 3))
+        intText = stringSlice(intText, 0, stringLength(intText) - 3)
+    endwhile
+    arrayPush(groups, intText)
+    sign = if(value < 0 && mathRound(value, digits) != 0, '-', '')
+    return sign + arrayJoin(arrayReverse(groups), ',') + fracText
+endfunction

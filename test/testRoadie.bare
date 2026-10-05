@@ -1,0 +1,572 @@
+# testRoadie.bare - Roadie viewer application tests
+
+include <args.bare>
+include <dataTable.bare>
+include <schemaDoc.bare>
+include <unittest.bare>
+include <unittestMock.bare>
+include '../roadie.bare'
+include 'testRoadieData.bare'
+
+
+#
+# Application pages
+#
+
+
+async function testRoadieMain_usage():
+    unittestMockAll()
+    roadieMain()
+    unittestDeepEqual(unittestMockEnd(), [ \
+        ['documentSetTitle', ['Roadie']], \
+        ['markdownPrint', [ \
+            '# Roadie', \
+            '', \
+            'Roadie is a 3D viewer for road grading plan models. A road grading plan model contains the site', \
+            'topography, the road start and end points, and one or more road plan options.', \
+            '', \
+            'To create a road plan model from a topographic map image, run:', \
+            '', \
+            '~~~', \
+            'make plan FILE=<plan.png>', \
+            '~~~', \
+            '', \
+            'To view a road plan model, run:', \
+            '', \
+            '~~~', \
+            'make run FILE=<plan.json>', \
+            '~~~', \
+            '', \
+            'Or, view a road plan model URL with the "file" argument: [Example](#var.vFile=\'example/example.json\')', \
+            '', \
+            '[Road plan model documentation](#var.vDoc=true)' \
+        ]] \
+    ])
+endfunction
+unittestRunTest('testRoadieMain_usage')
+
+
+async function testRoadieMain_doc():
+    systemGlobalSet('vDoc', true)
+    unittestMockAll()
+    roadieMain()
+    unittestDeepEqual(unittestMockEnd(), [ \
+        ['documentSetTitle', ['Roadie Road Plan Model']], \
+        ['markdownPrint', ['[Back](#var=)', '']], \
+        ['markdownPrint', [schemaDocMarkdown(roadieTypes, 'RoadPlan')]] \
+    ])
+    systemGlobalSet('vDoc', null)
+endfunction
+unittestRunTest('testRoadieMain_doc')
+
+
+async function testRoadieMain_fetchError():
+    systemGlobalSet('vFile', 'missing.json')
+    unittestMockAll({'systemFetch': {}})
+    roadieMain()
+    unittestDeepEqual(unittestMockEnd(), [ \
+        ['systemFetch', ['missing.json']], \
+        ['documentSetTitle', ['Roadie']], \
+        ['markdownPrint', ['# Roadie', '', '**Error:** Could not load the road plan "missing.json"']] \
+    ])
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieMain_fetchError')
+
+
+async function testRoadieMain_invalid():
+    systemGlobalSet('vFile', 'invalid.json')
+    unittestMockAll({'systemFetch': {'invalid.json': '{"title": "Invalid"}'}})
+    roadieMain()
+    unittestDeepEqual(unittestMockEnd(), [ \
+        ['systemFetch', ['invalid.json']], \
+        ['documentSetTitle', ['Roadie']], \
+        ['markdownPrint', ['# Roadie', '', '**Error:** The road plan "invalid.json" is invalid:', '', \
+            markdownEscape('Required member "units" missing')]] \
+    ])
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieMain_invalid')
+
+
+async function testRoadieMain_simple():
+    systemGlobalSet('vFile', 'simple.json')
+    unittestMockAll({'systemFetch': {'simple.json': jsonStringify(testRoadiePlanSimple())}})
+    roadieMain()
+    log = unittestMockEnd()
+
+    # Expected values
+    args = argsParse(roadieArguments)
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    unittestDeepEqual(log, [ \
+        ['systemFetch', ['simple.json']], \
+        ['documentSetTitle', ['Simple Plan']], \
+        ['markdownPrint', ['# Simple Plan', '']], \
+        ['markdownPrint', ['## Plan Options', '']], \
+        ['markdownPrint', [roadieOptionsTable(plan, [analysis], 0), '']], \
+        ['markdownPrint', ['## Flat', '']], \
+        ['markdownPrint', ['**Cost score: 14** - 40 m, 0.0% maximum grade, 0 design warnings', '']], \
+        ['markdownPrint', ['### 3D View', '', roadieViewLinks(args), '']], \
+        ['elementModelRender', [roadieView3D(plan, topo, 0, analysis, args, 976, 586)]], \
+        ['markdownPrint', ['### Plan View', '']], \
+        ['elementModelRender', [roadiePlanView(plan, topo, [analysis], 0, 976)]], \
+        ['markdownPrint', ['### Profile', '']], \
+        ['elementModelRender', [roadieProfileView(plan, arrayGet(objectGet(plan, 'options'), 0), analysis, 976, 320)]], \
+        ['markdownPrint', ['### Cost', '', roadieScoreNote, '']], \
+        ['markdownPrint', [roadieCostTable('meters', analysis), '']], \
+        ['markdownPrint', ['### Design Warnings', '']], \
+        ['markdownPrint', ['No design warnings.', '']], \
+        ['markdownPrint', ['---', '', "[Road plan model documentation](#var.vDoc=true&var.vFile='simple.json')"]] \
+    ])
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieMain_simple')
+
+
+function testRoadieRender_complex():
+    systemGlobalSet('vFile', 'plans/complex.json')
+    args = argsParse(roadieArguments)
+    plan = objectGet(roadieValidate(testRoadiePlanComplex()), 'plan')
+    unittestMockAll()
+    roadieRender(args, plan)
+    log = unittestMockEnd()
+
+    # Expected values
+    topo = roadieTopo(plan)
+    analyses = [roadieAnalyze(plan, 0), roadieAnalyze(plan, 1)]
+    analysis = arrayGet(analyses, 0)
+    option = arrayGet(objectGet(plan, 'options'), 0)
+    warningLines = []
+    for warning in objectGet(analysis, 'warnings'):
+        arrayPush(warningLines, ['markdownPrint', ['- ' + markdownEscape(warning)]])
+    endfor
+    expected = [ \
+        ['documentSetTitle', ['Complex Plan']], \
+        ['markdownPrint', ['# Complex Plan', '']], \
+        ['markdownPrint', [['A complex plan.'], '']], \
+        ['markdownPrint', ['## Plan Options', '']], \
+        ['markdownPrint', [roadieOptionsTable(plan, analyses, 0), '']], \
+        ['markdownPrint', ['## Main', '']], \
+        ['markdownPrint', [['The main option.'], '']], \
+        ['markdownPrint', ['**Cost score: 48** - 86 ft, 100.0% maximum grade, 18 design warnings', '']], \
+        ['markdownPrint', ['### 3D View', '', roadieViewLinks(args), '']], \
+        ['elementModelRender', [roadieView3D(plan, topo, 0, analysis, args, 976, 586)]], \
+        ['markdownPrint', ['### Plan View', '']], \
+        ['elementModelRender', [roadiePlanView(plan, topo, analyses, 0, 976)]], \
+        ['markdownPrint', ['### Profile', '']], \
+        ['elementModelRender', [roadieProfileView(plan, option, analysis, 976, 320)]], \
+        ['markdownPrint', ['### Cost', '', roadieScoreNote, '']], \
+        ['markdownPrint', [roadieCostTable('feet', analysis), '']], \
+        ['markdownPrint', ['### Design Warnings', '']] \
+    ]
+    arrayExtend(expected, warningLines)
+    arrayExtend(expected, [ \
+        ['markdownPrint', ['']], \
+        ['markdownPrint', ['### Structures', '']], \
+        ['markdownPrint', [roadieStructuresTable('feet', option, analysis), '']], \
+        ['markdownPrint', ['### Source Map', '', '![The source topographic map](plans/map.png)', '']], \
+        ['markdownPrint', ['---', '', "[Road plan model documentation](#var.vDoc=true&var.vFile='plans%2Fcomplex.json')"]] \
+    ])
+    unittestDeepEqual(log, expected)
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieRender_complex')
+
+
+function testRoadieRender_alternate():
+    systemGlobalSet('vFile', 'complex.json')
+    systemGlobalSet('vOption', 5)
+    args = argsParse(roadieArguments)
+    plan = objectGet(roadieValidate(testRoadiePlanComplex()), 'plan')
+    unittestMockAll()
+    roadieRender(args, plan)
+    log = unittestMockEnd()
+
+    # The option is clamped to the last option, which has one design warning, no description, and no structures
+    unittestDeepEqual(arrayGet(log, 5), ['markdownPrint', ['## Alt', '']])
+    unittestDeepEqual(arrayGet(log, 6), \
+        ['markdownPrint', ['**Cost score: 471** - 90 ft, 264.0% maximum grade, 8 design warnings', '']])
+    unittestDeepEqual(arrayGet(log, arrayLength(log) - 2), \
+        ['markdownPrint', ['### Source Map', '', '![The source topographic map](map.png)', '']])
+    for entry in log:
+        unittestEqual(arrayGet(arrayGet(entry, 1), 0) == '### Structures', false)
+    endfor
+    systemGlobalSet('vFile', null)
+    systemGlobalSet('vOption', null)
+endfunction
+unittestRunTest('testRoadieRender_alternate')
+
+
+function testRoadieRender_oneWarning():
+    systemGlobalSet('vFile', 'simple.json')
+    args = argsParse(roadieArguments)
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    objectSet(objectGet(plan, 'start'), 'x', -20)
+    unittestMockAll()
+    roadieRender(args, plan)
+    log = unittestMockEnd()
+    unittestDeepEqual(arrayGet(log, 5), \
+        ['markdownPrint', ['**Cost score: 14** - 40 m, 0.0% maximum grade, 1 design warning', '']])
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieRender_oneWarning')
+
+
+#
+# Tables and links
+#
+
+
+function testRoadieViewLinks():
+    systemGlobalSet('vFile', 'a.json')
+    args = argsParse(roadieArguments)
+    unittestEqual(roadieViewLinks(args), \
+        "Rotate [Left](#var.vAzimuth=15&var.vFile='a.json') | [Right](#var.vAzimuth=45&var.vFile='a.json')" + \
+        " — Tilt [Up](#var.vFile='a.json'&var.vTilt=45) | [Down](#var.vFile='a.json'&var.vTilt=25)" + \
+        " — Exaggeration [More](#var.vExaggeration=2&var.vFile='a.json') | [Less](#var.vExaggeration=1&var.vFile='a.json')" + \
+        " — [Top](#var.vAzimuth=0&var.vFile='a.json'&var.vTilt=90) | [Reset](#var.vFile='a.json')")
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieViewLinks')
+
+
+function testRoadieViewLinks_limits():
+    systemGlobalSet('vAzimuth', 345)
+    systemGlobalSet('vTilt', 90)
+    systemGlobalSet('vExaggeration', 5)
+    args = argsParse(roadieArguments)
+    unittestEqual(roadieViewLinks(args), \
+        "Rotate [Left](#var.vAzimuth=330&var.vExaggeration=5&var.vTilt=90) | [Right](#var.vAzimuth=0&var.vExaggeration=5&var.vTilt=90)" + \
+        " — Tilt [Up](#var.vAzimuth=345&var.vExaggeration=5&var.vTilt=90) | [Down](#var.vAzimuth=345&var.vExaggeration=5&var.vTilt=80)" + \
+        " — Exaggeration [More](#var.vAzimuth=345&var.vExaggeration=5&var.vTilt=90) | [Less](#var.vAzimuth=345&var.vExaggeration=4.5&var.vTilt=90)" + \
+        " — [Top](#var.vAzimuth=0&var.vExaggeration=5&var.vTilt=90) | [Reset](#var=)")
+    systemGlobalSet('vAzimuth', null)
+    systemGlobalSet('vTilt', null)
+    systemGlobalSet('vExaggeration', null)
+endfunction
+unittestRunTest('testRoadieViewLinks_limits')
+
+
+function testRoadieOptionsTable():
+    plan = objectGet(roadieValidate(testRoadiePlanComplex()), 'plan')
+    analyses = [roadieAnalyze(plan, 0), roadieAnalyze(plan, 1)]
+    unittestDeepEqual(roadieOptionsTable(plan, analyses, 0), [ \
+        '| Option                | Length (ft) | Max Grade | Cut (cy) | Fill (cy) | Net (cy)      | Walls (sf) | Warnings | Cost Score | Relative |', \
+        '|-----------------------|-------------|-----------|----------|-----------|---------------|------------|----------|-----------:|----------|', \
+        '| **Main**              | 86          | 100.0%    | 353      | 299       | 11 export     | 53         | 18       |     **48** | +0%      |', \
+        '| [Alt](#var.vOption=1) | 90          | 264.0%    | 19,237   | 102       | 16,634 export | 0          | 8        |    **471** | +890%    |' \
+    ])
+endfunction
+unittestRunTest('testRoadieOptionsTable')
+
+
+function testRoadieOptionsTable_import():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    analysis = roadieAnalyze(plan, 0)
+    objectSet(analysis, 'score', 0)
+    unittestDeepEqual(roadieOptionsTable(plan, [analysis], 0), [ \
+        '| Option   | Length (m) | Max Grade | Cut (m³) | Fill (m³) | Net (m³)  | Walls (m²) | Warnings | Cost Score | Relative |', \
+        '|----------|------------|-----------|----------|-----------|-----------|------------|----------|-----------:|----------|', \
+        '| **Flat** | 40         | 0.0%      | 56       | 59        | 10 import | 0          | 0        |      **0** |          |' \
+    ])
+endfunction
+unittestRunTest('testRoadieOptionsTable_import')
+
+
+function testRoadieCostTable():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    analysis = roadieAnalyze(plan, 0)
+    unittestDeepEqual(roadieCostTable('meters', analysis), [ \
+        '| Item                     | Quantity | Cost Score | Share |', \
+        '|--------------------------|---------:|-----------:|------:|', \
+        '| Clearing and grubbing    |   458 m² |        0.9 |  6.7% |', \
+        '| Common excavation        |    56 m³ |        1.1 |  8.1% |', \
+        '| Embankment               |    59 m³ |        0.4 |  2.8% |', \
+        '| Borrow (import)          |    10 m³ |        0.3 |  2.0% |', \
+        '| Surfacing (gravel)       |   400 m² |        7.6 | 55.6% |', \
+        '| Ditches and cross drains |     40 m |        1.8 | 13.2% |', \
+        '| Erosion control          |   458 m² |        0.3 |  2.5% |', \
+        '| Mobilization             |          |        1.2 |  9.1% |', \
+        '| **Total**                |          |   **13.7** |       |' \
+    ])
+endfunction
+unittestRunTest('testRoadieCostTable')
+
+
+function testRoadieStructuresTable():
+    plan = objectGet(roadieValidate(testRoadiePlanComplex()), 'plan')
+    option = arrayGet(objectGet(plan, 'options'), 0)
+    analysis = roadieAnalyze(plan, 0)
+    unittestDeepEqual(roadieStructuresTable('feet', option, analysis), [ \
+        '| Type           | Name            | Station      | Side  | Detail                |', \
+        '|----------------|-----------------|--------------|-------|-----------------------|', \
+        '| Retaining wall |                 | 0+00 to 0+05 | both  | Maximum height 6.0 ft |', \
+        '| Culvert        | Creek A culvert | 0+12         |       | Diameter 2 ft         |', \
+        '| Turnout        |                 | 0+20 to 0+28 | both  |                       |', \
+        '| Retaining wall |                 | 0+30 to 0+38 | right | Maximum height 2.0 ft |', \
+        '| Bridge         |                 | 0+46 to 0+50 |       | Span 4 ft             |', \
+        '| Turnout        |                 | 0+52 to 0+58 | right |                       |', \
+        '| Culvert        |                 | 2+00         |       | Diameter 1.5 ft       |' \
+    ])
+endfunction
+unittestRunTest('testRoadieStructuresTable')
+
+
+#
+# Drawing utilities
+#
+
+
+function testRoadieRGB():
+    unittestEqual(roadieRGB([10, 20, 30]), 'rgb(10,20,30)')
+    unittestEqual(roadieRGB([100, 200, 30], 2), 'rgb(200,255,60)')
+    unittestEqual(roadieRGB([100, -5, 30.4], 1), 'rgb(100,0,30)')
+endfunction
+unittestRunTest('testRoadieRGB')
+
+
+function testRoadieTerrainColor():
+    unittestDeepEqual(roadieTerrainColor(0), [96, 148, 84])
+    unittestDeepEqual(roadieTerrainColor(0.25), [136, 163, 98])
+    unittestDeepEqual(roadieTerrainColor(0.5), [176, 178, 112])
+    unittestDeepEqual(roadieTerrainColor(1), [178, 142, 104])
+    unittestDeepEqual(roadieTerrainColor(-1), [96, 148, 84])
+    unittestDeepEqual(roadieTerrainColor(2), [178, 142, 104])
+endfunction
+unittestRunTest('testRoadieTerrainColor')
+
+
+function testRoadieBrightness():
+    unittestEqual(roadieBrightness(0, 0, 0), 1)
+    unittestEqual(mathRound(roadieBrightness(0, 0, 1), 6), mathRound(0.5 + 0.6 * 0.7071, 6))
+    unittestEqual(mathRound(roadieBrightness(0, 0, -1), 6), mathRound(0.5 + 0.6 * 0.7071, 6))
+    unittestEqual(mathRound(roadieBrightness(1, 0, 0), 6), 0.8)
+    unittestEqual(mathRound(roadieBrightness(1, -1, 0.5), 6), 0.5)
+    unittestEqual(mathRound(roadiePolygonBrightness([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]]), 6), \
+        mathRound(0.5 + 0.6 * 0.7071, 6))
+endfunction
+unittestRunTest('testRoadieBrightness')
+
+
+function testRoadieNiceStep():
+    unittestEqual(roadieNiceStep(100, 10), 10)
+    unittestEqual(roadieNiceStep(15, 10), 2)
+    unittestEqual(roadieNiceStep(30, 10), 5)
+    unittestEqual(roadieNiceStep(95, 10), 10)
+    unittestEqual(roadieNiceStep(0.03, 10), 0.005)
+endfunction
+unittestRunTest('testRoadieNiceStep')
+
+
+function testRoadieContourInterval():
+    unittestEqual(roadieContourInterval({'topography': {'contourInterval': 3}, 'minZ': 0, 'maxZ': 100}), 3)
+    unittestEqual(roadieContourInterval({'topography': {}, 'minZ': 0, 'maxZ': 100}), 5)
+endfunction
+unittestRunTest('testRoadieContourInterval')
+
+
+function testRoadieCellContours():
+    unittestDeepEqual(roadieCellContours(1, 2, 3, 4, 10), [])
+    unittestDeepEqual(roadieCellContours(0, 10, 10, 0, 5), [[0.5, 0, 0.5, 1]])
+    unittestDeepEqual(roadieCellContours(10, 0, 10, 0, 5), [[0.5, 0, 1, 0.5], [0.5, 1, 0, 0.5]])
+endfunction
+unittestRunTest('testRoadieCellContours')
+
+
+function testRoadieSvgElements():
+    unittestEqual(roadiePx(1.25), '1.3')
+    unittestEqual(roadiePx(2), '2')
+    unittestDeepEqual(roadieSvgPolygon([0, 0, 10, 0, 10, 5.55], 'red', 'blue', 1, null), \
+        {'svg': 'polygon', 'attr': {'points': '0,0 10,0 10,5.6', 'fill': 'red', 'stroke': 'blue', 'stroke-width': 1}})
+    unittestDeepEqual(roadieSvgPolygon([0, 0, 10, 0, 10, 5], 'red', 'red', 0.5, 'Tip'), { \
+        'svg': 'polygon', \
+        'attr': {'points': '0,0 10,0 10,5', 'fill': 'red', 'stroke': 'red', 'stroke-width': 0.5}, \
+        'elem': {'svg': 'title', 'elem': {'text': 'Tip'}} \
+    })
+    unittestDeepEqual(roadieSvgPolyline([0, 0, 10, 5], 'blue', 2, null), {'svg': 'polyline', 'attr': { \
+        'points': '0,0 10,5', 'fill': 'none', 'stroke': 'blue', 'stroke-width': 2, 'stroke-linejoin': 'round', \
+        'stroke-linecap': 'round'}})
+    unittestDeepEqual(roadieSvgPolyline([0, 0, 10, 5], 'blue', 2, '4 3'), {'svg': 'polyline', 'attr': { \
+        'points': '0,0 10,5', 'fill': 'none', 'stroke': 'blue', 'stroke-width': 2, 'stroke-linejoin': 'round', \
+        'stroke-linecap': 'round', 'stroke-dasharray': '4 3'}})
+    unittestDeepEqual(roadieSvgText('Hi', 1, 2, 10, 'start', 'black', false), {'svg': 'text', 'attr': { \
+        'x': '1', 'y': '2', 'font-size': 10, 'font-family': 'sans-serif', 'text-anchor': 'start', \
+        'dominant-baseline': 'middle', 'fill': 'black', 'stroke': 'white', 'stroke-width': 3, 'paint-order': 'stroke'}, \
+        'elem': {'text': 'Hi'}})
+    unittestEqual(objectGet(objectGet(roadieSvgText('Hi', 1, 2, 10, 'start', 'black', true), 'attr'), 'font-weight'), 'bold')
+    unittestDeepEqual(roadieSvg(100, 50, 'Label', []), {'svg': 'svg', 'attr': { \
+        'width': 100, 'height': 50, 'viewBox': '0 0 100 50', 'role': 'img', 'aria-label': 'Label', \
+        'style': 'background: #f4f1ea; border: 1px solid #ccc; display: block;'}, 'elem': []})
+endfunction
+unittestRunTest('testRoadieSvgElements')
+
+
+function testRoadieSamplePoints():
+    sample = { \
+        'x': 20, 'y': 20, 'z': 100, 'dx': 1, 'dy': 0, \
+        'left': {'offset': 2, 'drop': 2}, \
+        'right': {'offset': 3, 'drop': -1.5} \
+    }
+    unittestDeepEqual(roadieSamplePoints(sample, 5), [[20, 27, 102], [20, 25, 100], [20, 15, 100], [20, 12, 98.5]])
+endfunction
+unittestRunTest('testRoadieSamplePoints')
+
+
+#
+# 3D view
+#
+
+
+function testRoadieProjection():
+    topo = roadieTopo(testRoadiePlanSimple())
+    view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1}, 100, 100)
+    unittestEqual(mathRound(objectGet(view, 'scale'), 6), 1.626346)
+    unittestEqual(mathRound(objectGet(view, 'uMid'), 6), 0)
+    unittestEqual(mathRound(objectGet(view, 'vMid'), 6), 0)
+    point = roadieProject(view, 20, 20, 102)
+    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [50, 50, 0])
+    point = roadieProject(view, 40, 40, 104)
+    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [82.526912, 17.473088, -2])
+
+    # Side view from the east (looking west) - north is screen right, farther west is deeper
+    view = roadieProjection(topo, {'azimuth': 270, 'tilt': 0, 'exaggeration': 2}, 100, 100)
+    point = roadieProject(view, 0, 40, 102)
+    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [82.526912, 47.165093, 19.923894])
+
+    projected = roadieProjectPoints(view, [[0, 40, 102], [40, 0, 102]])
+    unittestEqual(mathRound(arrayGet(projected, 1), 6), 0)
+    unittestEqual(arrayLength(arrayGet(projected, 0)), 4)
+
+    # The scale doesn't change as the view rotates
+    for azimuth in [0, 30, 45, 60, 90, 135, 210, 330]:
+        view = roadieProjection(topo, {'azimuth': azimuth, 'tilt': 35, 'exaggeration': 1.5}, 100, 100)
+        unittestEqual(mathRound(objectGet(view, 'scale'), 6), 1.626346)
+    endfor
+endfunction
+unittestRunTest('testRoadieProjection')
+
+
+function testRoadieCompareDepth():
+    items = [[1, 'a'], [3, 'b'], [2, 'c']]
+    arraySort(items, roadieCompareDepth)
+    unittestDeepEqual(items, [[3, 'b'], [2, 'c'], [1, 'a']])
+endfunction
+unittestRunTest('testRoadieCompareDepth')
+
+
+function testRoadie3DPolygon():
+    topo = roadieTopo(testRoadiePlanSimple())
+    view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1}, 100, 100)
+    item = roadie3DPolygon(view, [[0, 0, 102], [40, 0, 102], [40, 40, 102], [0, 40, 102]], [100, 100, 100], 3, 'Tip')
+    fill = roadieRGB([100, 100, 100], 0.5 + 0.6 * 0.7071)
+    unittestEqual(mathRound(arrayGet(item, 0), 6), -3)
+    unittestDeepEqual(arrayGet(item, 1), roadieSvgPolygon([17.5, 82.5, 82.5, 82.5, 82.5, 17.5, 17.5, 17.5], fill, fill, 0.5, 'Tip'))
+endfunction
+unittestRunTest('testRoadie3DPolygon')
+
+
+function testRoadieFinishedRows():
+    plan = testRoadiePlanSimple()
+    option = arrayGet(objectGet(plan, 'options'), 0)
+    objectSet(objectGet(option, 'section'), 'width', 18)
+    for point in objectGet(option, 'alignment'):
+        objectSet(point, 'z', 101)
+    endfor
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 9)
+    rounded = []
+    for row in rows:
+        roundedRow = []
+        for z in row:
+            arrayPush(roundedRow, mathRound(z, 6))
+        endfor
+        arrayPush(rounded, roundedRow)
+    endfor
+    unittestDeepEqual(rounded, [ \
+        [104, 104, 104, 104, 104], \
+        [102, 102, 102, 102, 102], \
+        [101, 101, 101, 101, 101], \
+        [101, 101, 101, 101, 101], \
+        [100, 100, 100, 100, 100] \
+    ])
+
+    # The original rows are unchanged
+    unittestEqual(arrayGet(arrayGet(objectGet(topo, 'rows'), 1), 0), 103)
+endfunction
+unittestRunTest('testRoadieFinishedRows')
+
+
+function testRoadieView3D():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    args = {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5}
+    svg = roadieView3D(plan, topo, 0, analysis, args, 400, 300)
+    unittestEqual(objectGet(svg, 'svg'), 'svg')
+    unittestEqual(objectGet(objectGet(svg, 'attr'), 'aria-label'), '3D view of the Flat road plan option')
+
+    # 16 terrain cells, 12 road intervals of surface and two side slopes, two markers, and the compass
+    elements = objectGet(svg, 'elem')
+    unittestEqual(arrayLength(elements), 16 + 12 * 3 + 4 + 1)
+    unittestEqual(objectGet(arrayGet(elements, 52), 'svg'), 'polyline')
+    unittestEqual(objectGet(objectGet(arrayGet(elements, 53), 'elem'), 'text'), 'Start')
+    unittestEqual(objectGet(objectGet(arrayGet(elements, 55), 'elem'), 'text'), 'End')
+endfunction
+unittestRunTest('testRoadieView3D')
+
+
+function testRoadieCompass():
+    topo = roadieTopo(testRoadiePlanSimple())
+    view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1}, 100, 100)
+    compass = roadieCompass(view, 64, 36)
+    unittestDeepEqual(arrayGet(compass, 0), \
+        {'svg': 'circle', 'attr': {'cx': 64, 'cy': 36, 'r': 22, 'fill': 'white', 'fill-opacity': 0.8, 'stroke': '#888'}})
+    unittestDeepEqual(arrayGet(compass, 1), roadieSvgPolygon([64, 18, 70, 36, 58, 36], '#c0392b', '#c0392b', 1))
+    unittestDeepEqual(arrayGet(compass, 2), roadieSvgText('N', 64, 48, 11, 'middle', '#333', true))
+endfunction
+unittestRunTest('testRoadieCompass')
+
+
+#
+# Plan and profile views
+#
+
+
+function testRoadiePlanView():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    svg = roadiePlanView(plan, topo, [analysis], 0, 420)
+    unittestEqual(objectGet(objectGet(svg, 'attr'), 'width'), 420)
+    unittestEqual(objectGet(objectGet(svg, 'attr'), 'height'), 420)
+    unittestEqual(objectGet(objectGet(svg, 'attr'), 'aria-label'), 'Plan view of the Flat road plan option')
+
+    # The first elements are the minor and index contour paths
+    elements = objectGet(svg, 'elem')
+    unittestEqual(objectGet(objectGet(arrayGet(elements, 0), 'attr'), 'stroke'), '#b89a72')
+    unittestEqual(objectGet(objectGet(arrayGet(elements, 1), 'attr'), 'stroke'), '#8a6a45')
+endfunction
+unittestRunTest('testRoadiePlanView')
+
+
+function testRoadieProfileView():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    analysis = roadieAnalyze(plan, 0)
+    svg = roadieProfileView(plan, arrayGet(objectGet(plan, 'options'), 0), analysis, 500, 300)
+    unittestEqual(objectGet(objectGet(svg, 'attr'), 'width'), 500)
+    unittestEqual(objectGet(objectGet(svg, 'attr'), 'height'), 300)
+    unittestEqual(objectGet(objectGet(svg, 'attr'), 'aria-label'), 'Profile of the Flat road plan option')
+endfunction
+unittestRunTest('testRoadieProfileView')
+
+
+function testRoadieAlignmentPointAt():
+    analysis = {'alignment': [{'station': 0, 'z': 1}, {'station': 10, 'z': 2}]}
+    unittestDeepEqual(roadieAlignmentPointAt(analysis, 0), {'station': 0, 'z': 1})
+    unittestDeepEqual(roadieAlignmentPointAt(analysis, 5), {'station': 10, 'z': 2})
+    unittestEqual(roadieAlignmentPointAt(analysis, 15), null)
+endfunction
+unittestRunTest('testRoadieAlignmentPointAt')
