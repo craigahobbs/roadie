@@ -102,6 +102,7 @@ async function testRoadieMain_simple():
     analysis = roadieAnalyze(plan, 0)
     unittestDeepEqual(log, [ \
         ['systemFetch', ['simple.json']], \
+        ['windowSetResize', ['<function>']], \
         ['documentSetTitle', ['Simple Plan']], \
         ['markdownPrint', ['# Simple Plan', '']], \
         ['markdownPrint', ['## Plan Options', '']], \
@@ -143,6 +144,7 @@ function testRoadieRender_complex():
         arrayPush(warningLines, ['markdownPrint', ['- ' + markdownEscape(warning)]])
     endfor
     expected = [ \
+        ['windowSetResize', ['<function>']], \
         ['documentSetTitle', ['Complex Plan']], \
         ['markdownPrint', ['# Complex Plan', '']], \
         ['markdownPrint', [['A complex plan.'], '']], \
@@ -166,7 +168,9 @@ function testRoadieRender_complex():
         ['markdownPrint', ['']], \
         ['markdownPrint', ['### Structures', '']], \
         ['markdownPrint', [roadieStructuresTable('feet', option, analysis), '']], \
-        ['markdownPrint', ['### Source Map', '', '![The source topographic map](plans/map.png)', '']], \
+        ['markdownPrint', ['### Source Map', '']], \
+        ['elementModelRender', [{'html': 'p', 'elem': {'html': 'img', 'attr': { \
+            'src': 'plans/map.png', 'alt': 'The source topographic map', 'style': 'max-width: 100%; height: auto;'}}}]], \
         ['markdownPrint', ['---', '', "[Road plan model documentation](#var.vDoc=true&var.vFile='plans%2Fcomplex.json')"]] \
     ])
     unittestDeepEqual(log, expected)
@@ -185,11 +189,12 @@ function testRoadieRender_alternate():
     log = unittestMockEnd()
 
     # The option is clamped to the last option, which has one design warning, no description, and no structures
-    unittestDeepEqual(arrayGet(log, 5), ['markdownPrint', ['## Alt', '']])
-    unittestDeepEqual(arrayGet(log, 6), \
+    unittestDeepEqual(arrayGet(log, 6), ['markdownPrint', ['## Alt', '']])
+    unittestDeepEqual(arrayGet(log, 7), \
         ['markdownPrint', ['**Cost score: 471** - 90 ft, 264.0% maximum grade, 8 design warnings', '']])
-    unittestDeepEqual(arrayGet(log, arrayLength(log) - 2), \
-        ['markdownPrint', ['### Source Map', '', '![The source topographic map](map.png)', '']])
+    unittestDeepEqual(arrayGet(log, arrayLength(log) - 3), ['markdownPrint', ['### Source Map', '']])
+    unittestDeepEqual(arrayGet(log, arrayLength(log) - 2), ['elementModelRender', [{'html': 'p', 'elem': {'html': 'img', 'attr': { \
+        'src': 'map.png', 'alt': 'The source topographic map', 'style': 'max-width: 100%; height: auto;'}}}]])
     for entry in log:
         unittestEqual(arrayGet(arrayGet(entry, 1), 0) == '### Structures', false)
     endfor
@@ -197,6 +202,83 @@ function testRoadieRender_alternate():
     systemGlobalSet('vOption', null)
 endfunction
 unittestRunTest('testRoadieRender_alternate')
+
+
+function testRoadieWindowWidthWide():
+    return 2000
+endfunction
+
+
+function testRoadieWindowWidthNarrow():
+    return 300
+endfunction
+
+
+# Assert that a resize handler re-renders the road plan when the view width changed
+function testRoadieResizeRenders(resizeFn, args, plan):
+    systemGlobalSet('roadieRenderWidth', 500)
+    unittestMockAll()
+    roadieRender(args, plan)
+    expected = unittestMockEnd()
+    systemGlobalSet('roadieRenderWidth', 500)
+    unittestMockAll()
+    resizeFn()
+    unittestDeepEqual(unittestMockEnd(), expected)
+    unittestEqual(systemGlobalGet('roadieRenderWidth'), 976)
+endfunction
+
+
+function testRoadieViewWidth():
+    # The window width less the body margins, from 400 to 1200 pixels
+    unittestMockAll()
+    unittestEqual(roadieViewWidth(), 976)
+    unittestMockEnd()
+    unittestMockOne('windowWidth', testRoadieWindowWidthWide)
+    unittestEqual(roadieViewWidth(), 1200)
+    unittestMockEnd()
+    unittestMockOne('windowWidth', testRoadieWindowWidthNarrow)
+    unittestEqual(roadieViewWidth(), 400)
+    unittestMockEnd()
+endfunction
+unittestRunTest('testRoadieViewWidth')
+
+
+function testRoadieOnResize():
+    systemGlobalSet('vFile', 'simple.json')
+    args = argsParse(roadieArguments)
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+
+    # The view width is unchanged - no re-render
+    systemGlobalSet('roadieRenderWidth', 976)
+    unittestMockAll()
+    roadieOnResize(args, plan)
+    unittestDeepEqual(unittestMockEnd(), [])
+
+    # The view width changed - re-render
+    testRoadieResizeRenders(systemPartial(roadieOnResize, args, plan), args, plan)
+
+    systemGlobalSet('roadieRenderWidth', null)
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieOnResize')
+
+
+function testRoadieRender_resize():
+    systemGlobalSet('vFile', 'simple.json')
+    args = argsParse(roadieArguments)
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+
+    # The render records its view width and sets the window resize handler
+    unittestMockAll()
+    roadieRender(args, plan)
+    resizeFn = arrayGet(arrayGet(arrayGet(unittestMockEnd(), 0), 1), 0)
+    unittestEqual(systemGlobalGet('roadieRenderWidth'), 976)
+    testRoadieResizeRenders(resizeFn, args, plan)
+
+    systemGlobalSet('roadieRenderWidth', null)
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieRender_resize')
 
 
 function testRoadieRender_oneWarning():
@@ -207,7 +289,7 @@ function testRoadieRender_oneWarning():
     unittestMockAll()
     roadieRender(args, plan)
     log = unittestMockEnd()
-    unittestDeepEqual(arrayGet(log, 5), \
+    unittestDeepEqual(arrayGet(log, 6), \
         ['markdownPrint', ['**Cost score: 14** - 40 m, 0.0% maximum grade, 1 design warning', '']])
     systemGlobalSet('vFile', null)
 endfunction
@@ -398,7 +480,8 @@ function testRoadieSvgElements():
     unittestEqual(objectGet(objectGet(roadieSvgText('Hi', 1, 2, 10, 'start', 'black', true), 'attr'), 'font-weight'), 'bold')
     unittestDeepEqual(roadieSvg(100, 50, 'Label', []), {'svg': 'svg', 'attr': { \
         'width': 100, 'height': 50, 'viewBox': '0 0 100 50', 'role': 'img', 'aria-label': 'Label', \
-        'style': 'background: #f4f1ea; border: 1px solid #ccc; display: block;'}, 'elem': []})
+        'style': 'background: #f4f1ea; border: 1px solid #ccc; display: block; max-width: 100%; height: auto; break-inside: avoid;'}, \
+        'elem': []})
 endfunction
 unittestRunTest('testRoadieSvgElements')
 

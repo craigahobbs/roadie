@@ -84,6 +84,24 @@ async function roadieMain():
 endfunction
 
 
+# The maximum view width, in pixels
+roadieMaxWidth = 1200
+
+
+# Compute the view width for the window width, in pixels
+function roadieViewWidth():
+    return mathMax(400, mathMin(roadieMaxWidth, windowWidth() - 3 * documentFontSize()))
+endfunction
+
+
+# The window resize handler - re-render the road plan when the view width changes
+function roadieOnResize(args, plan):
+    if roadieViewWidth() != systemGlobalGet('roadieRenderWidth'):
+        roadieRender(args, plan)
+    endif
+endfunction
+
+
 # Render a road plan
 function roadieRender(args, plan):
     file = objectGet(args, 'file')
@@ -92,7 +110,9 @@ function roadieRender(args, plan):
     ixOption = mathMax(0, mathMin(arrayLength(options) - 1, objectGet(args, 'option')))
     option = arrayGet(options, ixOption)
     topo = roadieTopo(plan)
-    width = mathMax(400, windowWidth() - 3 * documentFontSize())
+    width = roadieViewWidth()
+    systemGlobalSet('roadieRenderWidth', width)
+    windowSetResize(systemPartial(roadieOnResize, args, plan))
 
     # Analyze the options
     analyses = []
@@ -168,7 +188,12 @@ function roadieRender(args, plan):
     if image != null:
         ixSlash = stringLastIndexOf(file, '/')
         imageURL = if(ixSlash == -1, image, stringSlice(file, 0, ixSlash + 1) + image)
-        markdownPrint('### Source Map', '', '![The source topographic map](' + urlEncode(imageURL) + ')', '')
+        markdownPrint('### Source Map', '')
+        elementModelRender({'html': 'p', 'elem': {'html': 'img', 'attr': { \
+            'src': documentURL(urlEncode(imageURL)), \
+            'alt': 'The source topographic map', \
+            'style': 'max-width: 100%; height: auto;' \
+        }}})
     endif
 
     # Footer
@@ -527,7 +552,8 @@ function roadieSvg(width, height, label, elements):
             'viewBox': '0 0 ' + width + ' ' + height, \
             'role': 'img', \
             'aria-label': label, \
-            'style': 'background: #f4f1ea; border: 1px solid #ccc; display: block;' \
+            'style': 'background: #f4f1ea; border: 1px solid #ccc; display: block; max-width: 100%; height: auto; ' + \
+                'break-inside: avoid;' \
         }, \
         'elem': elements \
     }
