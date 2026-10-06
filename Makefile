@@ -19,9 +19,11 @@ PORT ?= 8080
 
 .PHONY: help
 help:
-	@echo "usage: make [clean|commit|doc|evaluate|lint|plan|run|test|test-tools]"
+	@echo "usage: make [clean|commit|doc|evaluate|lint|plan|run|test|test-tools|update]"
 	@echo ""
 	@echo "  make plan FILE=<plan.png> [OUTPUT=<plan.json>]  Engineer road plan options from a topo map image (Claude Code)"
+	@echo "  make update FILE=<plan.json>              Update a road plan model with review feedback (Claude Code)"
+	@echo "    (plan and update accept MODEL=<model> [default: $(MODEL)] and EFFORT=<effort> [default: $(EFFORT)])"
 	@echo "  make run [FILE=<plan.json>]              View a road plan model in the browser"
 	@echo "  make evaluate FILE=<plan.json> [DETAIL=1]  Print a road plan model's analysis and cost"
 	@echo "  make doc                                 Print the road plan model documentation"
@@ -78,18 +80,44 @@ endif
 PLAN_OUTPUT = $(if $(OUTPUT),$(OUTPUT),$(basename $(FILE)).json)
 PLAN_WORK = $(basename $(PLAN_OUTPUT)).work
 
+# The Claude Code model and effort level for the plan and update sessions
+MODEL = opus
+EFFORT = high
+
 .PHONY: plan
 plan: $(VENV_BUILD) $(VENV_PLAN)
-	@test -n "$(FILE)" || (echo 'usage: make plan FILE=<plan.png> [OUTPUT=<plan.json>]' && exit 1)
+	@test -n "$(FILE)" || (echo 'usage: make plan FILE=<plan.png> [OUTPUT=<plan.json>] [MODEL=<model>] [EFFORT=<effort>]' && exit 1)
 	@test -f "$(FILE)" || (echo 'error: "$(FILE)" does not exist' && exit 1)
 	mkdir -p "$(PLAN_WORK)"
 	claude \
 		--allowedTools "Bash($(VENV_BIN)/python3 tools/plan_tools.py *)" "Bash(make evaluate *)" "Bash(make doc)" \
 		--permission-mode acceptEdits \
+		--model "$(MODEL)" \
+		--effort "$(EFFORT)" \
 		--name "Roadie: $(notdir $(FILE))" \
 		"Engineer cost-optimal road plan options for the topographic map image \"$(FILE)\" by following the \
 instructions in PLAN.md exactly. Write the road plan model to \"$(PLAN_OUTPUT)\" and put intermediate \
 work files in \"$(PLAN_WORK)/\". The Python tools are run with \"$(VENV_BIN)/python3 tools/plan_tools.py\"."
+
+
+# Update an existing road plan model with review feedback (Claude Code) - the session asks for the feedback
+UPDATE_WORK = $(basename $(FILE)).work
+
+.PHONY: update
+update: $(VENV_BUILD) $(VENV_PLAN)
+	@test -n "$(FILE)" || (echo 'usage: make update FILE=<plan.json> [MODEL=<model>] [EFFORT=<effort>]' && exit 1)
+	@test -f "$(FILE)" || (echo 'error: "$(FILE)" does not exist' && exit 1)
+	mkdir -p "$(UPDATE_WORK)"
+	claude \
+		--allowedTools "Bash($(VENV_BIN)/python3 tools/plan_tools.py *)" "Bash(make evaluate *)" "Bash(make doc)" \
+		--permission-mode acceptEdits \
+		--model "$(MODEL)" \
+		--effort "$(EFFORT)" \
+		--name "Roadie update: $(notdir $(FILE))" \
+		"Update the road plan model \"$(FILE)\" with review feedback by following the \"Updating a plan\" \
+instructions in PLAN.md exactly. Intermediate work files (including any from the original planning \
+session) are in \"$(UPDATE_WORK)/\". The Python tools are run with \"$(VENV_BIN)/python3 tools/plan_tools.py\". \
+Ask me for the review feedback first."
 
 
 # Print a road plan model's analysis and cost (DETAIL=1 adds the station table)

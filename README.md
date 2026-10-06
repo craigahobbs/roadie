@@ -7,6 +7,9 @@ topographic map image, and views the resulting road grading plans in 3D.
   road engineering instructions ([PLAN.md](PLAN.md)). Claude digitizes the map's topography, engineers
   one or more cost-optimal road plan options from the labeled start point to the labeled end point,
   and writes the road plan model (`OUTPUT`, default `<plan>.json`).
+- **`make update FILE=<plan.json>`** launches a Claude Code session that
+  updates an existing road plan model with review feedback (from the city or county, a surveyor, or
+  the owner, for example).
 - **`make run FILE=<plan.json>`** opens the road plan model in the Roadie viewer, a
   [MarkdownUp](https://github.com/craigahobbs/markdown-up) application written in
   [BareScript](https://github.com/craigahobbs/bare-script).
@@ -84,6 +87,31 @@ make plan FILE=site.png OUTPUT=site-run2.json
 ```
 
 The intermediate files go next to the output (here, `site-run2.work/`).
+
+The session uses the Opus model at high effort by default. Use `MODEL` and `EFFORT` to change them
+(any Claude Code `--model` alias or name, and `--effort` level - `low`, `medium`, `high`, `xhigh`, or
+`max`), for both `make plan` and `make update`:
+
+```
+make plan FILE=site.png MODEL=sonnet EFFORT=max
+```
+
+
+## Updating a plan
+
+Plans often change after review - the city or county may require a 10% fire code grade, a property
+line setback, or a larger culvert, and a surveyor may correct the topography. To update a plan, run:
+
+```
+make update FILE=site.json
+```
+
+The session asks for the feedback - paste it in, or give the path of a file that contains it. It
+follows [Updating a plan](PLAN.md#updating-a-plan): it saves a dated copy of the plan in the work
+directory (`site.work/`), restates each feedback item and how it will address it, updates the
+criteria, site features, topography, or options (reusing the original session's digitized contours),
+re-engineers and re-evaluates the affected options, and adds a revision history to the plan's
+description. It finishes with a before-and-after comparison of the options.
 
 
 ## The road plan model

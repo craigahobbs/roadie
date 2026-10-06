@@ -7,7 +7,8 @@ file. The Roadie viewer (`make run FILE=<plan.json>`) renders the model in 3D, a
 compares the options.
 
 Work carefully and verify each step - a road plan built on misread topography is worthless. Follow
-the steps in order.
+the steps in order. To update an existing plan with review feedback, follow
+[Updating a plan](#updating-a-plan) instead.
 
 **Inputs and outputs** (named in your initial prompt):
 
@@ -298,6 +299,55 @@ plan:
 ```
 make run FILE=<plan>.json
 ```
+
+
+## Updating a plan
+
+A plan often needs changes after review - comments from the city or county (planning, fire marshal,
+public works), a surveyor, the owner, or a contractor. When your initial prompt asks you to **update**
+an existing road plan model, follow these steps instead of Steps 1-8. Your initial prompt names the
+plan JSON file and its work directory. Ask the user for the feedback (pasted text or a file path)
+before making any changes.
+
+1. **Read the current plan.** Read the plan's `description` and each option's `description`, run
+   `make evaluate FILE=<plan>.json` to record the current length, maximum grade, earthwork, warnings,
+   and cost score of every option, and plot it (`plot`). Look in the work directory: the contours JSON
+   (`contours.json`) and the traced components let you re-digitize the topography without starting
+   over.
+2. **Save a copy** of the plan JSON in the work directory before editing it, named with today's date
+   (`<plan>.<YYYY-MM-DD>.json`), so the update can be compared against or reverted.
+3. **List the feedback items** and classify each one. Restate them to the user, with how you will
+   address each, and ask about anything ambiguous before editing (for example, a setback distance
+   without the line it's measured from):
+   - **Design criteria** - a different maximum grade (fire code 10%), minimum radius, road width,
+     surface, or slopes: update `criteria` and each option's `section`.
+   - **Site features** - new or corrected exclusion areas (setbacks, easements, wetland buffers,
+     property lines, tree protection zones), streams, or rock: add them to the contours JSON
+     `features` (image pixels) and rebuild the grid, or, when there's no work directory, edit the
+     plan's `topography.features` directly (plan coordinates).
+   - **Topography** - corrected contours, spot elevations, or survey data: correct the contours JSON
+     and rebuild the grid with `grid` (Step 2), and verify the preview. `grid` replaces the
+     topography, title, start, and end, and keeps the options and criteria - so every option's
+     profile is now stale.
+   - **Required structures** - a culvert size, a bridge instead of a fill, a turnaround or turnout
+     location: edit the option's `structures`, or re-run `profile` with the matching options.
+   - **Option changes** - a different corridor, an alignment adjustment, or dropping or adding an
+     option: use `route`, edit the `alignment` and run `profile`, or remove the option.
+   - **Cost rates** - local unit prices or a contractor's quote: set the plan's `costRates`.
+4. **Re-engineer the affected options.** Re-run `route` or `profile` for every option whose criteria,
+   features, topography, or alignment changed (after a grid rebuild, re-run `profile` for every
+   option). Keep the option names unless the corridor changed. If an option can no longer meet the
+   criteria, re-engineer it (Steps 5 and 6) rather than leaving it with warnings, or explain why it
+   should be dropped.
+5. **Evaluate and refine** (Step 6) - resolve every design warning, and keep the options in cost
+   order.
+6. **Update the descriptions.** Add a **revision history** to the end of the plan `description` - one
+   bullet per update with the date, the feedback source, and the changes made - and update each
+   option's `description` for its new numbers and features. Address each feedback item where it
+   applies (for example, "the 10% fire code grade adds a switchback near station 6+00").
+7. **Report** a before-and-after table of every option (length, maximum grade, earthwork, walls and
+   bridges, cost score), how each feedback item was addressed (or why it couldn't be), any new
+   caveats, and the command to view the plan.
 
 
 ## Appendix: The cost score
