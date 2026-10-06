@@ -96,6 +96,14 @@ The session uses the Opus model at high effort by default. Use `MODEL` and `EFFO
 make plan FILE=site.png MODEL=sonnet EFFORT=max
 ```
 
+Use `OLLAMA=1` to run the session on a local or cloud [Ollama](https://ollama.com) model instead
+(it launches Claude Code with `ollama launch claude`). `MODEL` then names the Ollama model; without
+it, Ollama picks the model (prompting if needed):
+
+```
+make plan FILE=site.png OLLAMA=1 MODEL=qwen3.8:27b-mlx
+```
+
 
 ## Updating a plan
 

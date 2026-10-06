@@ -23,7 +23,8 @@ help:
 	@echo ""
 	@echo "  make plan FILE=<plan.png> [OUTPUT=<plan.json>]  Engineer road plan options from a topo map image (Claude Code)"
 	@echo "  make update FILE=<plan.json>              Update a road plan model with review feedback (Claude Code)"
-	@echo "    (plan and update accept MODEL=<model> [default: $(MODEL)] and EFFORT=<effort> [default: $(EFFORT)])"
+	@echo "    (plan and update accept MODEL=<model> [default: $(MODEL)] and EFFORT=<effort> [default: $(EFFORT)],"
+	@echo "     and OLLAMA=1 to launch Claude Code with an Ollama model - MODEL then names the Ollama model)"
 	@echo "  make run [FILE=<plan.json>]              View a road plan model in the browser"
 	@echo "  make evaluate FILE=<plan.json> [DETAIL=1]  Print a road plan model's analysis and cost"
 	@echo "  make doc                                 Print the road plan model documentation"
@@ -80,19 +81,28 @@ endif
 PLAN_OUTPUT = $(if $(OUTPUT),$(OUTPUT),$(basename $(FILE)).json)
 PLAN_WORK = $(basename $(PLAN_OUTPUT)).work
 
-# The Claude Code model and effort level for the plan and update sessions
+# The Claude Code model and effort level for the plan and update sessions. OLLAMA=1 launches Claude Code
+# with an Ollama model instead ("ollama launch claude") - MODEL then names the Ollama model, and when it
+# isn't given Ollama chooses the model (it prompts if needed).
 MODEL = opus
 EFFORT = high
+ifdef OLLAMA
+CLAUDE = ollama launch claude $(if $(filter command line,$(origin MODEL)),--model "$(MODEL)") --
+CLAUDE_MODEL =
+else
+CLAUDE = claude
+CLAUDE_MODEL = --model "$(MODEL)"
+endif
 
 .PHONY: plan
 plan: $(VENV_BUILD) $(VENV_PLAN)
-	@test -n "$(FILE)" || (echo 'usage: make plan FILE=<plan.png> [OUTPUT=<plan.json>] [MODEL=<model>] [EFFORT=<effort>]' && exit 1)
+	@test -n "$(FILE)" || (echo 'usage: make plan FILE=<plan.png> [OUTPUT=<plan.json>] [MODEL=<model>] [EFFORT=<effort>] [OLLAMA=1]' && exit 1)
 	@test -f "$(FILE)" || (echo 'error: "$(FILE)" does not exist' && exit 1)
 	mkdir -p "$(PLAN_WORK)"
-	claude \
+	$(CLAUDE) \
 		--allowedTools "Bash($(VENV_BIN)/python3 tools/plan_tools.py *)" "Bash(make evaluate *)" "Bash(make doc)" \
 		--permission-mode acceptEdits \
-		--model "$(MODEL)" \
+		$(CLAUDE_MODEL) \
 		--effort "$(EFFORT)" \
 		--name "Roadie: $(notdir $(FILE))" \
 		"Engineer cost-optimal road plan options for the topographic map image \"$(FILE)\" by following the \
@@ -105,13 +115,13 @@ UPDATE_WORK = $(basename $(FILE)).work
 
 .PHONY: update
 update: $(VENV_BUILD) $(VENV_PLAN)
-	@test -n "$(FILE)" || (echo 'usage: make update FILE=<plan.json> [MODEL=<model>] [EFFORT=<effort>]' && exit 1)
+	@test -n "$(FILE)" || (echo 'usage: make update FILE=<plan.json> [MODEL=<model>] [EFFORT=<effort>] [OLLAMA=1]' && exit 1)
 	@test -f "$(FILE)" || (echo 'error: "$(FILE)" does not exist' && exit 1)
 	mkdir -p "$(UPDATE_WORK)"
-	claude \
+	$(CLAUDE) \
 		--allowedTools "Bash($(VENV_BIN)/python3 tools/plan_tools.py *)" "Bash(make evaluate *)" "Bash(make doc)" \
 		--permission-mode acceptEdits \
-		--model "$(MODEL)" \
+		$(CLAUDE_MODEL) \
 		--effort "$(EFFORT)" \
 		--name "Roadie update: $(notdir $(FILE))" \
 		"Update the road plan model \"$(FILE)\" with review feedback by following the \"Updating a plan\" \
