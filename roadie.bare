@@ -112,8 +112,23 @@ function roadieOnResize(args, plan):
 endfunction
 
 
+# The session storage key of the current page's token. MarkdownUp doesn't remove a page's document keydown handler
+# when the app navigates to another page, so the 3D explorer's key handler does nothing unless its page is current.
+roadiePageTokenKey = 'roadiePageToken'
+
+
+# Create a new page token, making it the current page's token
+function roadieNewPageToken():
+    previous = sessionStorageGet(roadiePageTokenKey)
+    token = '' + (if(previous != null, numberParseInt(previous), 0) + 1)
+    sessionStorageSet(roadiePageTokenKey, token)
+    return token
+endfunction
+
+
 # Render a road plan
 function roadieRender(args, plan):
+    roadieNewPageToken()
     file = objectGet(args, 'file')
     units = objectGet(plan, 'units')
     options = objectGet(plan, 'options')
@@ -165,14 +180,17 @@ function roadieRender(args, plan):
     outlines = []
     for reportView, ixReportView in reportViews:
         if ixReportView > 0:
-            arrayPush(outlines, ['View ' + (ixReportView + 1), objectGet(reportView, 'view')])
+            middle = roadieSampleAt(objectGet(analysis, 'samples'), \
+                (objectGet(reportView, 'station') + objectGet(reportView, 'endStation')) * 0.5)
+            arrayPush(outlines, ['' + (ixReportView + 1), objectGet(reportView, 'view'), [objectGet(middle, 'x'), objectGet(middle, 'y')]])
         endif
     endfor
 
     # Plan view
     markdownPrint('### Plan View', '')
     if arrayLength(outlines) > 0:
-        markdownPrint('The outlines show the areas of 3D views 2 through ' + arrayLength(reportViews) + ', below.', '')
+        markdownPrint('The numbered markers show the road segments of 3D views 2 through ' + arrayLength(reportViews) + \
+            ', below - the dashed outlines show the areas they cover.', '')
     endif
     elementModelRender(roadiePlanView(plan, topo, analyses, ixOption, width, outlines))
 
@@ -610,6 +628,7 @@ function roadieExploreContext(args, plan):
         objectSet(state, name, objectGet(args, name))
     endfor
     return { \
+        'token': roadieNewPageToken(), \
         'plan': plan, \
         'topo': topo, \
         'rows': roadieFinishedRows(topo, objectGet(analysis, 'samples'), halfWidth), \
@@ -683,8 +702,11 @@ endfunction
 
 # The 3D explorer's key down handler
 function roadieExploreOnKeyDown(context, event):
-    # Leave the browser's shortcuts alone
-    if objectGet(event, 'ctrlKey') || objectGet(event, 'metaKey') || objectGet(event, 'altKey'):
+    # Ignore the keys of a page that's no longer current (without session storage, the page is assumed current) and
+    # leave the browser's shortcuts alone
+    token = sessionStorageGet(roadiePageTokenKey)
+    if (token != null && token != objectGet(context, 'token')) || \
+            objectGet(event, 'ctrlKey') || objectGet(event, 'metaKey') || objectGet(event, 'altKey'):
         return
     endif
     key = objectGet(event, 'key')
@@ -1100,6 +1122,14 @@ function roadieSvgText(text, x, y, size, anchor, fill, bold):
         objectSet(attr, 'font-weight', 'bold')
     endif
     return {'svg': 'text', 'attr': attr, 'elem': {'text': text}}
+endfunction
+
+
+# Compute a centered label's x coordinate that keeps it within a drawing's width - the label's width is estimated from its
+# length and font size
+function roadieLabelX(label, fontSize, x, width):
+    halfLabel = stringLength(label) * fontSize * 0.32
+    return mathMax(halfLabel + 4, mathMin(width - halfLabel - 4, x))
 endfunction
 
 
@@ -1929,11 +1959,9 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
         top = roadieProject(view, x, y, z + poleHeight)
         arrayPush(elements, roadieSvgPolyline([arrayGet(base, 0), arrayGet(base, 1), arrayGet(top, 0), arrayGet(top, 1)], \
             arrayGet(marker, 2), 2.5, null))
-        # The label is kept within the view - its width is estimated from its length
         label = objectGet(point, 'label', arrayGet(marker, 1))
-        halfLabel = stringLength(label) * 13 * 0.32
-        labelX = mathMax(halfLabel + 4, mathMin(width - halfLabel - 4, arrayGet(top, 0)))
-        arrayPush(elements, roadieSvgText(label, labelX, arrayGet(top, 1) - 9, 13, 'middle', arrayGet(marker, 2), true))
+        arrayPush(elements, roadieSvgText(label, roadieLabelX(label, 13, arrayGet(top, 0), width), arrayGet(top, 1) - 9, 13, \
+            'middle', arrayGet(marker, 2), true))
     endfor
 
     # Compass
@@ -1968,8 +1996,8 @@ endfunction
 #
 
 
-# Create the plan view SVG element model - "outlines" is an array of [label, view] arrays of 3D views (roadieProjection)
-# whose visible areas are outlined
+# Create the plan view SVG element model - "outlines" is an array of [number, view, [x, y]] arrays of 3D views
+# (roadieProjection) whose visible areas are outlined, with their numbers marked on the road at [x, y]
 function roadiePlanView(plan, topo, analyses, ixOption, width, outlines):
     units = objectGet(plan, 'units')
     spacing = objectGet(topo, 'spacing')
@@ -2145,8 +2173,8 @@ function roadiePlanView(plan, topo, analyses, ixOption, width, outlines):
         py = pad + (topoHeight - objectGet(point, 'y')) * scale
         arrayPush(elements, {'svg': 'circle', 'attr': {'cx': roadiePx(px), 'cy': roadiePx(py), 'r': 6, \
             'fill': arrayGet(marker, 2), 'stroke': 'white', 'stroke-width': 2}})
-        arrayPush(elements, roadieSvgText(objectGet(point, 'label', arrayGet(marker, 1)), px, py - 14, 13, 'middle', \
-            arrayGet(marker, 2), true))
+        label = objectGet(point, 'label', arrayGet(marker, 1))
+        arrayPush(elements, roadieSvgText(label, roadieLabelX(label, 13, px, width), py - 14, 13, 'middle', arrayGet(marker, 2), true))
     endfor
 
     # Scale bar
@@ -2164,24 +2192,30 @@ function roadiePlanView(plan, topo, analyses, ixOption, width, outlines):
     arrayPush(elements, roadieSvgPolygon([width - 30, pad + 8, width - 37, pad + 28, width - 23, pad + 28], '#222', '#222', 1))
     arrayPush(elements, roadieSvgText('N', width - 30, pad + 38, 11, 'middle', '#222', true))
 
-    # The 3D views' visible areas - their corners projected onto the ground - labeled at their centers
+    # The 3D views' visible areas - their corners projected onto the ground - as light dashed outlines, then their
+    # numbers marked on the road (on top of the outlines)
     for outline in outlines:
         view = arrayGet(outline, 1)
         coords = []
-        sumX = 0
-        sumY = 0
         viewWidth = objectGet(view, 'width')
         viewHeight = objectGet(view, 'height')
         for corner in [[0, 0], [viewWidth, 0], [viewWidth, viewHeight], [0, viewHeight]]:
             point = roadieUnproject(view, topo, arrayGet(corner, 0), arrayGet(corner, 1))
-            px = pad + arrayGet(point, 0) * scale
-            py = pad + (topoHeight - arrayGet(point, 1)) * scale
-            arrayPush(coords, px, py)
-            sumX = sumX + px
-            sumY = sumY + py
+            arrayPush(coords, pad + arrayGet(point, 0) * scale, pad + (topoHeight - arrayGet(point, 1)) * scale)
         endfor
-        arrayPush(elements, roadieSvgPolygon(coords, 'rgba(31,78,140,0.06)', '#1f4e8c', 1.5, arrayGet(outline, 0) + ' area'))
-        arrayPush(elements, roadieSvgText(arrayGet(outline, 0), sumX / 4, sumY / 4, 13, 'middle', '#1f4e8c', true))
+        area = roadieSvgPolygon(coords, 'none', 'rgba(31,78,140,0.55)', 1, '3D view ' + arrayGet(outline, 0) + ' area')
+        objectSet(objectGet(area, 'attr'), 'stroke-dasharray', '5 4')
+        arrayPush(elements, area)
+    endfor
+    for outline in outlines:
+        marker = arrayGet(outline, 2)
+        px = pad + arrayGet(marker, 0) * scale
+        py = pad + (topoHeight - arrayGet(marker, 1)) * scale
+        arrayPush(elements, {'svg': 'circle', 'attr': {'cx': roadiePx(px), 'cy': roadiePx(py), 'r': 9, \
+            'fill': '#1f4e8c', 'stroke': 'white', 'stroke-width': 1.5}})
+        arrayPush(elements, {'svg': 'text', 'attr': {'x': roadiePx(px), 'y': roadiePx(py), 'font-size': 11, \
+            'font-family': 'sans-serif', 'font-weight': 'bold', 'text-anchor': 'middle', 'dominant-baseline': 'central', \
+            'fill': 'white'}, 'elem': {'text': arrayGet(outline, 0)}})
     endfor
 
     svg = roadieSvg(width, height, 'Plan view of the ' + objectGet(option, 'name') + ' road plan option', elements)
@@ -2283,7 +2317,8 @@ function roadieProfileView(plan, option, analysis, width, height):
     endfor
     arrayPush(elements, roadieSvgPolyline(groundCoords, '#6b4a2b', 1.5, null))
 
-    # Structures
+    # Structures - the wall and turnout labels share a row, so a label that would overlap the previous one is omitted
+    labelRight = null
     for structure in objectGet(option, 'structures', []):
         type = objectGet(structure, 'type')
         station = objectGet(structure, 'station')
@@ -2306,8 +2341,13 @@ function roadieProfileView(plan, option, analysis, width, height):
             color = if(type == 'retainingWall', '#555555', '#2a8f8f')
             arrayPush(elements, {'svg': 'rect', 'attr': {'x': roadiePx(px1), 'y': bottom - 8, 'width': roadiePx(mathMax(2, px2 - px1)), \
                 'height': 8, 'fill': color}})
-            arrayPush(elements, roadieSvgText(if(type == 'retainingWall', 'Wall', 'Turnout'), (px1 + px2) * 0.5, bottom - 16, 10, \
-                'middle', color, true))
+            label = if(type == 'retainingWall', 'Wall', 'Turnout')
+            halfLabel = stringLength(label) * 10 * 0.32
+            labelX = (px1 + px2) * 0.5
+            if labelRight == null || labelX - halfLabel > labelRight + 4:
+                arrayPush(elements, roadieSvgText(label, labelX, bottom - 16, 10, 'middle', color, true))
+                labelRight = labelX + halfLabel
+            endif
         endif
     endfor
 

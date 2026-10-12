@@ -100,12 +100,15 @@ function testRoadieReportViewsLog(plan, analyses, ixOption):
     outlines = []
     for reportView, ixReportView in reportViews:
         if ixReportView > 0:
-            arrayPush(outlines, ['View ' + (ixReportView + 1), objectGet(reportView, 'view')])
+            middle = roadieSampleAt(objectGet(analysis, 'samples'), \
+                (objectGet(reportView, 'station') + objectGet(reportView, 'endStation')) * 0.5)
+            arrayPush(outlines, ['' + (ixReportView + 1), objectGet(reportView, 'view'), [objectGet(middle, 'x'), objectGet(middle, 'y')]])
         endif
     endfor
     log = [['markdownPrint', ['### Plan View', '']]]
     if arrayLength(outlines) > 0:
-        arrayPush(log, ['markdownPrint', ['The outlines show the areas of 3D views 2 through ' + arrayLength(reportViews) + ', below.', '']])
+        arrayPush(log, ['markdownPrint', ['The numbered markers show the road segments of 3D views 2 through ' + \
+            arrayLength(reportViews) + ', below - the dashed outlines show the areas they cover.', '']])
     endif
     exploreArgs = objectAssign({'explore': true}, objectGet(arrayGet(reportViews, 0), 'args'))
     arrayExtend(log, [ \
@@ -135,6 +138,7 @@ async function testRoadieMain_simple():
     analysis = roadieAnalyze(plan, 0)
     expected = [ \
         ['systemFetch', ['simple.json']], \
+        ['sessionStorageSet', ['roadiePageToken', '1']], \
         ['windowSetResize', ['<function>']], \
         ['documentSetTitle', ['Simple Plan']], \
         ['markdownPrint', ['# Simple Plan', '']], \
@@ -154,9 +158,9 @@ async function testRoadieMain_simple():
     unittestDeepEqual(log, expected)
 
     # The simple plan's road is wide enough to see in the overview, so it's the only 3D view
-    unittestEqual(arrayGet(arrayGet(arrayGet(log, 10), 1), 0), '### Profile')
-    unittestEqual(arrayGet(arrayGet(arrayGet(log, 12), 1), 0), '### 3D Views')
-    unittestEqual(stringStartsWith(arrayGet(arrayGet(arrayGet(log, 13), 1), 0), '**View 1 of 1: Overview**'), true)
+    unittestEqual(arrayGet(arrayGet(arrayGet(log, 11), 1), 0), '### Profile')
+    unittestEqual(arrayGet(arrayGet(arrayGet(log, 13), 1), 0), '### 3D Views')
+    unittestEqual(stringStartsWith(arrayGet(arrayGet(arrayGet(log, 14), 1), 0), '**View 1 of 1: Overview**'), true)
     systemGlobalSet('vFile', null)
 endfunction
 unittestRunTest('testRoadieMain_simple')
@@ -175,11 +179,11 @@ async function testRoadieMain_segments():
     plan = objectGet(roadieValidate(planValue), 'plan')
     analysis = roadieAnalyze(plan, 0)
     expected = testRoadieReportViewsLog(plan, [analysis], 0)
-    unittestDeepEqual(arraySlice(log, 8, 8 + arrayLength(expected)), expected)
-    unittestDeepEqual(arrayGet(log, 9), \
-        ['markdownPrint', ['The outlines show the areas of 3D views 2 through 3, below.', '']])
+    unittestDeepEqual(arraySlice(log, 9, 9 + arrayLength(expected)), expected)
+    unittestDeepEqual(arrayGet(log, 10), ['markdownPrint', ['The numbered markers show the road segments of 3D views 2 ' + \
+        'through 3, below - the dashed outlines show the areas they cover.', '']])
     caption = '**View 2 of 3** - stations ' + roadieStation(0, 'meters') + ' to ' + roadieStation(20, 'meters')
-    unittestEqual(stringStartsWith(arrayGet(arrayGet(arrayGet(log, 16), 1), 0), caption), true)
+    unittestEqual(stringStartsWith(arrayGet(arrayGet(arrayGet(log, 17), 1), 0), caption), true)
     systemGlobalSet('vFile', null)
 endfunction
 unittestRunTest('testRoadieMain_segments')
@@ -193,16 +197,17 @@ async function testRoadieMain_explore():
     log = unittestMockEnd()
 
     # The explorer renders its anchor, sets its key down and resize handlers, and renders its view
-    unittestDeepEqual(arraySlice(log, 0, 5), [ \
+    unittestDeepEqual(arraySlice(log, 0, 6), [ \
         ['systemFetch', ['simple.json']], \
+        ['sessionStorageSet', ['roadiePageToken', '1']], \
         ['documentSetTitle', ['Simple Plan - 3D']], \
         ['elementModelRender', [{'html': 'div', 'attr': {'id': 'roadie-explore', 'style': 'display: none;'}}]], \
         ['documentSetKeyDown', ['<function>']], \
         ['windowSetResize', ['<function>']] \
     ])
-    unittestDeepEqual(arrayGet(log, 5), ['documentSetReset', ['roadie-explore']])
-    unittestEqual(arrayGet(arrayGet(log, 6), 0), 'elementModelRender')
-    unittestEqual(arrayLength(log), 7)
+    unittestDeepEqual(arrayGet(log, 6), ['documentSetReset', ['roadie-explore']])
+    unittestEqual(arrayGet(arrayGet(log, 7), 0), 'elementModelRender')
+    unittestEqual(arrayLength(log), 8)
     systemGlobalSet('vFile', null)
     systemGlobalSet('vExplore', null)
 endfunction
@@ -226,6 +231,7 @@ function testRoadieRender_complex():
         arrayPush(warningLines, ['markdownPrint', ['- ' + markdownEscape(warning)]])
     endfor
     expected = [ \
+        ['sessionStorageSet', ['roadiePageToken', '1']], \
         ['windowSetResize', ['<function>']], \
         ['documentSetTitle', ['Complex Plan']], \
         ['markdownPrint', ['# Complex Plan', '']], \
@@ -268,8 +274,8 @@ function testRoadieRender_alternate():
     log = unittestMockEnd()
 
     # The option is clamped to the last option, which has one design warning, no description, and no structures
-    unittestDeepEqual(arrayGet(log, 6), ['markdownPrint', ['## Alt', '']])
-    unittestDeepEqual(arrayGet(log, 7), \
+    unittestDeepEqual(arrayGet(log, 7), ['markdownPrint', ['## Alt', '']])
+    unittestDeepEqual(arrayGet(log, 8), \
         ['markdownPrint', ['**Cost score: 471** - 90 ft, 264.0% maximum grade, 8 design warnings', '']])
     unittestDeepEqual(arrayGet(log, arrayLength(log) - 3), ['markdownPrint', ['### Source Map', '']])
     unittestDeepEqual(arrayGet(log, arrayLength(log) - 2), ['elementModelRender', [{'html': 'p', 'elem': {'html': 'img', 'attr': { \
@@ -350,7 +356,7 @@ function testRoadieRender_resize():
     # The render records its view width and sets the window resize handler
     unittestMockAll()
     roadieRender(args, plan)
-    resizeFn = arrayGet(arrayGet(arrayGet(unittestMockEnd(), 0), 1), 0)
+    resizeFn = arrayGet(arrayGet(arrayGet(unittestMockEnd(), 1), 1), 0)
     unittestEqual(systemGlobalGet('roadieRenderWidth'), 976)
     testRoadieResizeRenders(resizeFn, args, plan)
 
@@ -368,7 +374,7 @@ function testRoadieRender_oneWarning():
     unittestMockAll()
     roadieRender(args, plan)
     log = unittestMockEnd()
-    unittestDeepEqual(arrayGet(log, 6), \
+    unittestDeepEqual(arrayGet(log, 7), \
         ['markdownPrint', ['**Cost score: 14** - 40 m, 0.0% maximum grade, 1 design warning', '']])
     systemGlobalSet('vFile', null)
 endfunction
@@ -846,7 +852,7 @@ function testRoadiePlanView_narrowOutlines():
     topo = roadieTopo(plan)
     analysis = roadieAnalyze(plan, 0)
     view = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 4, 'x': 30, 'y': 10}, 420, 315)
-    svg = roadiePlanView(plan, topo, [analysis], 0, 420, [['View 2', view]])
+    svg = roadiePlanView(plan, topo, [analysis], 0, 420, [['2', view, [20, 20]]])
     elements = objectGet(svg, 'elem')
 
     # The narrow road is also drawn as a highlighted centerline (a white halo under a colored line)
@@ -859,12 +865,16 @@ function testRoadiePlanView_narrowOutlines():
     endfor
     unittestDeepEqual(highlight, [6, 3])
 
-    # The 3D view's area is outlined and labeled last
-    area = arrayGet(elements, arrayLength(elements) - 2)
+    # The 3D view's area is a dashed outline, then its number is marked on the road (the plan view's center)
+    area = arrayGet(elements, arrayLength(elements) - 3)
     unittestEqual(objectGet(area, 'svg'), 'polygon')
-    unittestDeepEqual(objectGet(area, 'elem'), {'svg': 'title', 'elem': {'text': 'View 2 area'}})
+    unittestEqual(objectGet(objectGet(area, 'attr'), 'stroke-dasharray'), '5 4')
+    unittestDeepEqual(objectGet(area, 'elem'), {'svg': 'title', 'elem': {'text': '3D view 2 area'}})
+    marker = arrayGet(elements, arrayLength(elements) - 2)
+    unittestDeepEqual([objectGet(marker, 'svg'), objectGet(objectGet(marker, 'attr'), 'cx'), objectGet(objectGet(marker, 'attr'), 'cy')], \
+        ['circle', '210', '210'])
     label = arrayGet(elements, arrayLength(elements) - 1)
-    unittestEqual(objectGet(objectGet(label, 'elem'), 'text'), 'View 2')
+    unittestEqual(objectGet(objectGet(label, 'elem'), 'text'), '2')
 endfunction
 unittestRunTest('testRoadiePlanView_narrowOutlines')
 
@@ -1352,3 +1362,78 @@ function testRoadieExploreOnKeyDown_other():
     systemGlobalSet('vZoom', null)
 endfunction
 unittestRunTest('testRoadieExploreOnKeyDown_other')
+
+
+function testRoadieNewPageToken():
+    # Each new page token counts up from the current one
+    unittestMockAll()
+    unittestEqual(roadieNewPageToken(), '1')
+    unittestEqual(roadieNewPageToken(), '2')
+    unittestEqual(sessionStorageGet(roadiePageTokenKey), '2')
+    unittestDeepEqual(unittestMockEnd(), [ \
+        ['sessionStorageSet', ['roadiePageToken', '1']], \
+        ['sessionStorageSet', ['roadiePageToken', '2']] \
+    ])
+endfunction
+unittestRunTest('testRoadieNewPageToken')
+
+
+function testRoadieExploreOnKeyDown_stale():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    unittestMockAll()
+    context = roadieExploreContext(argsParse(roadieArguments), plan)
+    roadieExploreRender(context)
+
+    # Another page (the report) is current - the stale explorer ignores its keys
+    roadieNewPageToken()
+    roadieExploreOnKeyDown(context, {'key': 'q', 'code': 'KeyQ'})
+    unittestEqual(objectGet(objectGet(context, 'state'), 'azimuth'), 30)
+
+    # The explorer's page is current
+    sessionStorageSet(roadiePageTokenKey, objectGet(context, 'token'))
+    roadieExploreOnKeyDown(context, {'key': 'q', 'code': 'KeyQ'})
+    unittestEqual(objectGet(objectGet(context, 'state'), 'azimuth'), 20)
+    unittestMockEnd()
+endfunction
+unittestRunTest('testRoadieExploreOnKeyDown_stale')
+
+
+function testRoadieLabelX():
+    # A 10-character, 10-pixel label is about 64 pixels wide - it's kept 4 pixels within the drawing
+    unittestEqual(roadieLabelX('abcdefghij', 10, 200, 400), 200)
+    unittestEqual(roadieLabelX('abcdefghij', 10, 0, 400), 36)
+    unittestEqual(roadieLabelX('abcdefghij', 10, 400, 400), 364)
+endfunction
+unittestRunTest('testRoadieLabelX')
+
+
+function testRoadieProfileView_labels():
+    # Closely spaced turnouts - only the labels with room are drawn
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    structures = []
+    station = 0
+    while station < 40:
+        arrayPush(structures, {'type': 'turnout', 'station': station, 'endStation': station + 1})
+        station = station + 2
+    endwhile
+    option = arrayGet(objectGet(plan, 'options'), 0)
+    objectSet(option, 'structures', structures)
+    analysis = roadieAnalyze(plan, 0)
+    svg = roadieProfileView(plan, option, analysis, 500, 300)
+    labels = []
+    for element in objectGet(svg, 'elem'):
+        if objectGet(element, 'svg') == 'text' && objectGet(objectGet(element, 'elem'), 'text') == 'Turnout':
+            arrayPush(labels, numberParseFloat(objectGet(objectGet(element, 'attr'), 'x')))
+        endif
+    endfor
+    unittestEqual(arrayLength(labels) > 1, true)
+    unittestEqual(arrayLength(labels) < arrayLength(structures), true)
+
+    # The drawn labels don't overlap - each is at least its width (about 45 pixels) plus 4 pixels from the previous one
+    for labelX, ixLabel in labels:
+        if ixLabel > 0:
+            unittestEqual(labelX - arrayGet(labels, ixLabel - 1) > 2 * 7 * 10 * 0.32 + 4, true)
+        endif
+    endfor
+endfunction
+unittestRunTest('testRoadieProfileView_labels')
