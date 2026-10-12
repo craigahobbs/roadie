@@ -19,22 +19,52 @@ topographic map image, and views the resulting road grading plans in 3D.
 
 ## The viewer
 
-The viewer computes each option's earthwork, structures, and cost score, then shows:
+The viewer's report - meant to be read and printed - computes each option's earthwork, structures,
+and cost score, then shows:
 
 - **Plan options** - a comparison of every option's length, maximum grade, cut, fill, net import or
   export, retaining walls, design warnings, and cost score (select an option to view it)
-- **3D view** - the terrain (with contours) graded to the road's finished surface: the road, cut and
-  fill slopes, retaining walls, bridges, culverts, streams, and other features. Rotate, tilt, change
-  the vertical exaggeration, or view from the top.
 - **Plan view** - a contour map with the road footprint (cut and fill slopes), structures, station
-  ticks, and the other options' centerlines
+  ticks, the other options' centerlines, and the outlines of the 3D views. Click it to explore the 3D
+  landscape from that point.
 - **Profile** - the ground and road grade along the road, with cut and fill areas, structures, and
   grades over the maximum highlighted
+- **3D views** - the terrain (with contours) graded to the road's finished surface: the road, cut and
+  fill slopes, retaining walls, bridges, culverts, streams, station labels, and other features. The
+  first view is always the whole site. When the road is too narrow to see in it (or the terrain hides
+  parts of it), views of equal road segments follow, from the start to the end. Every view keeps the
+  overview's general orientation, so the reader stays oriented across the views. Each looks across its
+  road segment - preferably upslope, where the road's cuts into the hillsides and its fill slopes face
+  the viewer - at the lowest tilt that shows all of its road.
 - **Cost** - the cost breakdown by item
 - **Design warnings** - grades over the maximum, curves under the minimum radius, slopes that don't
   daylight (retaining walls needed), walls over the maximum height, unprotected stream crossings,
   exclusion areas, and ends that miss the start/end points or don't tie in to the ground
 - **Structures** and the **source map** image
+
+The "Terrain" links above the 3D views draw the terrain "Faceted" (the default - the plan's elevation
+grid) or "Smooth" (where a view is zoomed in past the grid, each grid cell is divided into smaller
+cells interpolated between the grid points, clamped to each grid cell's corner elevations). Smooth
+terrain looks smoother up close but is no more accurate, and it makes the report slower and larger.
+The explorer's links start with the report's terrain drawing.
+
+On large sites, where the road is too narrow to see at a view's scale, the selected option's road is
+also drawn as a highlighted centerline.
+
+The report's "Explore" links open the full-window **3D explorer**, controlled with the keyboard:
+
+| Keys | Action |
+| --- | --- |
+| Arrows or W A S D | Move left, right, forward, and back |
+| + / - | Zoom in and out |
+| Q / E or Shift+Left / Right | Rotate |
+| Shift+Up / Down | Tilt - view more from above or from the side |
+| R / F or Page Up / Down | Raise and lower the view |
+| [ / ] | Less and more vertical exaggeration |
+| G | Smooth or faceted terrain |
+| T, N, 0 | Top view, face north, and reset |
+| H | Show or hide the keyboard help |
+| Esc | Back to the report |
 
 `make run` with no `FILE` opens the viewer's home page, which links to the example plan.
 

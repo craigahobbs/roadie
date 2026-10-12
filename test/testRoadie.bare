@@ -89,6 +89,41 @@ endfunction
 unittestRunTest('testRoadieMain_invalid')
 
 
+# Create the expected render log of a report's plan view, profile, and 3D views
+function testRoadieReportViewsLog(plan, analyses, ixOption):
+    topo = roadieTopo(plan)
+    analysis = arrayGet(analyses, ixOption)
+    option = arrayGet(objectGet(plan, 'options'), ixOption)
+    units = objectGet(plan, 'units')
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), objectGet(objectGet(option, 'section'), 'width') * 0.5)
+    reportViews = roadieReportViews(plan, topo, rows, analysis, ixOption, 976, false)
+    outlines = []
+    for reportView, ixReportView in reportViews:
+        if ixReportView > 0:
+            arrayPush(outlines, ['View ' + (ixReportView + 1), objectGet(reportView, 'view')])
+        endif
+    endfor
+    log = [['markdownPrint', ['### Plan View', '']]]
+    if arrayLength(outlines) > 0:
+        arrayPush(log, ['markdownPrint', ['The outlines show the areas of 3D views 2 through ' + arrayLength(reportViews) + ', below.', '']])
+    endif
+    exploreArgs = objectAssign({'explore': true}, objectGet(arrayGet(reportViews, 0), 'args'))
+    arrayExtend(log, [ \
+        ['elementModelRender', [roadiePlanView(plan, topo, analyses, ixOption, 976, outlines)]], \
+        ['markdownPrint', ['### Profile', '']], \
+        ['elementModelRender', [roadieProfileView(plan, option, analysis, 976, 320)]], \
+        ['markdownPrint', ['### 3D Views', '', \
+            argsLink(roadieArguments, 'Explore the plan in 3D', exploreArgs) + ' (full window, with keyboard controls)', '', \
+            roadieTerrainLinks(false), '']] \
+    ])
+    for reportView, ixReportView in reportViews:
+        arrayPush(log, ['markdownPrint', [roadieViewCaption(units, reportView, ixReportView, arrayLength(reportViews)), '']])
+        arrayPush(log, ['elementModelRender', [roadieView3D(plan, topo, rows, ixOption, analysis, objectGet(reportView, 'view'))]])
+    endfor
+    return log
+endfunction
+
+
 async function testRoadieMain_simple():
     systemGlobalSet('vFile', 'simple.json')
     unittestMockAll({'systemFetch': {'simple.json': jsonStringify(testRoadiePlanSimple())}})
@@ -96,11 +131,9 @@ async function testRoadieMain_simple():
     log = unittestMockEnd()
 
     # Expected values
-    args = argsParse(roadieArguments)
     plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
-    topo = roadieTopo(plan)
     analysis = roadieAnalyze(plan, 0)
-    unittestDeepEqual(log, [ \
+    expected = [ \
         ['systemFetch', ['simple.json']], \
         ['windowSetResize', ['<function>']], \
         ['documentSetTitle', ['Simple Plan']], \
@@ -108,22 +141,72 @@ async function testRoadieMain_simple():
         ['markdownPrint', ['## Plan Options', '']], \
         ['markdownPrint', [roadieOptionsTable(plan, [analysis], 0), '']], \
         ['markdownPrint', ['## Flat', '']], \
-        ['markdownPrint', ['**Cost score: 14** - 40 m, 0.0% maximum grade, 0 design warnings', '']], \
-        ['markdownPrint', ['### 3D View', '', roadieViewLinks(args), '']], \
-        ['elementModelRender', [roadieView3D(plan, topo, 0, analysis, args, 976, 732)]], \
-        ['markdownPrint', ['### Plan View', '']], \
-        ['elementModelRender', [roadiePlanView(plan, topo, [analysis], 0, 976)]], \
-        ['markdownPrint', ['### Profile', '']], \
-        ['elementModelRender', [roadieProfileView(plan, arrayGet(objectGet(plan, 'options'), 0), analysis, 976, 320)]], \
+        ['markdownPrint', ['**Cost score: 14** - 40 m, 0.0% maximum grade, 0 design warnings', '']] \
+    ]
+    arrayExtend(expected, testRoadieReportViewsLog(plan, [analysis], 0))
+    arrayExtend(expected, [ \
         ['markdownPrint', ['### Cost', '', roadieScoreNote, '']], \
         ['markdownPrint', [roadieCostTable('meters', analysis), '']], \
         ['markdownPrint', ['### Design Warnings', '']], \
         ['markdownPrint', ['No design warnings.', '']], \
         ['markdownPrint', ['---', '', "[Road plan model documentation](#var.vDoc=true&var.vFile='simple.json')"]] \
     ])
+    unittestDeepEqual(log, expected)
+
+    # The simple plan's road is wide enough to see in the overview, so it's the only 3D view
+    unittestEqual(arrayGet(arrayGet(arrayGet(log, 10), 1), 0), '### Profile')
+    unittestEqual(arrayGet(arrayGet(arrayGet(log, 12), 1), 0), '### 3D Views')
+    unittestEqual(stringStartsWith(arrayGet(arrayGet(arrayGet(log, 13), 1), 0), '**View 1 of 1: Overview**'), true)
     systemGlobalSet('vFile', null)
 endfunction
 unittestRunTest('testRoadieMain_simple')
+
+
+async function testRoadieMain_segments():
+    systemGlobalSet('vFile', 'narrow.json')
+    planValue = testRoadiePlanSimple()
+    objectSet(objectGet(arrayGet(objectGet(planValue, 'options'), 0), 'section'), 'width', 0.1)
+    unittestMockAll({'systemFetch': {'narrow.json': jsonStringify(planValue)}})
+    roadieMain()
+    log = unittestMockEnd()
+
+    # The narrow road is too narrow to see in the overview, so the report adds road segment views, outlined on the
+    # plan view
+    plan = objectGet(roadieValidate(planValue), 'plan')
+    analysis = roadieAnalyze(plan, 0)
+    expected = testRoadieReportViewsLog(plan, [analysis], 0)
+    unittestDeepEqual(arraySlice(log, 8, 8 + arrayLength(expected)), expected)
+    unittestDeepEqual(arrayGet(log, 9), \
+        ['markdownPrint', ['The outlines show the areas of 3D views 2 through 3, below.', '']])
+    caption = '**View 2 of 3** - stations ' + roadieStation(0, 'meters') + ' to ' + roadieStation(20, 'meters')
+    unittestEqual(stringStartsWith(arrayGet(arrayGet(arrayGet(log, 16), 1), 0), caption), true)
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieMain_segments')
+
+
+async function testRoadieMain_explore():
+    systemGlobalSet('vFile', 'simple.json')
+    systemGlobalSet('vExplore', true)
+    unittestMockAll({'systemFetch': {'simple.json': jsonStringify(testRoadiePlanSimple())}})
+    roadieMain()
+    log = unittestMockEnd()
+
+    # The explorer renders its anchor, sets its key down and resize handlers, and renders its view
+    unittestDeepEqual(arraySlice(log, 0, 5), [ \
+        ['systemFetch', ['simple.json']], \
+        ['documentSetTitle', ['Simple Plan - 3D']], \
+        ['elementModelRender', [{'html': 'div', 'attr': {'id': 'roadie-explore', 'style': 'display: none;'}}]], \
+        ['documentSetKeyDown', ['<function>']], \
+        ['windowSetResize', ['<function>']] \
+    ])
+    unittestDeepEqual(arrayGet(log, 5), ['documentSetReset', ['roadie-explore']])
+    unittestEqual(arrayGet(arrayGet(log, 6), 0), 'elementModelRender')
+    unittestEqual(arrayLength(log), 7)
+    systemGlobalSet('vFile', null)
+    systemGlobalSet('vExplore', null)
+endfunction
+unittestRunTest('testRoadieMain_explore')
 
 
 function testRoadieRender_complex():
@@ -135,7 +218,6 @@ function testRoadieRender_complex():
     log = unittestMockEnd()
 
     # Expected values
-    topo = roadieTopo(plan)
     analyses = [roadieAnalyze(plan, 0), roadieAnalyze(plan, 1)]
     analysis = arrayGet(analyses, 0)
     option = arrayGet(objectGet(plan, 'options'), 0)
@@ -152,17 +234,14 @@ function testRoadieRender_complex():
         ['markdownPrint', [roadieOptionsTable(plan, analyses, 0), '']], \
         ['markdownPrint', ['## Main', '']], \
         ['markdownPrint', [['The main option.'], '']], \
-        ['markdownPrint', ['**Cost score: 48** - 86 ft, 100.0% maximum grade, 18 design warnings', '']], \
-        ['markdownPrint', ['### 3D View', '', roadieViewLinks(args), '']], \
-        ['elementModelRender', [roadieView3D(plan, topo, 0, analysis, args, 976, 732)]], \
-        ['markdownPrint', ['### Plan View', '']], \
-        ['elementModelRender', [roadiePlanView(plan, topo, analyses, 0, 976)]], \
-        ['markdownPrint', ['### Profile', '']], \
-        ['elementModelRender', [roadieProfileView(plan, option, analysis, 976, 320)]], \
+        ['markdownPrint', ['**Cost score: 48** - 86 ft, 100.0% maximum grade, 18 design warnings', '']] \
+    ]
+    arrayExtend(expected, testRoadieReportViewsLog(plan, analyses, 0))
+    arrayExtend(expected, [ \
         ['markdownPrint', ['### Cost', '', roadieScoreNote, '']], \
         ['markdownPrint', [roadieCostTable('feet', analysis), '']], \
         ['markdownPrint', ['### Design Warnings', '']] \
-    ]
+    ])
     arrayExtend(expected, warningLines)
     arrayExtend(expected, [ \
         ['markdownPrint', ['']], \
@@ -301,34 +380,25 @@ unittestRunTest('testRoadieRender_oneWarning')
 #
 
 
-function testRoadieViewLinks():
+function testRoadieCenterArgs():
+    unittestDeepEqual(roadieCenterArgs(1.234, 5.678), {'x': 1.2, 'y': 5.7})
+endfunction
+unittestRunTest('testRoadieCenterArgs')
+
+
+function testRoadieOnPlanClick():
     systemGlobalSet('vFile', 'a.json')
-    args = argsParse(roadieArguments)
-    unittestEqual(roadieViewLinks(args), \
-        "Rotate [Left](#var.vAzimuth=15&var.vFile='a.json') | [Right](#var.vAzimuth=45&var.vFile='a.json')" + \
-        " — Tilt [Up](#var.vFile='a.json'&var.vTilt=45) | [Down](#var.vFile='a.json'&var.vTilt=25)" + \
-        " — Exaggeration [More](#var.vExaggeration=2&var.vFile='a.json') | [Less](#var.vExaggeration=1&var.vFile='a.json')" + \
-        " — [Top](#var.vAzimuth=0&var.vFile='a.json'&var.vTilt=90) | [Reset](#var.vFile='a.json')")
+    topo = roadieTopo(testRoadiePlanSimple())
+    unittestMockAll()
+    roadieOnPlanClick(topo, 420, 420, 10, 10, 105, 52.5, 210, 210)
+    roadieOnPlanClick(topo, 420, 420, 10, 10, 0, 0, 210, 210)
+    unittestDeepEqual(unittestMockEnd(), [ \
+        ['windowSetLocation', ["#var.vExplore=true&var.vFile='a.json'&var.vX=20&var.vY=30.5&var.vZoom=4"]], \
+        ['windowSetLocation', ["#var.vExplore=true&var.vFile='a.json'&var.vX=0&var.vY=40&var.vZoom=4"]] \
+    ])
     systemGlobalSet('vFile', null)
 endfunction
-unittestRunTest('testRoadieViewLinks')
-
-
-function testRoadieViewLinks_limits():
-    systemGlobalSet('vAzimuth', 345)
-    systemGlobalSet('vTilt', 90)
-    systemGlobalSet('vExaggeration', 5)
-    args = argsParse(roadieArguments)
-    unittestEqual(roadieViewLinks(args), \
-        "Rotate [Left](#var.vAzimuth=330&var.vExaggeration=5&var.vTilt=90) | [Right](#var.vAzimuth=0&var.vExaggeration=5&var.vTilt=90)" + \
-        " — Tilt [Up](#var.vAzimuth=345&var.vExaggeration=5&var.vTilt=90) | [Down](#var.vAzimuth=345&var.vExaggeration=5&var.vTilt=80)" + \
-        " — Exaggeration [More](#var.vAzimuth=345&var.vExaggeration=5&var.vTilt=90) | [Less](#var.vAzimuth=345&var.vExaggeration=4.5&var.vTilt=90)" + \
-        " — [Top](#var.vAzimuth=0&var.vExaggeration=5&var.vTilt=90) | [Reset](#var=)")
-    systemGlobalSet('vAzimuth', null)
-    systemGlobalSet('vTilt', null)
-    systemGlobalSet('vExaggeration', null)
-endfunction
-unittestRunTest('testRoadieViewLinks_limits')
+unittestRunTest('testRoadieOnPlanClick')
 
 
 function testRoadieOptionsTable():
@@ -480,7 +550,7 @@ function testRoadieSvgElements():
     unittestEqual(objectGet(objectGet(roadieSvgText('Hi', 1, 2, 10, 'start', 'black', true), 'attr'), 'font-weight'), 'bold')
     unittestDeepEqual(roadieSvg(100, 50, 'Label', []), {'svg': 'svg', 'attr': { \
         'width': 100, 'height': 50, 'viewBox': '0 0 100 50', 'role': 'img', 'aria-label': 'Label', \
-        'style': 'background: #f4f1ea; border: 1px solid #ccc; display: block; max-width: 100%; height: auto; break-inside: avoid;'}, \
+        'style': 'background: #f4f1ea; border: 1px solid #ccc; display: block; max-width: 100%; height: auto; break-inside: avoid; margin: 0.75em 0 1.5em 0;'}, \
         'elem': []})
 endfunction
 unittestRunTest('testRoadieSvgElements')
@@ -506,20 +576,18 @@ function testRoadieProjection():
     topo = roadieTopo(testRoadiePlanSimple())
     view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1}, 100, 100)
     unittestEqual(mathRound(objectGet(view, 'scale'), 6), 1.244486)
-    unittestEqual(mathRound(objectGet(view, 'uMid'), 6), 0)
-    unittestEqual(mathRound(objectGet(view, 'vMid'), 6), 0)
     point = roadieProject(view, 20, 20, 102)
-    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [50, 50, 0])
+    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [50, 50, 5.3])
     point = roadieProject(view, 40, 40, 104)
-    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [74.889727, 25.110273, -2])
+    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [74.889727, 25.110273, 3.3])
 
     # Side view from the east (looking west) - north is screen right, farther west is deeper
     view = roadieProjection(topo, {'azimuth': 270, 'tilt': 0, 'exaggeration': 2}, 100, 100)
     point = roadieProject(view, 0, 40, 102)
-    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [74.889727, 47.60015, 19.923894])
+    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6), mathRound(arrayGet(point, 2), 6)], [74.889727, 47.60015, 20.821598])
 
     projected = roadieProjectPoints(view, [[0, 40, 102], [40, 0, 102]])
-    unittestEqual(mathRound(arrayGet(projected, 1), 6), 0)
+    unittestEqual(mathRound(arrayGet(projected, 1), 6), 0.897704)
     unittestEqual(arrayLength(arrayGet(projected, 0)), 4)
 
     # The scale doesn't change as the view rotates
@@ -531,12 +599,72 @@ function testRoadieProjection():
     # The view's height fits the topography (a low tilt), up to the maximum height (a top view)
     view = roadieProjection(topo, {'azimuth': 30, 'tilt': 10, 'exaggeration': 1.5}, 400, 300)
     unittestEqual(objectGet(view, 'height'), 240)
-    unittestEqual(mathRound(objectGet(view, 'vMid'), 6), 7.6815)
+    unittestEqual(mathRound(objectGet(view, 'zc'), 6), 107.2)
     view = roadieProjection(topo, {'azimuth': 30, 'tilt': 90, 'exaggeration': 1.5}, 400, 300)
     unittestEqual(objectGet(view, 'height'), 300)
     unittestEqual(mathRound(objectGet(view, 'scale'), 6), 4.90474)
 endfunction
 unittestRunTest('testRoadieProjection')
+
+
+function testRoadieProjection_zoom():
+    topo = roadieTopo(testRoadiePlanSimple())
+    fit = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5}, 400, 300)
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 4, 'x': 30, 'y': 10}, 400, 300)
+    unittestEqual(objectGet(view, 'zoom'), 4)
+    unittestEqual(mathRound(objectGet(view, 'scale') / objectGet(fit, 'scale'), 6), 4)
+    unittestEqual(objectGet(view, 'height'), 300)
+
+    # The view center point is at the view center
+    point = roadieProject(view, 30, 10, roadieElevation(topo, 30, 10))
+    unittestDeepEqual([mathRound(arrayGet(point, 0), 6), mathRound(arrayGet(point, 1), 6)], [200, objectGet(view, 'cy')])
+
+    # A low view's fit height is short - a zoomed or moved view is up to the maximum height, trimmed to its landscape
+    # (and the marker poles), so the landscape isn't surrounded by empty bands
+    args = {'azimuth': 80, 'tilt': 10, 'exaggeration': 1.5}
+    unittestEqual(objectGet(roadieProjection(topo, args, 400, 300), 'height'), 240)
+    for viewArgs, ixViewArgs in [{'zoom': 1.414}, {'z': 110}]:
+        lowView = roadieProjection(topo, objectAssign(objectCopy(args), viewArgs), 400, 300)
+        unittestEqual(objectGet(lowView, 'height'), arrayGet([271, 238], ixViewArgs))
+        upRange = roadieViewUpRange(lowView, topo)
+        landscapeTop = objectGet(lowView, 'cy') - arrayGet(upRange, 1) * objectGet(lowView, 'scale')
+        landscapeBottom = objectGet(lowView, 'cy') - arrayGet(upRange, 0) * objectGet(lowView, 'scale')
+        unittestEqual(landscapeTop > 24 && landscapeBottom < objectGet(lowView, 'height'), true)
+    endfor
+
+    # A landscape out of view is the maximum height, with the view center at its middle
+    lowView = roadieProjection(topo, objectAssign(objectCopy(args), {'z': 10000}), 400, 300)
+    unittestDeepEqual([objectGet(lowView, 'height'), objectGet(lowView, 'cy')], [300, 150])
+
+    # A view center off the topography is moved to its edge, on the ground - an explicit elevation is kept
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 0.5, 'x': 100, 'y': 100}, 400, 300)
+    unittestEqual(objectGet(view, 'zoom'), 1)
+    unittestDeepEqual([objectGet(view, 'xc'), objectGet(view, 'yc'), objectGet(view, 'zc')], [40, 40, 104])
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 100, 'z': 90}, 400, 300)
+    unittestEqual(objectGet(view, 'zoom'), roadieMaxZoom)
+    unittestDeepEqual([objectGet(view, 'xc'), objectGet(view, 'yc'), objectGet(view, 'zc')], [20, 20, 90])
+endfunction
+unittestRunTest('testRoadieProjection_zoom')
+
+
+function testRoadieUnproject():
+    topo = roadieTopo(testRoadiePlanSimple())
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 2}, 400, 300)
+
+    # Unprojecting a projected ground point finds the ground point
+    point = roadieProject(view, 30, 10, roadieElevation(topo, 30, 10))
+    ground = roadieUnproject(view, topo, arrayGet(point, 0), arrayGet(point, 1))
+    unittestDeepEqual([mathRound(arrayGet(ground, 0), 3), mathRound(arrayGet(ground, 1), 3)], [30, 10])
+
+    # The point at an elevation
+    point = roadieProject(view, 5, 35, 110)
+    atZ = roadieUnprojectZ(view, arrayGet(point, 0), arrayGet(point, 1), 110)
+    unittestDeepEqual([mathRound(arrayGet(atZ, 0), 6), mathRound(arrayGet(atZ, 1), 6)], [5, 35])
+
+    # Pixels off the topography are clamped to it
+    unittestDeepEqual(roadieUnproject(view, topo, -10000, 150), [0, 40])
+endfunction
+unittestRunTest('testRoadieUnproject')
 
 
 function testRoadieCompareDepth():
@@ -552,7 +680,7 @@ function testRoadie3DPolygon():
     view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1}, 100, 100)
     item = roadie3DPolygon(view, [[0, 0, 102], [40, 0, 102], [40, 40, 102], [0, 40, 102]], [100, 100, 100], 3, 'Tip')
     fill = roadieRGB([100, 100, 100], 0.5 + 0.6 * 0.7071)
-    unittestEqual(mathRound(arrayGet(item, 0), 6), -3)
+    unittestEqual(mathRound(arrayGet(item, 0), 6), 2.3)
     unittestDeepEqual(arrayGet(item, 1), roadieSvgPolygon([25.1, 74.9, 74.9, 74.9, 74.9, 25.1, 25.1, 25.1], fill, fill, 0.5, 'Tip'))
 endfunction
 unittestRunTest('testRoadie3DPolygon')
@@ -590,23 +718,92 @@ endfunction
 unittestRunTest('testRoadieFinishedRows')
 
 
+# Count a 3D view's depth-sorted items - terrain cells (a polygon and contour paths), contour paths, station labels
+# (a circle and text), and polygons
+function testRoadie3DElementCounts(elements):
+    counts = {'cells': 0, 'contours': 0, 'labels': [], 'polygons': 0}
+    for element in elements:
+        if systemType(element) == 'object':
+            objectSet(counts, 'polygons', objectGet(counts, 'polygons') + if(objectGet(element, 'svg') == 'polygon', 1, 0))
+        elif objectGet(arrayGet(element, 0), 'svg') == 'circle':
+            arrayPush(objectGet(counts, 'labels'), objectGet(objectGet(arrayGet(element, 1), 'elem'), 'text'))
+        else:
+            objectSet(counts, 'cells', objectGet(counts, 'cells') + 1)
+            for contour in arraySlice(element, 1):
+                objectSet(counts, 'contours', objectGet(counts, 'contours') + if(objectGet(contour, 'svg') == 'path', 1, 0))
+            endfor
+        endif
+    endfor
+    return counts
+endfunction
+
+
 function testRoadieView3D():
     plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
     topo = roadieTopo(plan)
     analysis = roadieAnalyze(plan, 0)
-    args = {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5}
-    svg = roadieView3D(plan, topo, 0, analysis, args, 400, 300)
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5}, 400, 300)
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 5)
+    svg = roadieView3D(plan, topo, rows, 0, analysis, view)
     unittestEqual(objectGet(svg, 'svg'), 'svg')
     unittestEqual(objectGet(objectGet(svg, 'attr'), 'aria-label'), '3D view of the Flat road plan option')
 
-    # 16 terrain cells, 12 road intervals of surface and two side slopes, two markers, and the compass
+    # 16 terrain cells, 12 road intervals of surface and two side slopes, and a station label (20 m), depth-sorted,
+    # then two markers and the compass
     elements = objectGet(svg, 'elem')
-    unittestEqual(arrayLength(elements), 16 + 12 * 3 + 4 + 1)
-    unittestEqual(objectGet(arrayGet(elements, 52), 'svg'), 'polyline')
-    unittestEqual(objectGet(objectGet(arrayGet(elements, 53), 'elem'), 'text'), 'Start')
-    unittestEqual(objectGet(objectGet(arrayGet(elements, 55), 'elem'), 'text'), 'End')
+    unittestEqual(arrayLength(elements), 16 + 12 * 3 + 1 + 4 + 1)
+    counts = testRoadie3DElementCounts(arraySlice(elements, 0, arrayLength(elements) - 5))
+    unittestDeepEqual(counts, {'cells': 16, 'contours': 16, 'labels': ['0+020'], 'polygons': 36})
+    unittestEqual(objectGet(arrayGet(elements, 53), 'svg'), 'polyline')
+    unittestEqual(objectGet(objectGet(arrayGet(elements, 54), 'elem'), 'text'), 'Start')
+    unittestEqual(objectGet(objectGet(arrayGet(elements, 56), 'elem'), 'text'), 'End')
 endfunction
 unittestRunTest('testRoadieView3D')
+
+
+function testRoadieView3D_zoom():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 4, 'x': 30, 'y': 10}, 400, 300)
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 5)
+    svg = roadieView3D(plan, topo, rows, 0, analysis, view)
+
+    # Only the terrain cells (8), road polygons (12 of 36), and station labels within the zoomed view are drawn - the
+    # markers and the compass are always drawn
+    elements = objectGet(svg, 'elem')
+    unittestEqual(arrayLength(elements), 8 + 12 + 2 + 4 + 1)
+    counts = testRoadie3DElementCounts(arraySlice(elements, 0, arrayLength(elements) - 5))
+    unittestDeepEqual(counts, {'cells': 8, 'contours': 8, 'labels': ['0+030', '0+025'], 'polygons': 12})
+endfunction
+unittestRunTest('testRoadieView3D_zoom')
+
+
+function testRoadieView3D_narrow():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    objectSet(objectGet(arrayGet(objectGet(plan, 'options'), 0), 'section'), 'width', 0.1)
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5}, 400, 300)
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 0.05)
+    svg = roadieView3D(plan, topo, rows, 0, analysis, view)
+
+    # The narrow road is also drawn as a highlighted centerline - a halo and a line for each of the 12 road intervals
+    elements = objectGet(svg, 'elem')
+    unittestEqual(arrayLength(elements), 16 + 12 * 3 + 12 * 2 + 1 + 4 + 1)
+    halos = 0
+    lines = 0
+    for element in elements:
+        if systemType(element) == 'object' && objectGet(element, 'svg') == 'polyline':
+            stroke = objectGet(objectGet(element, 'attr'), 'stroke')
+            halos = halos + if(stroke == 'white', 1, 0)
+            lines = lines + if(stroke == roadieRoadColor, 1, 0)
+        endif
+    endfor
+    unittestEqual(halos, 12)
+    unittestEqual(lines, 12)
+endfunction
+unittestRunTest('testRoadieView3D_narrow')
 
 
 function testRoadieCompass():
@@ -630,7 +827,7 @@ function testRoadiePlanView():
     plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
     topo = roadieTopo(plan)
     analysis = roadieAnalyze(plan, 0)
-    svg = roadiePlanView(plan, topo, [analysis], 0, 420)
+    svg = roadiePlanView(plan, topo, [analysis], 0, 420, [])
     unittestEqual(objectGet(objectGet(svg, 'attr'), 'width'), 420)
     unittestEqual(objectGet(objectGet(svg, 'attr'), 'height'), 420)
     unittestEqual(objectGet(objectGet(svg, 'attr'), 'aria-label'), 'Plan view of the Flat road plan option')
@@ -641,6 +838,56 @@ function testRoadiePlanView():
     unittestEqual(objectGet(objectGet(arrayGet(elements, 1), 'attr'), 'stroke'), '#8a6a45')
 endfunction
 unittestRunTest('testRoadiePlanView')
+
+
+function testRoadiePlanView_narrowOutlines():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    objectSet(objectGet(arrayGet(objectGet(plan, 'options'), 0), 'section'), 'width', 0.1)
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 4, 'x': 30, 'y': 10}, 420, 315)
+    svg = roadiePlanView(plan, topo, [analysis], 0, 420, [['View 2', view]])
+    elements = objectGet(svg, 'elem')
+
+    # The narrow road is also drawn as a highlighted centerline (a white halo under a colored line)
+    highlight = []
+    for element in elements:
+        if systemType(element) == 'object' && objectGet(element, 'svg') == 'polyline' && \
+                arrayIndexOf(['white', roadieRoadColor], objectGet(objectGet(element, 'attr'), 'stroke')) != -1:
+            arrayPush(highlight, objectGet(objectGet(element, 'attr'), 'stroke-width'))
+        endif
+    endfor
+    unittestDeepEqual(highlight, [6, 3])
+
+    # The 3D view's area is outlined and labeled last
+    area = arrayGet(elements, arrayLength(elements) - 2)
+    unittestEqual(objectGet(area, 'svg'), 'polygon')
+    unittestDeepEqual(objectGet(area, 'elem'), {'svg': 'title', 'elem': {'text': 'View 2 area'}})
+    label = arrayGet(elements, arrayLength(elements) - 1)
+    unittestEqual(objectGet(objectGet(label, 'elem'), 'text'), 'View 2')
+endfunction
+unittestRunTest('testRoadiePlanView_narrowOutlines')
+
+
+function testRoadiePlanView_click():
+    systemGlobalSet('vFile', 'a.json')
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    svg = roadiePlanView(plan, topo, [analysis], 0, 420, [])
+
+    # The click callback (with the click event arguments) is the plan view click handler
+    clickFn = objectGet(objectGet(svg, 'callback'), 'click')
+    unittestMockAll()
+    clickFn(105, 52.5, 210, 210)
+    actual = unittestMockEnd()
+    unittestMockAll()
+    roadieOnPlanClick(topo, 420, 420, 10, 10, 105, 52.5, 210, 210)
+    unittestDeepEqual(actual, unittestMockEnd())
+    unittestEqual(arrayLength(actual), 1)
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadiePlanView_click')
 
 
 function testRoadieProfileView():
@@ -661,3 +908,447 @@ function testRoadieAlignmentPointAt():
     unittestEqual(roadieAlignmentPointAt(analysis, 15), null)
 endfunction
 unittestRunTest('testRoadieAlignmentPointAt')
+
+
+#
+# Report 3D views
+#
+
+
+# The simple plan with tall ridges on both sides of its road (which hide the road from low viewpoints)
+function testRoadiePlanRidges():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    rows = objectGet(objectGet(plan, 'topography'), 'elevations')
+    for row in [1, 3]:
+        for col in [0, 1, 2, 3, 4]:
+            arraySet(arrayGet(rows, row), col, 150)
+        endfor
+    endfor
+    return plan
+endfunction
+
+
+function testRoadieChooseViewpoint():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    samples = objectGet(roadieAnalyze(plan, 0), 'samples')
+
+    # The road runs east across a plane rising north - the overview looks north (upslope), at the lowest tilt
+    unittestDeepEqual(roadieChooseViewpoint(topo, topo, samples, 0, 40, [35, 50], null), {'azimuth': 0, 'tilt': 35, 'hidden': 0})
+
+    # A segment view turns toward its crosswise direction, at most 40 degrees from the base azimuth, on its side
+    unittestDeepEqual(roadieChooseViewpoint(topo, topo, samples, 0, 40, [40], 30), {'azimuth': 0, 'tilt': 40, 'hidden': 0})
+    unittestDeepEqual(roadieChooseViewpoint(topo, topo, samples, 0, 40, [40], 100), {'azimuth': 140, 'tilt': 40, 'hidden': 0})
+    unittestDeepEqual(roadieChooseViewpoint(topo, topo, samples, 0, 40, [40], 300), {'azimuth': 340, 'tilt': 40, 'hidden': 0})
+
+    # A single-sample segment uses the road's direction
+    unittestDeepEqual(roadieChooseViewpoint(topo, topo, samples, 20, 20, [35], null), {'azimuth': 0, 'tilt': 35, 'hidden': 0})
+
+    # The ridges hide the road at a low tilt from both sides - the viewpoint hiding the fewest wins
+    ridgePlan = testRoadiePlanRidges()
+    ridgeTopo = roadieTopo(ridgePlan)
+    unittestDeepEqual(roadieChooseViewpoint(ridgeTopo, ridgeTopo, samples, 0, 40, [35], null), {'azimuth': 0, 'tilt': 35, 'hidden': 13})
+    unittestDeepEqual(roadieChooseViewpoint(ridgeTopo, ridgeTopo, samples, 0, 40, [35, 90], null), {'azimuth': 0, 'tilt': 90, 'hidden': 0})
+endfunction
+unittestRunTest('testRoadieChooseViewpoint')
+
+
+function testRoadieHiddenPoints():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    ridgeTopo = roadieTopo(testRoadiePlanRidges())
+    points = [[20, 20, 102]]
+
+    # Nothing is hidden from the top, or on open ground, or by ground beyond the topography
+    unittestEqual(roadieHiddenPoints(ridgeTopo, points, 0, 90, 1.5), 0)
+    unittestEqual(roadieHiddenPoints(topo, points, 0, 35, 1.5), 0)
+    unittestEqual(roadieHiddenPoints(topo, [[20, 0, 100]], 0, 35, 1.5), 0)
+
+    # The ridge hides the point - unless the view is steep enough to see over it
+    unittestEqual(roadieHiddenPoints(ridgeTopo, points, 0, 35, 1.5), 1)
+    unittestEqual(roadieHiddenPoints(ridgeTopo, points, 0, 85, 1.5), 0)
+endfunction
+unittestRunTest('testRoadieHiddenPoints')
+
+
+function testRoadieFitViewpoint():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    samples = objectGet(roadieAnalyze(plan, 0), 'samples')
+    footprint = []
+    for sample in roadieSegmentSamples(samples, 0, 20):
+        arrayExtend(footprint, roadieSamplePoints(sample, 5))
+    endfor
+    viewArgs = roadieFitViewpoint(topo, footprint, {'azimuth': 0, 'tilt': 40}, 400, 300)
+    unittestEqual(objectGet(viewArgs, 'azimuth'), 0)
+    unittestEqual(objectGet(viewArgs, 'tilt'), 40)
+    unittestEqual(objectGet(viewArgs, 'zoom') > 1, true)
+
+    # The footprint is centered in the view, filling 85% of its width
+    view = roadieProjection(topo, viewArgs, 400, 300)
+    coords = arrayGet(roadieProjectPoints(view, footprint), 0)
+    pxs = []
+    ixCoord = 0
+    while ixCoord < arrayLength(coords):
+        arrayPush(pxs, arrayGet(coords, ixCoord))
+        ixCoord = ixCoord + 2
+    endwhile
+    arraySort(pxs)
+    pxMin = arrayGet(pxs, 0)
+    pxMax = arrayGet(pxs, arrayLength(pxs) - 1)
+    unittestEqual(mathAbs((pxMin + pxMax) * 0.5 - 200) < 1, true)
+    unittestEqual(mathAbs((pxMax - pxMin) - 0.85 * 400) < 2, true)
+endfunction
+unittestRunTest('testRoadieFitViewpoint')
+
+
+function testRoadieReportViews():
+    # The simple plan's road is wide enough to see in its overview - the only view
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 5)
+    views = roadieReportViews(plan, topo, rows, analysis, 0, 976, false)
+    unittestEqual(arrayLength(views), 1)
+    overview = arrayGet(views, 0)
+    unittestDeepEqual([objectGet(overview, 'station'), objectGet(overview, 'endStation'), objectGet(overview, 'hidden'), \
+        objectGet(overview, 'leftToRight')], [0, 40, 0, true])
+    unittestEqual(objectGet(objectGet(overview, 'args'), 'azimuth'), 0)
+
+    # A narrow road adds views of equal road segments, from the start to the end, in the overview's orientation
+    objectSet(objectGet(arrayGet(objectGet(plan, 'options'), 0), 'section'), 'width', 0.1)
+    analysis = roadieAnalyze(plan, 0)
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 0.05)
+    views = roadieReportViews(plan, topo, rows, analysis, 0, 976, false)
+    unittestEqual(arrayLength(views), 3)
+    baseAzimuth = objectGet(objectGet(arrayGet(views, 0), 'args'), 'azimuth')
+    for view, ixView in views:
+        if ixView > 0:
+            unittestDeepEqual([objectGet(view, 'station'), objectGet(view, 'endStation')], [(ixView - 1) * 20, ixView * 20])
+            unittestEqual(mathAbs(roadieAngleDifference(objectGet(objectGet(view, 'args'), 'azimuth'), baseAzimuth)) <= roadieMaxViewTurn, true)
+            unittestEqual(objectGet(view, 'leftToRight'), true)
+            unittestEqual(objectGet(objectGet(view, 'view'), 'zoom') > 1, true)
+        endif
+    endfor
+endfunction
+unittestRunTest('testRoadieReportViews')
+
+
+function testRoadieReportUtilities():
+    unittestDeepEqual(roadieGridSteps(5, 2), [0, 2, 4])
+    unittestDeepEqual(roadieGridSteps(6, 2), [0, 2, 4, 5])
+    unittestEqual(roadieAngleDifference(10, 350), 20)
+    unittestEqual(roadieAngleDifference(350, 10), -20)
+    unittestEqual(roadieAngleDifference(180, 0), -180)
+    samples = [{'station': 0}, {'station': 5}, {'station': 10}]
+    unittestDeepEqual(roadieSegmentSamples(samples, 5, 10), [{'station': 5}, {'station': 10}])
+endfunction
+unittestRunTest('testRoadieReportUtilities')
+
+
+function testRoadieTerrainLinks():
+    systemGlobalSet('vFile', 'a.json')
+    note = " - faceted terrain is the plan's elevation grid; smooth terrain is interpolated between its points, so it " + \
+        'looks smoother up close but is no more accurate'
+    unittestEqual(roadieTerrainLinks(false), "Terrain: **Faceted** | [Smooth](#var.vFile='a.json'&var.vSmooth=true)" + note)
+    unittestEqual(roadieTerrainLinks(true), "Terrain: [Faceted](#var.vFile='a.json') | **Smooth**" + note)
+    systemGlobalSet('vFile', null)
+endfunction
+unittestRunTest('testRoadieTerrainLinks')
+
+
+function testRoadieCubic():
+    unittestEqual(roadieCubic(0, 1, 2, 3, 0), 1)
+    unittestEqual(roadieCubic(0, 1, 2, 3, 0.5), 1.5)
+    unittestEqual(roadieCubic(0, 1, 2, 3, 1), 2)
+    unittestEqual(roadieCubic(0, 0, 1, 1, 0.5), 0.5)
+    unittestEqual(roadieCubic(1, 0, 0, 1, 0.5), -0.125)
+endfunction
+unittestRunTest('testRoadieCubic')
+
+
+function testRoadieSmoothRows():
+    rows = [ \
+        [0, 0, 0, 0], \
+        [0, 10, 0, 0], \
+        [0, 0, 0, 0], \
+        [0, 0, 0, 20] \
+    ]
+
+    # Two cells per grid cell side - the grid points keep their elevations
+    smooth = roadieSmoothRows(rows, 1, 3, 0, 2, 2)
+    unittestEqual(arrayLength(smooth), 5)
+    unittestEqual(arrayLength(arrayGet(smooth, 0)), 5)
+    unittestDeepEqual(arrayGet(smooth, 0), [0, 5.625, 10, 5.625, 0])
+    unittestDeepEqual(arrayGet(arrayGet(smooth, 2), 2), 0)
+    unittestDeepEqual(arrayGet(arrayGet(smooth, 4), 4), 0)
+
+    # The interpolated elevations are clamped to each grid cell's corner elevations - the spline dips below zero
+    # around the peak, and the clamp holds it at zero
+    unittestEqual(roadieCubic(0, 10, 0, 0, 0.5) > 0, true)
+    unittestDeepEqual(arrayGet(smooth, 3), [0, 0, 0, 0, 0])
+    unittestEqual(arrayGet(arrayGet(smooth, 1), 1), 3.1640625)
+endfunction
+unittestRunTest('testRoadieSmoothRows')
+
+
+function testRoadieView3D_minorContours():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 5)
+
+    # The minor contours (0.5 pixels wide) are drawn only where the terrain cells are large enough to read them
+    for contourCase in [[400, true], [60, false]]:
+        view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1}, arrayGet(contourCase, 0), 400)
+        widths = {}
+        for element in objectGet(roadieView3D(plan, topo, rows, 0, analysis, view), 'elem'):
+            if systemType(element) == 'array' && objectGet(arrayGet(element, 0), 'svg') == 'polygon':
+                for contour in arraySlice(element, 1):
+                    objectSet(widths, '' + objectGet(objectGet(contour, 'attr'), 'stroke-width'), true)
+                endfor
+            endif
+        endfor
+        unittestEqual(objectHas(widths, '0.5'), arrayGet(contourCase, 1))
+    endfor
+endfunction
+unittestRunTest('testRoadieView3D_minorContours')
+
+
+function testRoadieView3D_smooth():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 5)
+
+    # The faceted view draws the 16 grid cells - the smooth view divides each into 4 x 4 cells
+    for smoothCase in [[false, 16], [true, 16 * 16]]:
+        view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1, 'smooth': arrayGet(smoothCase, 0)}, 400, 400)
+        unittestEqual(objectGet(view, 'smooth'), arrayGet(smoothCase, 0))
+        elements = objectGet(roadieView3D(plan, topo, rows, 0, analysis, view), 'elem')
+        counts = testRoadie3DElementCounts(arraySlice(elements, 0, arrayLength(elements) - 5))
+        unittestEqual(objectGet(counts, 'cells'), arrayGet(smoothCase, 1))
+    endfor
+endfunction
+unittestRunTest('testRoadieView3D_smooth')
+
+
+function testRoadieViewCaption():
+    # The explore link omits the default tilt (35 degrees)
+    overview = {'args': {'azimuth': 350, 'tilt': 35}, 'station': 0, 'endStation': 40, 'hidden': 0, 'leftToRight': true}
+    unittestEqual(roadieViewCaption('meters', overview, 0, 1), \
+        '**View 1 of 1: Overview** - the whole site, looking north (350°) from 35° above the horizon. The road runs left to ' + \
+            'right from its start to its end. [Explore this view](#var.vAzimuth=350&var.vExplore=true)')
+
+    # The terrain hides parts of the overview's road, shown in the views that follow
+    objectSet(overview, 'hidden', 2)
+    unittestEqual(roadieViewCaption('meters', overview, 0, 3), \
+        '**View 1 of 3: Overview** - the whole site, looking north (350°) from 35° above the horizon. The road runs left to ' + \
+            'right from its start to its end - the terrain hides parts of the road, shown in the views that follow. ' + \
+            '[Explore this view](#var.vAzimuth=350&var.vExplore=true)')
+
+    # A road segment view with parts of its road hidden
+    segment = {'args': {'azimuth': 180, 'tilt': 55, 'zoom': 2}, 'station': 0, 'endStation': 20, 'hidden': 1, 'leftToRight': false}
+    unittestEqual(roadieViewCaption('meters', segment, 1, 3), \
+        '**View 2 of 3** - stations 0+000 to 0+020, looking south (180°) from 55° above the horizon. The road runs right to ' + \
+            'left from its start to its end - the terrain hides parts of the road. ' + \
+            '[Explore this view](#var.vAzimuth=180&var.vExplore=true&var.vTilt=55&var.vZoom=2)')
+endfunction
+unittestRunTest('testRoadieViewCaption')
+
+
+#
+# 3D explorer
+#
+
+
+function testRoadieZoomStep():
+    unittestEqual(roadieZoomStep(1, 1), 1.414)
+    unittestEqual(roadieZoomStep(1.414, 1), 2)
+    unittestEqual(roadieZoomStep(2, -1), 1.414)
+    unittestEqual(roadieZoomStep(1, -1), 1)
+    unittestEqual(roadieZoomStep(64, 1), 64)
+    unittestEqual(roadieZoomStep(2.5, 1), 4)
+endfunction
+unittestRunTest('testRoadieZoomStep')
+
+
+function testRoadieExploreContext():
+    systemGlobalSet('vAzimuth', 90)
+    systemGlobalSet('vX', 10)
+    args = argsParse(roadieArguments)
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    context = roadieExploreContext(args, plan)
+    state = {'help': true, 'azimuth': 90, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 1, 'x': 10, 'y': null, 'z': null, 'smooth': false}
+    unittestDeepEqual(objectGet(context, 'state'), state)
+    unittestDeepEqual(objectGet(context, 'initial'), state)
+    unittestEqual(objectGet(context, 'view'), null)
+    unittestEqual(objectGet(context, 'ixOption'), 0)
+    systemGlobalSet('vAzimuth', null)
+    systemGlobalSet('vX', null)
+endfunction
+unittestRunTest('testRoadieExploreContext')
+
+
+function testRoadieExploreRender():
+    systemGlobalSet('vFile', 'a.json')
+    systemGlobalSet('vExplore', true)
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    context = roadieExploreContext(argsParse(roadieArguments), plan)
+    unittestMockAll()
+    roadieExploreRender(context)
+    log = unittestMockEnd()
+
+    # The view fills the window, less the body margins (the mock window is 1024 x 768)
+    unittestDeepEqual(arrayGet(log, 0), ['documentSetReset', ['roadie-explore']])
+    svg = arrayGet(arrayGet(arrayGet(log, 1), 1), 0)
+    unittestDeepEqual([objectGet(objectGet(svg, 'attr'), 'width'), objectGet(objectGet(svg, 'attr'), 'height')], [976, 720])
+    unittestEqual(stringEndsWith(objectGet(objectGet(svg, 'attr'), 'style'), ' margin: 0;'), true)
+    view = objectGet(context, 'view')
+    unittestDeepEqual([objectGet(view, 'width'), objectGet(view, 'height'), objectGet(view, 'cy')], [976, 720, 360])
+
+    # The overlays - the report link, the keyboard help, and the view status
+    elements = objectGet(svg, 'elem')
+    count = arrayLength(elements)
+    unittestDeepEqual(arrayGet(elements, count - 12), {'svg': 'a', 'attr': {'href': "#var.vFile='a.json'"}, \
+        'elem': roadieSvgText('Back to the report', 12, 20, 14, 'start', '#1f4e8c', true)})
+    unittestEqual(objectGet(arrayGet(elements, count - 11), 'svg'), 'rect')
+    unittestEqual(objectGet(objectGet(arrayGet(elements, count - 10), 'elem'), 'text'), 'Arrows or W A S D - move')
+    unittestEqual(objectGet(objectGet(arrayGet(elements, count - 1), 'elem'), 'text'), \
+        'Center x 20, y 20, z 107 m - zoom 1x, rotation 30, tilt 35, exaggeration 1.5x, faceted terrain')
+
+    # Without the help, its hint
+    objectSet(objectGet(context, 'state'), 'help', false)
+    unittestMockAll()
+    roadieExploreRender(context)
+    elements = objectGet(arrayGet(arrayGet(arrayGet(unittestMockEnd(), 1), 1), 0), 'elem')
+    count = arrayLength(elements)
+    unittestEqual(objectGet(objectGet(arrayGet(elements, count - 2), 'elem'), 'text'), 'H - keyboard help')
+    unittestEqual(objectGet(arrayGet(elements, count - 3), 'svg'), 'rect')
+    systemGlobalSet('vFile', null)
+    systemGlobalSet('vExplore', null)
+endfunction
+unittestRunTest('testRoadieExploreRender')
+
+
+# Press a key in a new simple plan 3D explorer - returns the context, the view before the key, and the key's call log
+function testRoadieExploreKey(event):
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    context = roadieExploreContext(argsParse(roadieArguments), plan)
+    unittestMockAll()
+    roadieExploreRender(context)
+    unittestMockEnd()
+    view = objectGet(context, 'view')
+    unittestMockAll()
+    roadieExploreOnKeyDown(context, event)
+    return [context, view, unittestMockEnd()]
+endfunction
+
+
+function testRoadieExploreOnKeyDown():
+    # The view state keys - each re-renders the view
+    for keyCase in [ \
+        [{'key': '+', 'code': 'Equal', 'shiftKey': true}, {'zoom': 1.414}], \
+        [{'key': '=', 'code': 'Equal'}, {'zoom': 1.414}], \
+        [{'key': '-', 'code': 'Minus'}, {'zoom': 1}], \
+        [{'key': '_', 'code': 'Minus', 'shiftKey': true}, {'zoom': 1}], \
+        [{'key': 'q', 'code': 'KeyQ'}, {'azimuth': 20}], \
+        [{'key': 'ArrowLeft', 'code': 'ArrowLeft', 'shiftKey': true}, {'azimuth': 20}], \
+        [{'key': 'e', 'code': 'KeyE'}, {'azimuth': 40}], \
+        [{'key': 'ArrowRight', 'code': 'ArrowRight', 'shiftKey': true}, {'azimuth': 40}], \
+        [{'key': 'ArrowUp', 'code': 'ArrowUp', 'shiftKey': true}, {'tilt': 40}], \
+        [{'key': 'ArrowDown', 'code': 'ArrowDown', 'shiftKey': true}, {'tilt': 30}], \
+        [{'key': '[', 'code': 'BracketLeft'}, {'exaggeration': 1.25}], \
+        [{'key': ']', 'code': 'BracketRight'}, {'exaggeration': 1.75}], \
+        [{'key': 'g', 'code': 'KeyG'}, {'smooth': true}], \
+        [{'key': 't', 'code': 'KeyT'}, {'tilt': 90}], \
+        [{'key': 'n', 'code': 'KeyN'}, {'azimuth': 0}], \
+        [{'key': 'h', 'code': 'KeyH'}, {'help': false}], \
+        [{'key': '?', 'code': 'Slash', 'shiftKey': true}, {'help': false}] \
+    ]:
+        result = testRoadieExploreKey(arrayGet(keyCase, 0))
+        expected = {'help': true, 'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 1, 'x': null, 'y': null, 'z': null, 'smooth': false}
+        objectAssign(expected, arrayGet(keyCase, 1))
+        unittestDeepEqual(objectGet(arrayGet(result, 0), 'state'), expected)
+        unittestDeepEqual(arrayGet(arrayGet(arrayGet(result, 2), 0), 0), 'documentSetReset')
+        unittestEqual(arrayLength(arrayGet(result, 2)), 2)
+    endfor
+endfunction
+unittestRunTest('testRoadieExploreOnKeyDown')
+
+
+function testRoadieExploreOnKeyDown_move():
+    # The move keys move the view center an eighth of the view's width (or height, up and down) in the screen
+    # directions - the moved center keeps its elevation
+    for keyCase in [ \
+        [{'key': 'ArrowLeft', 'code': 'ArrowLeft'}, -1, 0, 0], \
+        [{'key': 'a', 'code': 'KeyA'}, -1, 0, 0], \
+        [{'key': 'ArrowRight', 'code': 'ArrowRight'}, 1, 0, 0], \
+        [{'key': 'd', 'code': 'KeyD'}, 1, 0, 0], \
+        [{'key': 'ArrowUp', 'code': 'ArrowUp'}, 0, 1, 0], \
+        [{'key': 'w', 'code': 'KeyW'}, 0, 1, 0], \
+        [{'key': 'ArrowDown', 'code': 'ArrowDown'}, 0, -1, 0], \
+        [{'key': 's', 'code': 'KeyS'}, 0, -1, 0], \
+        [{'key': 'r', 'code': 'KeyR'}, 0, 0, 1], \
+        [{'key': 'PageUp', 'code': 'PageUp'}, 0, 0, 1], \
+        [{'key': 'f', 'code': 'KeyF'}, 0, 0, -1], \
+        [{'key': 'PageDown', 'code': 'PageDown'}, 0, 0, -1] \
+    ]:
+        result = testRoadieExploreKey(arrayGet(keyCase, 0))
+        state = objectGet(arrayGet(result, 0), 'state')
+        view = arrayGet(result, 1)
+        step = objectGet(view, 'width') / 8 / objectGet(view, 'scale')
+        stepZ = objectGet(view, 'height') / 8 / (objectGet(view, 'scale') * 1.5)
+        right = arrayGet(keyCase, 1)
+        forward = arrayGet(keyCase, 2)
+        x = 20 + (right * objectGet(view, 'cosAz') + forward * objectGet(view, 'sinAz')) * step
+        y = 20 + (forward * objectGet(view, 'cosAz') - right * objectGet(view, 'sinAz')) * step
+        unittestDeepEqual( \
+            [objectGet(state, 'x'), objectGet(state, 'y'), objectGet(state, 'z')], \
+            [ \
+                mathRound(mathMax(0, mathMin(40, x)), 1), \
+                mathRound(mathMax(0, mathMin(40, y)), 1), \
+                mathRound(objectGet(view, 'zc') + arrayGet(keyCase, 3) * stepZ, 1) \
+            ] \
+        )
+        unittestEqual(arrayLength(arrayGet(result, 2)), 2)
+    endfor
+endfunction
+unittestRunTest('testRoadieExploreOnKeyDown_move')
+
+
+function testRoadieExploreOnKeyDown_other():
+    systemGlobalSet('vFile', 'a.json')
+    systemGlobalSet('vExplore', true)
+    systemGlobalSet('vZoom', 2)
+
+    # Escape goes back to the report
+    result = testRoadieExploreKey({'key': 'Escape', 'code': 'Escape'})
+    unittestDeepEqual(arrayGet(result, 2), [['windowSetLocation', ["#var.vFile='a.json'"]]])
+
+    # Browser shortcuts and other keys are ignored
+    for event in [{'key': 'r', 'code': 'KeyR', 'metaKey': true}, {'key': 'r', 'code': 'KeyR', 'ctrlKey': true}, \
+            {'key': 'r', 'code': 'KeyR', 'altKey': true}, {'key': 'z', 'code': 'KeyZ'}]:
+        result = testRoadieExploreKey(event)
+        unittestDeepEqual(arrayGet(result, 2), [])
+        unittestEqual(objectGet(objectGet(arrayGet(result, 0), 'state'), 'z'), null)
+    endfor
+
+    # Reset returns to the initial view
+    for event in [{'key': '0', 'code': 'Digit0'}, {'key': 'Home', 'code': 'Home'}]:
+        plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+        context = roadieExploreContext(argsParse(roadieArguments), plan)
+        unittestMockAll()
+        roadieExploreRender(context)
+        roadieExploreOnKeyDown(context, {'key': 'q', 'code': 'KeyQ'})
+        roadieExploreOnKeyDown(context, {'key': 'w', 'code': 'KeyW'})
+        roadieExploreOnKeyDown(context, event)
+        unittestMockEnd()
+        unittestDeepEqual(objectGet(context, 'state'), objectGet(context, 'initial'))
+        unittestEqual(objectGet(objectGet(context, 'state'), 'zoom'), 2)
+    endfor
+    systemGlobalSet('vFile', null)
+    systemGlobalSet('vExplore', null)
+    systemGlobalSet('vZoom', null)
+endfunction
+unittestRunTest('testRoadieExploreOnKeyDown_other')
