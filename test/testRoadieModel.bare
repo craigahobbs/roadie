@@ -418,6 +418,38 @@ endfunction
 unittestRunTest('testRoadieAnalyze_existingRoad')
 
 
+function testRoadieAnalyze_streamCrossings():
+    # A 21-point alignment spans two stream crossing chunks - a stream away from the road crosses no chunk, and the
+    # crossing warnings are in feature order
+    plan = testRoadiePlanSimple()
+    alignment = []
+    x = 0
+    while x <= 40:
+        arrayPush(alignment, {'x': x, 'y': 20})
+        x = x + 2
+    endwhile
+    option = arrayGet(objectGet(plan, 'options'), 0)
+    objectSet(option, 'alignment', alignment)
+    objectSet(objectGet(plan, 'topography'), 'features', [ \
+        {'type': 'stream', 'name': 'Far Creek', 'points': [{'x': 5, 'y': 35}, {'x': 10, 'y': 38}]}, \
+        {'type': 'stream', 'name': 'Late Creek', 'points': [{'x': 37, 'y': 15}, {'x': 37, 'y': 25}]}, \
+        {'type': 'stream', 'name': 'Early Creek', 'points': [{'x': 5, 'y': 15}, {'x': 5, 'y': 25}]} \
+    ])
+    plan = objectGet(roadieValidate(plan), 'plan')
+    crossings = []
+    for warning in objectGet(roadieAnalyze(plan, 0), 'warnings'):
+        if stringIndexOf(warning, 'crossing') != -1:
+            arrayPush(crossings, warning)
+        endif
+    endfor
+    unittestDeepEqual(crossings, [ \
+        'The Late Creek crossing at 0+037 has no culvert or bridge', \
+        'The Early Creek crossing at 0+005 has no culvert or bridge' \
+    ])
+endfunction
+unittestRunTest('testRoadieAnalyze_streamCrossings')
+
+
 function testRoadieAnalyze_existingRoadHaul():
     # The new road starts 5 ft below the ground (cut) - with no free haul, its surplus earth is hauled along the new road
     # only, not along the existing road

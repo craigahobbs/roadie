@@ -944,8 +944,10 @@ roadieTerrainMid = [176, 178, 112]
 roadieTerrainHigh = [178, 142, 104]
 
 
-# Compute the terrain color for a normalized elevation (0 to 1)
-function roadieTerrainColor(fraction):
+# Compute a terrain cell's fill color - the terrain color for a normalized elevation (0 to 1), blended between the low,
+# middle, and high colors, with the roadieRGB(color, roadieBrightness(nx, ny, 1)) computation inlined (this is called
+# for every terrain cell)
+function roadieTerrainFill(fraction, nx, ny):
     if fraction < 0.5:
         t = mathMax(0, fraction) * 2
         a = roadieTerrainLow
@@ -955,11 +957,19 @@ function roadieTerrainColor(fraction):
         a = roadieTerrainMid
         b = roadieTerrainHigh
     endif
-    return [ \
-        arrayGet(a, 0) + (arrayGet(b, 0) - arrayGet(a, 0)) * t, \
-        arrayGet(a, 1) + (arrayGet(b, 1) - arrayGet(a, 1)) * t, \
-        arrayGet(a, 2) + (arrayGet(b, 2) - arrayGet(a, 2)) * t \
-    ]
+    length = mathSqrt(nx * nx + ny * ny + 1)
+    dot = (nx * arrayGet(roadieLight, 0) + ny * arrayGet(roadieLight, 1) + arrayGet(roadieLight, 2)) / length
+    if 1 / length < 0.1:
+        dot = mathAbs(dot)
+    endif
+    factor = 0.5 + 0.6 * mathMax(0, dot)
+    a0 = arrayGet(a, 0)
+    a1 = arrayGet(a, 1)
+    a2 = arrayGet(a, 2)
+    return 'rgb(' + \
+        mathFloor(mathMax(0, mathMin(255, (a0 + (arrayGet(b, 0) - a0) * t) * factor)) + 0.5) + ',' + \
+        mathFloor(mathMax(0, mathMin(255, (a1 + (arrayGet(b, 1) - a1) * t) * factor)) + 0.5) + ',' + \
+        mathFloor(mathMax(0, mathMin(255, (a2 + (arrayGet(b, 2) - a2) * t) * factor)) + 0.5) + ')'
 endfunction
 
 
@@ -1061,7 +1071,7 @@ function roadieSvgPoints(coords):
     pointStrs = []
     ixCoord = 0
     while ixCoord < arrayLength(coords):
-        arrayPush(pointStrs, roadiePx(arrayGet(coords, ixCoord)) + ',' + roadiePx(arrayGet(coords, ixCoord + 1)))
+        arrayPush(pointStrs, numberToFixed(arrayGet(coords, ixCoord), 1, true) + ',' + numberToFixed(arrayGet(coords, ixCoord + 1), 1, true))
         ixCoord = ixCoord + 2
     endwhile
     return arrayJoin(pointStrs, ' ')
@@ -1416,6 +1426,13 @@ function roadieProject(view, x, y, z):
 endfunction
 
 
+# Project a ground point to the view - returns [px, py, depth], or null if the point is outside the topography
+function roadieProjectGround(view, topo, x, y):
+    z = roadieElevation(topo, x, y)
+    return if(z != null, roadieProject(view, x, y, z))
+endfunction
+
+
 # Project world points ([x, y, z] arrays) to a flat pixel coordinate array and the average depth
 function roadieProjectPoints(view, points):
     # The roadieProject computation, inlined with the view values hoisted out of the point loop (this is
@@ -1493,9 +1510,10 @@ function roadieCompareDepth(a, b):
 endfunction
 
 
-# Project a terrain grid row's points at the given columns - the grid's northwest point is at (xOrigin, yTop). Returns an array of the formatted "x,y" pixel
-# point strings, an array of the depths, and arrays of the pixel x and y coordinates. The projection is the
-# roadieProjectPoints computation.
+# Project a terrain grid row's points at the given columns - the grid's northwest point is at (xOrigin, yTop). Returns
+# an array of the formatted "x,y" pixel point strings, an array of the depths, and an array of the points' view
+# outcodes - 1 left of the view, 2 right of it, plus 4 above it, 8 below it. The projection is the roadieProjectPoints
+# computation.
 function roadieProjectGridRow(view, rows, row, cols, xOrigin, yTop, spacing):
     xc = objectGet(view, 'xc')
     yc = objectGet(view, 'yc')
@@ -1508,24 +1526,24 @@ function roadieProjectGridRow(view, rows, row, cols, xOrigin, yTop, spacing):
     scale = objectGet(view, 'scale')
     halfWidth = objectGet(view, 'width') * 0.5
     cy = objectGet(view, 'cy')
+    width = objectGet(view, 'width')
+    height = objectGet(view, 'height')
     rowZ = arrayGet(rows, row)
     y0 = yTop - row * spacing - yc
     points = []
     depths = []
-    pxs = []
-    pys = []
+    codes = []
     for col in cols:
         x0 = xOrigin + col * spacing - xc
         z0 = (arrayGet(rowZ, col) - zc) * exaggeration
         v = x0 * sinAz + y0 * cosAz
         px = halfWidth + (x0 * cosAz - y0 * sinAz) * scale
         py = cy - (v * sinTilt + z0 * cosTilt) * scale
-        arrayPush(points, roadiePx(px) + ',' + roadiePx(py))
+        arrayPush(points, numberToFixed(px, 1, true) + ',' + numberToFixed(py, 1, true))
         arrayPush(depths, v * cosTilt - z0 * sinTilt)
-        arrayPush(pxs, px)
-        arrayPush(pys, py)
+        arrayPush(codes, if(px < 0, 1, if(px > width, 2, 0)) + if(py < 0, 4, if(py > height, 8, 0)))
     endfor
-    return [points, depths, pxs, pys]
+    return [points, depths, codes]
 endfunction
 
 
@@ -1685,6 +1703,17 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
     exaggeration = objectGet(view, 'exaggeration')
     items = []
 
+    # The view values for the inlined roadieProject computation of the cell contours
+    xc = objectGet(view, 'xc')
+    yc = objectGet(view, 'yc')
+    zc = objectGet(view, 'zc')
+    cosAz = objectGet(view, 'cosAz')
+    sinAz = objectGet(view, 'sinAz')
+    cosTilt = objectGet(view, 'cosTilt')
+    sinTilt = objectGet(view, 'sinTilt')
+    cy = objectGet(view, 'cy')
+    viewHalfWidth = width * 0.5
+
     # Terrain cells
     nRows = objectGet(topo, 'nRows')
     nCols = objectGet(topo, 'nCols')
@@ -1749,45 +1778,45 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
     endwhile
 
     # Each cell corner is shared by up to four cells, so the corners are projected one grid row at a time
+    ixColLast = arrayLength(cols) - 2
     row = rowFirst
     projectedTop = roadieProjectGridRow(view, drawRows, row, cols, xOrigin, yTop, drawSpacing)
     while row < rowLast:
         row2 = mathMin(rowLast, row + step)
         y1 = yTop - row * drawSpacing
         y2 = yTop - row2 * drawSpacing
+        cellHeight = y1 - y2
+        zRow = arrayGet(drawRows, row)
+        zRow2 = arrayGet(drawRows, row2)
+        rowNorth = mathMax(rowFirst, row - step)
+        rowSouth = mathMin(rowLast, row2 + step)
+        zRowNorth = arrayGet(drawRows, rowNorth)
+        zRowSouth = arrayGet(drawRows, rowSouth)
+        dySpan = (rowSouth - rowNorth) * drawSpacing
         projectedBottom = roadieProjectGridRow(view, drawRows, row2, cols, xOrigin, yTop, drawSpacing)
         pointsTop = arrayGet(projectedTop, 0)
         depthsTop = arrayGet(projectedTop, 1)
         pointsBottom = arrayGet(projectedBottom, 0)
         depthsBottom = arrayGet(projectedBottom, 1)
-        pxsTop = arrayGet(projectedTop, 2)
-        pysTop = arrayGet(projectedTop, 3)
-        pxsBottom = arrayGet(projectedBottom, 2)
-        pysBottom = arrayGet(projectedBottom, 3)
-        for col, ixCol in cols:
-            if ixCol == arrayLength(cols) - 1:
-                break
-            endif
-            # Skip the cell if its corners' bounding box is outside the view (roadieCoordsVisible, inlined for the cells)
-            px1 = arrayGet(pxsTop, ixCol)
-            px2 = arrayGet(pxsTop, ixCol + 1)
-            px3 = arrayGet(pxsBottom, ixCol + 1)
-            px4 = arrayGet(pxsBottom, ixCol)
-            py1 = arrayGet(pysTop, ixCol)
-            py2 = arrayGet(pysTop, ixCol + 1)
-            py3 = arrayGet(pysBottom, ixCol + 1)
-            py4 = arrayGet(pysBottom, ixCol)
-            if mathMax(px1, px2, px3, px4) < 0 || mathMin(px1, px2, px3, px4) > width || \
-                    mathMax(py1, py2, py3, py4) < 0 || mathMin(py1, py2, py3, py4) > viewHeight:
+        codesTop = arrayGet(projectedTop, 2)
+        codesBottom = arrayGet(projectedBottom, 2)
+        ixCol = -1
+        while ixCol < ixColLast:
+            ixCol = ixCol + 1
+
+            # Skip the cell if its corners' bounding box is outside the view - if all of its corners are outside the same
+            # side of the view
+            if arrayGet(codesTop, ixCol) & arrayGet(codesTop, ixCol + 1) & arrayGet(codesBottom, ixCol + 1) & arrayGet(codesBottom, ixCol):
                 continue
             endif
+            col = arrayGet(cols, ixCol)
             col2 = arrayGet(cols, ixCol + 1)
             x1 = xOrigin + col * drawSpacing
             x2 = xOrigin + col2 * drawSpacing
-            zNW = arrayGet(arrayGet(drawRows, row), col)
-            zNE = arrayGet(arrayGet(drawRows, row), col2)
-            zSE = arrayGet(arrayGet(drawRows, row2), col2)
-            zSW = arrayGet(arrayGet(drawRows, row2), col)
+            zNW = arrayGet(zRow, col)
+            zNE = arrayGet(zRow, col2)
+            zSE = arrayGet(zRow2, col2)
+            zSW = arrayGet(zRow2, col)
             cellPoints = arrayGet(pointsTop, ixCol) + ' ' + arrayGet(pointsTop, ixCol + 1) + ' ' + \
                 arrayGet(pointsBottom, ixCol + 1) + ' ' + arrayGet(pointsBottom, ixCol)
             cellDepth = (arrayGet(depthsTop, ixCol) + arrayGet(depthsTop, ixCol + 1) + \
@@ -1796,19 +1825,14 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
             # Shade the cell by its elevation and slope - the slope spans the neighboring cells, too, so the shading
             # changes gradually from cell to cell
             cellWidth = x2 - x1
-            cellHeight = y1 - y2
             colWest = mathMax(colFirst, col - step)
             colEast = mathMin(colLast, col2 + step)
-            rowNorth = mathMax(rowFirst, row - step)
-            rowSouth = mathMin(rowLast, row2 + step)
-            dzdx = ((arrayGet(arrayGet(drawRows, row), colEast) + arrayGet(arrayGet(drawRows, row2), colEast)) - \
-                (arrayGet(arrayGet(drawRows, row), colWest) + arrayGet(arrayGet(drawRows, row2), colWest))) * 0.5 / \
+            dzdx = ((arrayGet(zRow, colEast) + arrayGet(zRow2, colEast)) - (arrayGet(zRow, colWest) + arrayGet(zRow2, colWest))) * 0.5 / \
                 ((colEast - colWest) * drawSpacing) * exaggeration
-            dzdy = ((arrayGet(arrayGet(drawRows, rowNorth), col) + arrayGet(arrayGet(drawRows, rowNorth), col2)) - \
-                (arrayGet(arrayGet(drawRows, rowSouth), col) + arrayGet(arrayGet(drawRows, rowSouth), col2))) * 0.5 / \
-                ((rowSouth - rowNorth) * drawSpacing) * exaggeration
+            dzdy = ((arrayGet(zRowNorth, col) + arrayGet(zRowNorth, col2)) - (arrayGet(zRowSouth, col) + arrayGet(zRowSouth, col2))) * 0.5 / \
+                dySpan * exaggeration
             zAvg = (zNW + zNE + zSE + zSW) * 0.25
-            fill = roadieRGB(roadieTerrainColor((zAvg - minZ) / rangeZ), roadieBrightness(-dzdx, -dzdy, 1))
+            fill = roadieTerrainFill((zAvg - minZ) / rangeZ, -dzdx, -dzdy)
             cellElements = [{'svg': 'polygon', 'attr': {'points': cellPoints, 'fill': fill, 'stroke': fill, 'stroke-width': 0.6}}]
 
             # Cell contours - a path of the minor contours and a path of the index contours
@@ -1820,11 +1844,20 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
                 indexLevel = level / contourInterval / 5
                 isIndex = mathAbs(indexLevel - mathFloor(indexLevel + 0.5)) < 1e-6
                 if isIndex || drawMinor:
+                    # The segments' end points are projected with the roadieProject computation, inlined - the level's
+                    # elevation term is the same for every end point
+                    zUp = (level - zc) * exaggeration * cosTilt
                     for segment in roadieCellContours(zNW, zNE, zSE, zSW, level):
-                        p1 = roadieProject(view, x1 + arrayGet(segment, 0) * cellWidth, y1 - arrayGet(segment, 1) * cellHeight, level)
-                        p2 = roadieProject(view, x1 + arrayGet(segment, 2) * cellWidth, y1 - arrayGet(segment, 3) * cellHeight, level)
-                        arrayPush(if(isIndex, indexPath, minorPath), 'M' + roadiePx(arrayGet(p1, 0)) + ' ' + roadiePx(arrayGet(p1, 1)) + \
-                            'L' + roadiePx(arrayGet(p2, 0)) + ' ' + roadiePx(arrayGet(p2, 1)))
+                        x0 = x1 + arrayGet(segment, 0) * cellWidth - xc
+                        y0 = y1 - arrayGet(segment, 1) * cellHeight - yc
+                        sx1 = viewHalfWidth + (x0 * cosAz - y0 * sinAz) * scale
+                        sy1 = cy - ((x0 * sinAz + y0 * cosAz) * sinTilt + zUp) * scale
+                        x0 = x1 + arrayGet(segment, 2) * cellWidth - xc
+                        y0 = y1 - arrayGet(segment, 3) * cellHeight - yc
+                        sx2 = viewHalfWidth + (x0 * cosAz - y0 * sinAz) * scale
+                        sy2 = cy - ((x0 * sinAz + y0 * cosAz) * sinTilt + zUp) * scale
+                        arrayPush(if(isIndex, indexPath, minorPath), 'M' + numberToFixed(sx1, 1, true) + ' ' + \
+                            numberToFixed(sy1, 1, true) + 'L' + numberToFixed(sx2, 1, true) + ' ' + numberToFixed(sy2, 1, true))
                     endfor
                 endif
                 level = level + contourInterval
@@ -1838,7 +1871,7 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
                     'stroke': contourColor, 'stroke-width': 1.2, 'stroke-linecap': 'round'}})
             endif
             arrayPush(items, [cellDepth, cellElements])
-        endfor
+        endwhile
         row = row2
         projectedTop = projectedBottom
     endwhile
@@ -1859,21 +1892,37 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
                 y1 = objectGet(prev, 'y')
                 x2 = objectGet(point, 'x')
                 y2 = objectGet(point, 'y')
+
+                # Skip the segment if it's outside the view's ground area - with a margin, so its steps are, too
+                if cullBox != null && roadieOutsideBox(cullBox, mathMin(x1, x2) - cellSize, mathMax(x1, x2) + cellSize, \
+                        mathMin(y1, y2) - cellSize, mathMax(y1, y2) + cellSize):
+                    continue
+                endif
+
                 count = mathMax(1, mathCeil(mathSqrt((x2 - x1) ** 2 + (y2 - y1) ** 2) / (cellSize * 0.5)))
                 ixStep = 0
+                pointB = null
+                ixPointB = -1
                 while ixStep < count:
                     xa = x1 + (x2 - x1) * ixStep / count
                     ya = y1 + (y2 - y1) * ixStep / count
                     xb = x1 + (x2 - x1) * (ixStep + 1) / count
                     yb = y1 + (y2 - y1) * (ixStep + 1) / count
                     if cullBox == null || !roadieOutsideBox(cullBox, mathMin(xa, xb), mathMax(xa, xb), mathMin(ya, yb), mathMax(ya, yb)):
-                        za = roadieElevation(topo, xa, ya)
-                        zb = roadieElevation(topo, xb, yb)
-                        projected = if(za != null && zb != null, roadieProjectPoints(view, [[xa, ya, za], [xb, yb, zb]]))
-                        if projected != null && roadieCoordsVisible(view, arrayGet(projected, 0)):
-                            arrayPush(items, [arrayGet(projected, 1) - cellSize * 0.5, \
-                                roadieSvgPolyline(arrayGet(projected, 0), stroke, if(type == 'stream', 2.5, 1), \
-                                    if(type == 'stream', null, '4 3'))])
+                        # The step's projected end points - its start is the previous step's end, if that was projected
+                        pointA = if(ixPointB == ixStep, pointB, roadieProjectGround(view, topo, xa, ya))
+                        pointB = roadieProjectGround(view, topo, xb, yb)
+                        ixPointB = ixStep + 1
+                        if pointA != null && pointB != null:
+                            pxa = arrayGet(pointA, 0)
+                            pya = arrayGet(pointA, 1)
+                            pxb = arrayGet(pointB, 0)
+                            pyb = arrayGet(pointB, 1)
+                            if mathMax(pxa, pxb) >= 0 && mathMin(pxa, pxb) <= width && mathMax(pya, pyb) >= 0 && mathMin(pya, pyb) <= viewHeight:
+                                arrayPush(items, [(arrayGet(pointA, 2) + arrayGet(pointB, 2)) / 2 - cellSize * 0.5, \
+                                    roadieSvgPolyline([pxa, pya, pxb, pyb], stroke, if(type == 'stream', 2.5, 1), \
+                                        if(type == 'stream', null, '4 3'))])
+                            endif
                         endif
                     endif
                     ixStep = ixStep + 1
@@ -2101,10 +2150,10 @@ function roadiePlanView(plan, topo, analyses, ixOption, width, outlines):
                 isIndex = mathAbs(indexLevel - mathFloor(indexLevel + 0.5)) < 1e-6
                 for segment in roadieCellContours(zNW, zNE, zSE, zSW, level):
                     arrayPush(if(isIndex, indexPath, minorPath), \
-                        'M' + roadiePx(pad + (col + arrayGet(segment, 0)) * spacing * scale) + ' ' + \
-                            roadiePx(pad + (row + arrayGet(segment, 1)) * spacing * scale) + \
-                        'L' + roadiePx(pad + (col + arrayGet(segment, 2)) * spacing * scale) + ' ' + \
-                            roadiePx(pad + (row + arrayGet(segment, 3)) * spacing * scale))
+                        'M' + numberToFixed(pad + (col + arrayGet(segment, 0)) * spacing * scale, 1, true) + ' ' + \
+                            numberToFixed(pad + (row + arrayGet(segment, 1)) * spacing * scale, 1, true) + \
+                        'L' + numberToFixed(pad + (col + arrayGet(segment, 2)) * spacing * scale, 1, true) + ' ' + \
+                            numberToFixed(pad + (row + arrayGet(segment, 3)) * spacing * scale, 1, true))
                 endfor
                 level = level + contourInterval
             endwhile

@@ -480,15 +480,23 @@ endfunction
 unittestRunTest('testRoadieRGB')
 
 
-function testRoadieTerrainColor():
-    unittestDeepEqual(roadieTerrainColor(0), [96, 148, 84])
-    unittestDeepEqual(roadieTerrainColor(0.25), [136, 163, 98])
-    unittestDeepEqual(roadieTerrainColor(0.5), [176, 178, 112])
-    unittestDeepEqual(roadieTerrainColor(1), [178, 142, 104])
-    unittestDeepEqual(roadieTerrainColor(-1), [96, 148, 84])
-    unittestDeepEqual(roadieTerrainColor(2), [178, 142, 104])
+function testRoadieTerrainFill():
+    # Flat terrain - the low, middle, and high colors (clamped) at the flat brightness
+    flat = 0.5 + 0.6 * 0.7071
+    unittestEqual(roadieTerrainFill(0, 0, 0), roadieRGB([96, 148, 84], flat))
+    unittestEqual(roadieTerrainFill(0.25, 0, 0), roadieRGB([136, 163, 98], flat))
+    unittestEqual(roadieTerrainFill(0.5, 0, 0), roadieRGB([176, 178, 112], flat))
+    unittestEqual(roadieTerrainFill(1, 0, 0), roadieRGB([178, 142, 104], flat))
+    unittestEqual(roadieTerrainFill(-1, 0, 0), roadieRGB([96, 148, 84], flat))
+    unittestEqual(roadieTerrainFill(2, 0, 0), roadieRGB([178, 142, 104], flat))
+
+    # Sloped terrain is the roadieBrightness of its normal - a steep slope is lit on either side
+    unittestEqual(roadieTerrainFill(0.75, 1, -1), roadieRGB([177, 160, 108], roadieBrightness(1, -1, 1)))
+    unittestEqual(roadieTerrainFill(0.5, 20, 0), roadieRGB([176, 178, 112], roadieBrightness(20, 0, 1)))
+    unittestEqual(roadieTerrainFill(0.5, -20, 0), roadieRGB([176, 178, 112], roadieBrightness(-20, 0, 1)))
+    unittestEqual(roadieTerrainFill(0.5, -20, 0), 'rgb(144,146,92)')
 endfunction
-unittestRunTest('testRoadieTerrainColor')
+unittestRunTest('testRoadieTerrainFill')
 
 
 function testRoadieBrightness():
@@ -800,6 +808,32 @@ function testRoadieView3D_zoom():
     unittestDeepEqual(counts, {'cells': 8, 'contours': 8, 'labels': ['0+030', '0+025'], 'polygons': 12})
 endfunction
 unittestRunTest('testRoadieView3D_zoom')
+
+
+function testRoadieView3D_zoomFeatures():
+    plan = testRoadiePlanSimple()
+    objectSet(objectGet(plan, 'topography'), 'features', [ \
+        {'type': 'stream', 'name': 'Far Creek', 'points': [{'x': 0, 'y': 40}, {'x': 2, 'y': 30}]}, \
+        {'type': 'stream', 'name': 'Near Creek', 'points': [{'x': 30, 'y': 0}, {'x': 30, 'y': 20}]} \
+    ])
+    plan = objectGet(roadieValidate(plan), 'plan')
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    view = roadieProjection(topo, {'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 4, 'x': 30, 'y': 10}, 400, 300)
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 5)
+    svg = roadieView3D(plan, topo, rows, 0, analysis, view)
+
+    # Only the near stream, within the zoomed view, is drawn - the far stream is outside its ground area
+    streamSteps = 0
+    for element in objectGet(svg, 'elem'):
+        if systemType(element) == 'object' && objectGet(element, 'svg') == 'polyline' && \
+                objectGet(objectGet(element, 'attr'), 'stroke') == '#2a6fdb':
+            streamSteps = streamSteps + 1
+        endif
+    endfor
+    unittestEqual(streamSteps, 4)
+endfunction
+unittestRunTest('testRoadieView3D_zoomFeatures')
 
 
 function testRoadieView3D_narrow():

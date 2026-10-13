@@ -50,6 +50,16 @@ build/venv/bin/bare -l build/driver.bare -v vFile "'../example/example.json'" > 
 with `build/venv/bin/markdown-up -n -p <port> <dir>` (as `make run` does) and screenshot the URL with
 `--virtual-time-budget=15000`.
 
+## Performance work
+
+- The browser runs the JavaScript BareScript runtime, but `build/venv/bin/bare` is the Python
+  package's C runtime (`runtime_c`) - their costs differ (JavaScript is slower per expression node
+  and faster at `numberToFixed`). Measure viewer changes on both: install the JavaScript CLI with
+  `npm install --prefix build/js bare-script` and run `build/js/node_modules/.bin/bare -m ...`.
+- Optimizations must leave the output byte-identical - compare the rendered report and explorer
+  HTML, `make evaluate`, and `make doc` (and for the planning tools, their written plans and images)
+  against a baseline, then time the change against the baseline in the same session.
+
 ## MarkdownUp gotchas
 
 - Text with `~...~` renders as strikethrough - plan and option descriptions should say "about".

@@ -695,6 +695,7 @@ def route_search(topo, design, start, end, grade_weight, slope_weight, start_hea
              (-1, 0), (-2, -1), (-1, -1), (-1, -2), (0, -1), (1, -2), (1, -1), (2, -1)]
 
     # Precompute each move's cost from every node
+    node_points = np.stack([grid_x, grid_y], axis=-1)
     move_costs = []
     move_turn_costs = []
     for dx, dy in moves:
@@ -731,12 +732,16 @@ def route_search(topo, design, start, end, grade_weight, slope_weight, start_hea
         cost_turn = cost + excess_cost(design.switchback_grade)
         cost = cost + excess_cost(design.grade)
 
-        # Stream crossings
+        # Stream crossings - a move is at most two lattice steps, so only the nodes near a stream segment can cross it
+        move_points = np.stack([x2, y2], axis=-1)
+        margin = 3 * lattice
         for _, stream in streams:
             for ix_point in range(1, len(stream)):
-                crosses, _ = segments_intersect(np.stack([grid_x, grid_y], axis=-1), np.stack([x2, y2], axis=-1),
-                                                stream[ix_point - 1], stream[ix_point])
-                cost += np.where(crosses, design.cost_culvert, 0)
+                (sx1, sy1), (sx2, sy2) = stream[ix_point - 1], stream[ix_point]
+                cols = slice(max(0, math.floor((min(sx1, sx2) - margin) / lattice)), min(n_x, math.ceil((max(sx1, sx2) + margin) / lattice) + 1))
+                rows = slice(max(0, math.floor((min(sy1, sy2) - margin) / lattice)), min(n_y, math.ceil((max(sy1, sy2) + margin) / lattice) + 1))
+                crosses, _ = segments_intersect(node_points[rows, cols], move_points[rows, cols], stream[ix_point - 1], stream[ix_point])
+                cost[rows, cols] += np.where(crosses, design.cost_culvert, 0)
 
         # Blocked moves
         x2_index = np.clip(np.arange(n_x) + dx, 0, n_x - 1)

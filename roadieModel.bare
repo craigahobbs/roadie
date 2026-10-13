@@ -863,6 +863,10 @@ function roadieSampleExcluded(exclusions, sample):
 endfunction
 
 
+# The number of alignment segments in a stream crossing chunk (roadieAnalyze)
+roadieCrossingChunk = 16
+
+
 # Analyze a road plan option - compute its geometry, earthwork, structures, cost, and warnings. The optional
 # topography (from roadieTopo) avoids recomputing it for each option.
 function roadieAnalyze(plan, ixOption, topo):
@@ -994,7 +998,28 @@ function roadieAnalyze(plan, ixOption, topo):
         'The retaining wall exceeds the maximum wall height')
     roadieRunWarnings(warnings, samples, units, roadieSampleBridgeBuried, 'The bridge deck is below the ground')
 
-    # Stream crossings - an alignment segment outside a stream's bounding box can't cross it
+    # Stream crossings - an alignment segment outside a stream's bounding box can't cross it, so the alignment's
+    # segments are bounded in chunks ([ixPoint, ixPointEnd, xMin, xMax, yMin, yMax] - the segments ending at points
+    # ixPoint up to ixPointEnd) to skip the chunks outside the stream's bounding box
+    alignmentCount = arrayLength(alignment)
+    chunks = []
+    ixChunk = 1
+    while ixChunk < alignmentCount:
+        ixChunkEnd = mathMin(alignmentCount, ixChunk + roadieCrossingChunk)
+        point = arrayGet(alignment, ixChunk - 1)
+        chunk = [ixChunk, ixChunkEnd, objectGet(point, 'x'), objectGet(point, 'x'), objectGet(point, 'y'), objectGet(point, 'y')]
+        ixPoint = ixChunk
+        while ixPoint < ixChunkEnd:
+            point = arrayGet(alignment, ixPoint)
+            arraySet(chunk, 2, mathMin(arrayGet(chunk, 2), objectGet(point, 'x')))
+            arraySet(chunk, 3, mathMax(arrayGet(chunk, 3), objectGet(point, 'x')))
+            arraySet(chunk, 4, mathMin(arrayGet(chunk, 4), objectGet(point, 'y')))
+            arraySet(chunk, 5, mathMax(arrayGet(chunk, 5), objectGet(point, 'y')))
+            ixPoint = ixPoint + 1
+        endwhile
+        arrayPush(chunks, chunk)
+        ixChunk = ixChunkEnd
+    endwhile
     for feature in objectGet(topo, 'features'):
         if objectGet(feature, 'type') == 'stream':
             streamPoints = objectGet(feature, 'points')
@@ -1008,8 +1033,17 @@ function roadieAnalyze(plan, ixOption, topo):
                 streamYMin = mathMin(streamYMin, objectGet(streamPoint, 'y'))
                 streamYMax = mathMax(streamYMax, objectGet(streamPoint, 'y'))
             endfor
-            for point, ixPoint in alignment:
-                if ixPoint > 0:
+            streamCount = arrayLength(streamPoints)
+            for chunk in chunks:
+                if arrayGet(chunk, 3) < streamXMin || arrayGet(chunk, 2) > streamXMax || \
+                        arrayGet(chunk, 5) < streamYMin || arrayGet(chunk, 4) > streamYMax:
+                    continue
+                endif
+                ixPoint = arrayGet(chunk, 0) - 1
+                ixPointEnd = arrayGet(chunk, 1) - 1
+                while ixPoint < ixPointEnd:
+                    ixPoint = ixPoint + 1
+                    point = arrayGet(alignment, ixPoint)
                     prev = arrayGet(alignment, ixPoint - 1)
                     if mathMax(objectGet(prev, 'x'), objectGet(point, 'x')) < streamXMin || \
                             mathMin(objectGet(prev, 'x'), objectGet(point, 'x')) > streamXMax || \
@@ -1017,32 +1051,33 @@ function roadieAnalyze(plan, ixOption, topo):
                             mathMin(objectGet(prev, 'y'), objectGet(point, 'y')) > streamYMax:
                         continue
                     endif
-                    for streamPoint, ixStream in streamPoints:
-                        if ixStream > 0:
-                            streamPrev = arrayGet(streamPoints, ixStream - 1)
-                            t = roadieSegmentIntersect( \
-                                objectGet(prev, 'x'), objectGet(prev, 'y'), objectGet(point, 'x'), objectGet(point, 'y'), \
-                                objectGet(streamPrev, 'x'), objectGet(streamPrev, 'y'), \
-                                objectGet(streamPoint, 'x'), objectGet(streamPoint, 'y') \
-                            )
-                            if t != null:
-                                station = objectGet(prev, 'station') + t * (objectGet(point, 'station') - objectGet(prev, 'station'))
-                                crossed = roadieStructureAt(structures, 'bridge', station, null) != null || \
-                                    roadieExistingAt(existingRoads, station)
-                                for structure in structures:
-                                    if objectGet(structure, 'type') == 'culvert' && \
-                                            mathAbs(objectGet(structure, 'station') - station) <= tolerance:
-                                        crossed = true
-                                    endif
-                                endfor
-                                if !crossed:
-                                    arrayPush(warnings, 'The ' + objectGet(feature, 'name', 'stream') + ' crossing at ' + \
-                                        roadieStation(station, units) + ' has no culvert or bridge')
+                    ixStream = 1
+                    while ixStream < streamCount:
+                        streamPrev = arrayGet(streamPoints, ixStream - 1)
+                        streamPoint = arrayGet(streamPoints, ixStream)
+                        t = roadieSegmentIntersect( \
+                            objectGet(prev, 'x'), objectGet(prev, 'y'), objectGet(point, 'x'), objectGet(point, 'y'), \
+                            objectGet(streamPrev, 'x'), objectGet(streamPrev, 'y'), \
+                            objectGet(streamPoint, 'x'), objectGet(streamPoint, 'y') \
+                        )
+                        if t != null:
+                            station = objectGet(prev, 'station') + t * (objectGet(point, 'station') - objectGet(prev, 'station'))
+                            crossed = roadieStructureAt(structures, 'bridge', station, null) != null || \
+                                roadieExistingAt(existingRoads, station)
+                            for structure in structures:
+                                if objectGet(structure, 'type') == 'culvert' && \
+                                        mathAbs(objectGet(structure, 'station') - station) <= tolerance:
+                                    crossed = true
                                 endif
+                            endfor
+                            if !crossed:
+                                arrayPush(warnings, 'The ' + objectGet(feature, 'name', 'stream') + ' crossing at ' + \
+                                    roadieStation(station, units) + ' has no culvert or bridge')
                             endif
                         endif
-                    endfor
-                endif
+                        ixStream = ixStream + 1
+                    endwhile
+                endwhile
             endfor
         endif
     endfor
