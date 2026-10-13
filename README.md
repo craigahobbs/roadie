@@ -94,8 +94,8 @@ for the default rates.
 make plan FILE=site.png
 ```
 
-The map image must clearly label the road's start and end points and should include a scale bar and
-contour interval. The Claude Code session follows [PLAN.md](PLAN.md), which covers reading the map,
+The map (an image or a PDF) must clearly label the road's start and end points and should include a
+scale bar and contour interval. The Claude Code session follows [PLAN.md](PLAN.md), which covers reading the map,
 digitizing the topography, design criteria, road engineering principles, generating and refining
 options, and finalizing the model. It uses these tools:
 
@@ -187,5 +187,6 @@ make clean        # remove the build directory
 | [roadieModel.bare](roadieModel.bare) | The road plan model schema, validation, earthwork, and cost analysis |
 | [roadieCLI.bare](roadieCLI.bare) | The command-line evaluator (`make evaluate`, `make doc`) |
 | [PLAN.md](PLAN.md) | The road planning instructions for Claude Code |
+| [CLAUDE.md](CLAUDE.md) | The repository guide for Claude Code |
 | [tools/plan_tools.py](tools/plan_tools.py) | The planning tools |
 | [test/](test/) | The BareScript unit tests |
