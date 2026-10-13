@@ -100,7 +100,8 @@ plan: $(VENV_BUILD) $(VENV_PLAN)
 	@test -f "$(FILE)" || (echo 'error: "$(FILE)" does not exist' && exit 1)
 	mkdir -p "$(PLAN_WORK)"
 	$(CLAUDE) \
-		--allowedTools "Bash($(VENV_BIN)/python3 tools/plan_tools.py *)" "Bash(make evaluate *)" "Bash(make doc)" \
+		--allowedTools "Bash($(VENV_BIN)/python3 tools/plan_tools.py *)" "Bash($(VENV_BIN)/python3 $(PLAN_WORK)/scripts/*)" \
+			"Bash(make evaluate *)" "Bash(make doc)" \
 		--permission-mode acceptEdits \
 		$(CLAUDE_MODEL) \
 		--effort "$(EFFORT)" \
@@ -119,7 +120,8 @@ update: $(VENV_BUILD) $(VENV_PLAN)
 	@test -f "$(FILE)" || (echo 'error: "$(FILE)" does not exist' && exit 1)
 	mkdir -p "$(UPDATE_WORK)"
 	$(CLAUDE) \
-		--allowedTools "Bash($(VENV_BIN)/python3 tools/plan_tools.py *)" "Bash(make evaluate *)" "Bash(make doc)" \
+		--allowedTools "Bash($(VENV_BIN)/python3 tools/plan_tools.py *)" "Bash($(VENV_BIN)/python3 $(UPDATE_WORK)/scripts/*)" \
+			"Bash(make evaluate *)" "Bash(make doc)" \
 		--permission-mode acceptEdits \
 		$(CLAUDE_MODEL) \
 		--effort "$(EFFORT)" \

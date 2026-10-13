@@ -12,7 +12,7 @@ the steps in order. To update an existing plan with review feedback, follow
 
 **Inputs and outputs** (named in your initial prompt):
 
-- The topographic map image (`<plan>.png`) - the start and end points are labeled on the map
+- The topographic map (`<plan>.png`, or a PDF) - the start and end points are labeled on the map
 - The road plan model to write (`<plan>.json`)
 - The work directory for intermediate files (`<plan>.work/`)
 
@@ -34,10 +34,28 @@ the steps in order. To update an existing plan with review feedback, follow
 Run each tool with `-h` for all of its arguments. Use the Read tool to look at every image you make -
 the map, crops, trace previews, grid previews, and plots.
 
+When a map needs more than the tools do (a PDF, an overlay to remove, hundreds of contour pieces to
+label), write helper scripts in the work directory's `scripts/` folder, run them with the Python
+command from your initial prompt, and list the steps that produced each file in the work directory's
+`README.md` - so a later update session can re-run them. Keep the work directory to inputs, outputs,
+and scripts: put throwaway check images in its `scratch/` folder and delete them when you finish.
+
 
 ## Step 1: Read the map
 
-1. Run `info` on the image, then Read it. Identify:
+1. **Prepare the map image** if it isn't a single, plain map image:
+   - **A PDF** - render the page to a PNG in the work directory (`<plan>.work/map.png`), honoring the
+     page's rotation (`/Rotate`), at a resolution where the thin contour lines are at least 2 pixels
+     wide (about 150-200 dpi for a plotted sheet). Crop it to the map sheet. Use this PNG as the plan's
+     `image` - the viewer can't show a PDF.
+   - **A colored overlay** (a highlighted corridor, a shaded area) over the contours - remove it before
+     tracing (for a uniform translucent tint, un-blend its color), keep a mask of it, and work out what
+     it means: a highlighted study corridor is the area the road must stay in, so model the land
+     outside it as `exclusion` polygons.
+   - **Stitched map tiles** - note each tile's contour interval (insets and adjoining sheets can
+     differ), the seams where contours break, and any area of the grid outside every tile (it has no
+     elevation data - make it an exclusion area and note it in the plan's limitations).
+2. Run `info` on the image, then Read it. Identify:
    - **Title and location** notes.
    - **Units and scale** - the scale bar (preferred) or a ratio scale (1:24,000 means 1 inch = 2,000
      feet). Map scales printed as ratios are unreliable on a resized image - always measure the scale
@@ -50,10 +68,10 @@ the map, crops, trace previews, grid previews, and plots.
      wetlands, rock outcrops, cliffs.
    - **North** - if north is not up, note the rotation (the model's "y" axis must point north; if the
      map is rotated, state the assumption in the plan description and treat map-up as north).
-2. Crop and enlarge (`crop -s 3 -g 50`) every region you need to read precisely: the scale bar (measure
+3. Crop and enlarge (`crop -s 3 -g 50`) every region you need to read precisely: the scale bar (measure
    the pixel distance between its end ticks), the legend, index contour labels, the start and end
    markers, and stream crossings. The labeled pixel grid gives exact pixel coordinates.
-3. Read the landforms:
+4. Read the landforms:
    - Contours form **V's pointing uphill** along valleys and drainages (often with a stream) and **V's
      or U's pointing downhill** along ridges and spurs.
    - A **saddle** is an hourglass between two closed highs; a **peak** is concentric closed loops; a
@@ -91,6 +109,14 @@ it visually against the map.
      separate piece of a contour broken by labels or streams is its own component.
    - Add `spots` for spot elevations, peaks (half a contour interval above the highest closed
      contour), and stream bottoms if needed.
+   - **Label the highest and lowest contours, too.** Above the highest labeled contour (and below the
+     lowest), the grid has no data and flattens into a false plateau that routes will happily use.
+   - **On a large map** (hundreds of components), reduce the fragmentation first: bridge the small gaps
+     where roads, streams, grid lines, and dashes interrupt the contours, and cut the map tiles' seams.
+     Then label the index contours (often distinguishable by their darker color) from the map's
+     printed labels, and generate the intermediate transects with a script - fall-line lines between
+     labeled contours whose crossing counts match the elevation difference - keeping a contour's label
+     only when several independent transects agree on it.
 4. **Add the features** (pixel coordinates): `stream` polylines along every stream and drainage line,
    `rock` polygons around rock outcrops and cliffs, and `exclusion` polygons around buildings, wetlands,
    and anything the road must avoid (property lines, setbacks). Add the `start` and `end` points.
@@ -101,7 +127,17 @@ it visually against the map.
    background) everywhere, the start and end markers must sit on the map's labeled points, and the
    streams must follow the map's streams. Spurious bumps, pits, or shifted lines mean a mislabeled
    component - fix it with `transect` and `contours`, and rebuild. Check the reported start and end
-   ground elevations against the map. **Do not proceed until the preview matches the map.**
+   ground elevations against the map. On a large map, the whole-map preview is too small to show
+   errors - check the grid's contours over the map region by region, at full resolution. Also check:
+   - The grid's elevation range matches the map's lowest and highest contours (a flat top or bottom
+     means unlabeled contours there).
+   - Along each stream, the grid's ground falls steadily downstream. A sudden step usually means
+     contours hidden under map labels or mislabeled. Fix it from the visible contours (spot
+     elevations along the stream bed), and re-check the result - a valley narrower than about four
+     grid cells can't be represented by the grid at all. If a feature can't be fixed, say so in the
+     plan's limitations and in the descriptions of the options it affects.
+
+   **Do not proceed until the grid matches the map.**
 
 ### Contours JSON format
 
@@ -202,7 +238,9 @@ and editing alignments.
   Import (borrow) and export (waste) cost extra, and haul beyond the free haul distance (500 ft /
   150 m) costs overhaul.
 - Avoid rock outcrops (rock excavation costs about 5 times common excavation) and stay out of
-  exclusion areas.
+  exclusion areas. Exclusions you add on your own judgment (keeping off a creek or an existing road,
+  for example) are assumptions - state them in the plan's description, and consider the options they
+  rule out.
 - Use natural control points: saddles to cross ridges, spur crests to climb, benches for switchbacks,
   and narrow, low-gradient spots to cross drainages.
 
@@ -240,6 +278,8 @@ and editing alignments.
    - Contour-following routes on moderate side slopes, around each side of hills and valleys.
    - Switchback locations on benches and spurs.
    - Drainage crossing points.
+   - **Existing roads** - when the start or end point is on an existing road, consider joining that
+     road sooner and following it to the point (often much less new construction).
    - Use the "divider" method to check feasibility: at the design grade, the minimum distance between
      adjacent contours is the contour interval / grade (for example, 10 ft / 0.11 = 91 ft). Step from
      contour to contour at this distance to sketch grade lines between control points.
@@ -250,10 +290,16 @@ and editing alignments.
    Contour", "North Switchbacks"). If `route` warns that the profile can't reach the start or end
    elevation, the alignment is too short or too steep for the grade limit - choose other via points
    or a longer corridor. Check that via points don't make the route double back on itself.
-3. Consider variants where they change the comparison: a bridge versus a culvert fill
+3. **Every option runs the full trip, from the start point to the end point** - the cost comparison
+   depends on it. An option that joins an existing road follows that road to the end point in its
+   alignment. The cost model has no existing-road (upgrade) rates, so those sections are costed as new
+   construction - say so, with their share of the cost, in the option's description. To route to an
+   intermediate point (a junction), route in a scratch copy of the plan whose `end` is that point, then
+   extend the alignment by hand and run `profile`.
+4. Consider variants where they change the comparison: a bridge versus a culvert fill
    (`--bridge-fill`), asphalt versus gravel on steep routes, or a steeper design grade where the
    criteria allow it.
-4. **Edit alignments by hand** when you see an improvement the tool missed (for example, nudging a
+5. **Edit alignments by hand** when you see an improvement the tool missed (for example, nudging a
    curve onto a bench or away from a steep side slope): edit the option's `alignment` x,y points in the
    plan JSON (keep the points closely spaced, and keep curves at or above the minimum radius), then
    run `profile` to re-design its profile and structures.
@@ -272,7 +318,8 @@ and editing alignments.
 3. **Reduce cost.** Read the cost breakdown: if earthwork, walls, or borrow dominate, move the
    alignment to gentler side slopes, adjust the via points, or try another corridor. If surfacing and
    drainage dominate, a shorter route may win. Iterate until no change reduces the cost score without
-   creating warnings.
+   creating warnings. A deep cut or fill on gentle ground - or along an existing road - usually means
+   bad topography rather than bad engineering: check the grid there against the map before redesigning.
 4. Plot the options (`plot`) and Read the plot to sanity-check the geometry against the map.
 
 
@@ -282,7 +329,8 @@ and editing alignments.
    are both more expensive and no better in any other way, and options with unresolvable warnings.
 2. Give the plan a `description` (Markdown lines): the site, the map source, scale, contour interval,
    the design criteria and why, the digitizing method, assumptions (road type, surface, rotated
-   north, ...), and limitations (contour accuracy, unmapped features, turnaround not modeled).
+   north, ...), and limitations (contour accuracy, unmapped features, turnaround not modeled). Don't
+   write `~` for "about" in descriptions - the viewer's Markdown renders `~...~` as strikethrough.
 3. Give each option a `description`: its corridor, its key engineering features (switchbacks, walls,
    bridges, crossings), its trade-offs versus the other options, and anything a reviewer should
    verify in the field.
@@ -311,7 +359,8 @@ before making any changes.
 
 1. **Read the current plan.** Read the plan's `description` and each option's `description`, run
    `make evaluate FILE=<plan>.json` to record the current length, maximum grade, earthwork, warnings,
-   and cost score of every option, and plot it (`plot`). Look in the work directory: the contours JSON
+   and cost score of every option, and plot it (`plot`). Look in the work directory (start with its
+   `README.md` and `scripts/`, if the planning session wrote them): the contours JSON
    (`contours.json`) and the traced components let you re-digitize the topography without starting
    over.
 2. **Save a copy** of the plan JSON in the work directory before editing it, named with today's date
