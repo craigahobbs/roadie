@@ -137,6 +137,13 @@ it, Ollama picks the model (prompting if needed):
 make plan FILE=site.png OLLAMA=1 MODEL=qwen3.8:27b-mlx
 ```
 
+Use `GROK=1` to run the session with the [Grok CLI](https://docs.x.ai/build/overview) (`grok`) instead of Claude Code.
+`MODEL` then names the Grok model; without it, Grok uses its default model:
+
+```
+make plan FILE=site.png GROK=1 MODEL=grok-4.6
+```
+
 
 ## Updating a plan
 
