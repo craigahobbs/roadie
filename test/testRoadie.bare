@@ -681,6 +681,28 @@ endfunction
 unittestRunTest('testRoadieCompareDepth')
 
 
+function testRoadieSortDepth():
+    # Fewer than two items
+    unittestDeepEqual(roadieSortDepth([]), [])
+    unittestDeepEqual(roadieSortDepth([[1, 'a']]), [[1, 'a']])
+
+    # Equal depths keep their order
+    unittestDeepEqual(roadieSortDepth([[2, 'a'], [2, 'b']]), [[2, 'a'], [2, 'b']])
+
+    # The same order as a stable sort with roadieCompareDepth
+    items = []
+    ixItem = 0
+    while ixItem < 50:
+        arrayPush(items, [(ixItem * 37) % 11 + if(ixItem % 3 == 0, 0.5, 0), ixItem])
+        ixItem = ixItem + 1
+    endwhile
+    expected = arrayCopy(items)
+    arraySort(expected, roadieCompareDepth)
+    unittestDeepEqual(roadieSortDepth(items), expected)
+endfunction
+unittestRunTest('testRoadieSortDepth')
+
+
 function testRoadie3DPolygon():
     topo = roadieTopo(testRoadiePlanSimple())
     view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1}, 100, 100)

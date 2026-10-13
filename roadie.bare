@@ -954,19 +954,22 @@ function roadieRGB(color, brightness):
 endfunction
 
 
+# The terrain colors at the lowest, middle, and highest elevations
+roadieTerrainLow = [96, 148, 84]
+roadieTerrainMid = [176, 178, 112]
+roadieTerrainHigh = [178, 142, 104]
+
+
 # Compute the terrain color for a normalized elevation (0 to 1)
 function roadieTerrainColor(fraction):
-    low = [96, 148, 84]
-    mid = [176, 178, 112]
-    high = [178, 142, 104]
     if fraction < 0.5:
         t = mathMax(0, fraction) * 2
-        a = low
-        b = mid
+        a = roadieTerrainLow
+        b = roadieTerrainMid
     else:
         t = mathMin(1, fraction) * 2 - 1
-        a = mid
-        b = high
+        a = roadieTerrainMid
+        b = roadieTerrainHigh
     endif
     return [ \
         arrayGet(a, 0) + (arrayGet(b, 0) - arrayGet(a, 0)) * t, \
@@ -1466,6 +1469,45 @@ function roadieProjectPoints(view, points):
 endfunction
 
 
+# Sort 3D items ([depth, element]) by depth, farthest first, keeping the order of equal depths - the same order as a
+# stable sort with roadieCompareDepth. The items are bucketed by depth (a bucket's items are all at least as far as the
+# next bucket's), and only each bucket is sorted, which takes far fewer comparisons.
+function roadieSortDepth(items):
+    count = arrayLength(items)
+    if count < 2:
+        return items
+    endif
+    minDepth = arrayGet(arrayGet(items, 0), 0)
+    maxDepth = minDepth
+    for item in items:
+        minDepth = mathMin(minDepth, arrayGet(item, 0))
+        maxDepth = mathMax(maxDepth, arrayGet(item, 0))
+    endfor
+    bucketCount = mathMax(1, mathFloor(count / 4))
+    bucketScale = (bucketCount - 1) / mathMax(maxDepth - minDepth, 1e-12)
+    buckets = arrayNewSize(bucketCount, null)
+    for item in items:
+        ixBucket = mathMin(bucketCount - 1, mathFloor((maxDepth - arrayGet(item, 0)) * bucketScale))
+        bucket = arrayGet(buckets, ixBucket)
+        if bucket == null:
+            arraySet(buckets, ixBucket, [item])
+        else:
+            arrayPush(bucket, item)
+        endif
+    endfor
+    sorted = []
+    for bucket in buckets:
+        if bucket != null:
+            if arrayLength(bucket) > 1:
+                arraySort(bucket, roadieCompareDepth)
+            endif
+            arrayExtend(sorted, bucket)
+        endif
+    endfor
+    return sorted
+endfunction
+
+
 # Compare two depth-sorted 3D items (farthest first)
 function roadieCompareDepth(a, b):
     return arrayGet(b, 0) - arrayGet(a, 0)
@@ -1618,6 +1660,38 @@ function roadieSmoothRows(rows, rowFirst, rowLast, colFirst, colLast, count):
 endfunction
 
 
+# Compute a zoomed view's cull box - [xMin, xMax, yMin, yMax], the bounds of the view's corners on the ground between
+# the lowest and highest elevations of the topography and the road samples (their grade and ground). A point within
+# those elevations can only be visible within the box.
+function roadieViewCullBox(view, topo, samples):
+    zLow = objectGet(topo, 'minZ')
+    zHigh = objectGet(topo, 'maxZ')
+    for sample in samples:
+        zLow = mathMin(zLow, objectGet(sample, 'z'), objectGet(sample, 'ground'))
+        zHigh = mathMax(zHigh, objectGet(sample, 'z'), objectGet(sample, 'ground'))
+    endfor
+    width = objectGet(view, 'width')
+    height = objectGet(view, 'height')
+    box = null
+    for corner in [[0, 0], [width, 0], [width, height], [0, height]]:
+        for cornerZ in [zLow, zHigh]:
+            point = roadieUnprojectZ(view, arrayGet(corner, 0), arrayGet(corner, 1), cornerZ)
+            x = arrayGet(point, 0)
+            y = arrayGet(point, 1)
+            box = if(box == null, [x, x, y, y], \
+                [mathMin(arrayGet(box, 0), x), mathMax(arrayGet(box, 1), x), mathMin(arrayGet(box, 2), y), mathMax(arrayGet(box, 3), y)])
+        endfor
+    endfor
+    return box
+endfunction
+
+
+# Determine if a bounding box is entirely outside a cull box (roadieViewCullBox)
+function roadieOutsideBox(box, xMin, xMax, yMin, yMax):
+    return xMax < arrayGet(box, 0) || xMin > arrayGet(box, 1) || yMax < arrayGet(box, 2) || yMin > arrayGet(box, 3)
+endfunction
+
+
 # Create a 3D view SVG element model of a projection (roadieProjection) - "rows" are the finished grade topography
 # rows (roadieFinishedRows)
 function roadieView3D(plan, topo, rows, ixOption, analysis, view):
@@ -1644,6 +1718,7 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
     rowLast = nRows - 1
     colFirst = 0
     colLast = nCols - 1
+    cullBox = null
     if objectGet(view, 'zoom') > 1:
         point = roadieUnprojectZ(view, 0, 0, objectGet(topo, 'minZ'))
         xMin = arrayGet(point, 0)
@@ -1663,6 +1738,7 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
         colLast = mathMin(nCols - 1, mathMax(colFirst + 1, mathCeil(xMax / spacing)))
         rowFirst = mathMax(0, mathMin(nRows - 2, mathFloor((nRows - 1) - yMax / spacing)))
         rowLast = mathMin(nRows - 1, mathMax(rowFirst + 1, mathCeil((nRows - 1) - yMin / spacing)))
+        cullBox = roadieViewCullBox(view, topo, samples)
     endif
     step = mathMax(1, mathCeil(mathMax(rowLast - rowFirst, colLast - colFirst) / roadieMax3DCells))
     cellSize = step * spacing
@@ -1719,17 +1795,25 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
         depthsTop = arrayGet(projectedTop, 1)
         pointsBottom = arrayGet(projectedBottom, 0)
         depthsBottom = arrayGet(projectedBottom, 1)
+        pxsTop = arrayGet(projectedTop, 2)
+        pysTop = arrayGet(projectedTop, 3)
+        pxsBottom = arrayGet(projectedBottom, 2)
+        pysBottom = arrayGet(projectedBottom, 3)
         for col, ixCol in cols:
             if ixCol == arrayLength(cols) - 1:
                 break
             endif
-            cellCoords = [ \
-                arrayGet(arrayGet(projectedTop, 2), ixCol), arrayGet(arrayGet(projectedTop, 3), ixCol), \
-                arrayGet(arrayGet(projectedTop, 2), ixCol + 1), arrayGet(arrayGet(projectedTop, 3), ixCol + 1), \
-                arrayGet(arrayGet(projectedBottom, 2), ixCol + 1), arrayGet(arrayGet(projectedBottom, 3), ixCol + 1), \
-                arrayGet(arrayGet(projectedBottom, 2), ixCol), arrayGet(arrayGet(projectedBottom, 3), ixCol) \
-            ]
-            if !roadieCoordsVisible(view, cellCoords):
+            # Skip the cell if its corners' bounding box is outside the view (roadieCoordsVisible, inlined for the cells)
+            px1 = arrayGet(pxsTop, ixCol)
+            px2 = arrayGet(pxsTop, ixCol + 1)
+            px3 = arrayGet(pxsBottom, ixCol + 1)
+            px4 = arrayGet(pxsBottom, ixCol)
+            py1 = arrayGet(pysTop, ixCol)
+            py2 = arrayGet(pysTop, ixCol + 1)
+            py3 = arrayGet(pysBottom, ixCol + 1)
+            py4 = arrayGet(pysBottom, ixCol)
+            if mathMax(px1, px2, px3, px4) < 0 || mathMin(px1, px2, px3, px4) > width || \
+                    mathMax(py1, py2, py3, py4) < 0 || mathMin(py1, py2, py3, py4) > viewHeight:
                 continue
             endif
             col2 = arrayGet(cols, ixCol + 1)
@@ -1782,12 +1866,14 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
                 endfor
                 level = level + contourInterval
             endwhile
-            for contourPath in [[minorPath, 0.5], [indexPath, 1.2]]:
-                if arrayLength(arrayGet(contourPath, 0)) > 0:
-                    arrayPush(cellElements, {'svg': 'path', 'attr': {'d': arrayJoin(arrayGet(contourPath, 0), ''), 'fill': 'none', \
-                        'stroke': contourColor, 'stroke-width': arrayGet(contourPath, 1), 'stroke-linecap': 'round'}})
-                endif
-            endfor
+            if minorPath:
+                arrayPush(cellElements, {'svg': 'path', 'attr': {'d': arrayJoin(minorPath, ''), 'fill': 'none', \
+                    'stroke': contourColor, 'stroke-width': 0.5, 'stroke-linecap': 'round'}})
+            endif
+            if indexPath:
+                arrayPush(cellElements, {'svg': 'path', 'attr': {'d': arrayJoin(indexPath, ''), 'fill': 'none', \
+                    'stroke': contourColor, 'stroke-width': 1.2, 'stroke-linecap': 'round'}})
+            endif
             arrayPush(items, [cellDepth, cellElements])
         endfor
         row = row2
@@ -1817,6 +1903,10 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
                     ya = y1 + (y2 - y1) * ixStep / count
                     xb = x1 + (x2 - x1) * (ixStep + 1) / count
                     yb = y1 + (y2 - y1) * (ixStep + 1) / count
+                    if cullBox != null && roadieOutsideBox(cullBox, mathMin(xa, xb), mathMax(xa, xb), mathMin(ya, yb), mathMax(ya, yb)):
+                        ixStep = ixStep + 1
+                        continue
+                    endif
                     za = roadieElevation(topo, xa, ya)
                     zb = roadieElevation(topo, xb, yb)
                     projected = if(za != null && zb != null, roadieProjectPoints(view, [[xa, ya, za], [xb, yb, zb]]))
@@ -1838,6 +1928,19 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
     prevPoints = null
     for sample, ixSample in samples:
         points = roadieSamplePoints(sample, halfWidth)
+        if ixSample > 0 && cullBox != null:
+            # Skip the road interval if its footprint is outside the view's ground area
+            prev = arrayGet(samples, ixSample - 1)
+            reach = halfWidth + mathMax(objectGet(objectGet(prev, 'left'), 'offset'), objectGet(objectGet(prev, 'right'), 'offset'), \
+                objectGet(objectGet(sample, 'left'), 'offset'), objectGet(objectGet(sample, 'right'), 'offset'))
+            if roadieOutsideBox(cullBox, mathMin(objectGet(prev, 'x'), objectGet(sample, 'x')) - reach, \
+                    mathMax(objectGet(prev, 'x'), objectGet(sample, 'x')) + reach, \
+                    mathMin(objectGet(prev, 'y'), objectGet(sample, 'y')) - reach, \
+                    mathMax(objectGet(prev, 'y'), objectGet(sample, 'y')) + reach):
+                prevPoints = points
+                continue
+            endif
+        endif
         if ixSample > 0:
             prev = arrayGet(samples, ixSample - 1)
             bridge = objectGet(prev, 'bridge') && objectGet(sample, 'bridge')
@@ -1946,7 +2049,7 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
     endwhile
 
     # Sort the items by depth, farthest first
-    arraySort(items, roadieCompareDepth)
+    items = roadieSortDepth(items)
     elements = []
     for item in items:
         arrayPush(elements, arrayGet(item, 1))

@@ -486,22 +486,71 @@ function roadieGradient(topo, x, y):
 endfunction
 
 
-# Test if a point is inside a polygon of point objects
+# Determine if a point is inside a polygon of points (even-odd rule)
 function roadiePointInPolygon(x, y, points):
-    inside = false
-    count = arrayLength(points)
-    j = count - 1
+    return roadiePointInPolygonIndex(x, y, roadiePolygonIndex(points))
+endfunction
+
+
+# The number of horizontal bands of a polygon index
+roadiePolygonBands = 32
+
+
+# Create a polygon index for repeated point-in-polygon tests - the polygon's edges, as flat [x1, y1, x2, y2, ...]
+# arrays, in the horizontal bands they span
+function roadiePolygonIndex(points):
+    minY = objectGet(arrayGet(points, 0), 'y')
+    maxY = minY
+    for point in points:
+        minY = mathMin(minY, objectGet(point, 'y'))
+        maxY = mathMax(maxY, objectGet(point, 'y'))
+    endfor
+    bandHeight = mathMax((maxY - minY) / roadiePolygonBands, 1e-9)
+    bands = []
+    while arrayLength(bands) < roadiePolygonBands:
+        arrayPush(bands, [])
+    endwhile
+    j = arrayLength(points) - 1
     for point, i in points:
         pointJ = arrayGet(points, j)
         xi = objectGet(point, 'x')
         yi = objectGet(point, 'y')
         xj = objectGet(pointJ, 'x')
         yj = objectGet(pointJ, 'y')
-        if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi:
-            inside = !inside
-        endif
+        band = mathMin(roadiePolygonBands - 1, mathFloor((mathMin(yi, yj) - minY) / bandHeight))
+        bandLast = mathMin(roadiePolygonBands - 1, mathFloor((mathMax(yi, yj) - minY) / bandHeight))
+        while band <= bandLast:
+            arrayPush(arrayGet(bands, band), xi, yi, xj, yj)
+            band = band + 1
+        endwhile
         j = i
     endfor
+    return {'minY': minY, 'maxY': maxY, 'bandHeight': bandHeight, 'bands': bands}
+endfunction
+
+
+# Determine if a point is inside an indexed polygon (roadiePolygonIndex) - only the edges in the point's band can cross
+# its horizontal ray
+function roadiePointInPolygonIndex(x, y, index):
+    minY = objectGet(index, 'minY')
+    if y < minY || y >= objectGet(index, 'maxY'):
+        return false
+    endif
+    edges = arrayGet(objectGet(index, 'bands'), mathMin(roadiePolygonBands - 1, mathFloor((y - minY) / objectGet(index, 'bandHeight'))))
+    inside = false
+    ixEdge = 0
+    edgeCount = arrayLength(edges)
+    while ixEdge < edgeCount:
+        yi = arrayGet(edges, ixEdge + 1)
+        yj = arrayGet(edges, ixEdge + 3)
+        if (yi > y) != (yj > y):
+            xi = arrayGet(edges, ixEdge)
+            if x < (arrayGet(edges, ixEdge + 2) - xi) * (y - yi) / (yj - yi) + xi:
+                inside = !inside
+            endif
+        endif
+        ixEdge = ixEdge + 4
+    endwhile
     return inside
 endfunction
 
@@ -677,7 +726,7 @@ function roadieSamples(plan, topo, option, alignment):
     rockFeatures = []
     for feature in objectGet(topo, 'features'):
         if objectGet(feature, 'type') == 'rock':
-            arrayPush(rockFeatures, objectGet(feature, 'points'))
+            arrayPush(rockFeatures, roadiePolygonIndex(objectGet(feature, 'points')))
         endif
     endfor
 
@@ -721,7 +770,7 @@ function roadieSamples(plan, topo, option, alignment):
         # Rock?
         rock = false
         for rockPoints in rockFeatures:
-            if roadiePointInPolygon(x, y, rockPoints):
+            if roadiePointInPolygonIndex(x, y, rockPoints):
                 rock = true
                 break
             endif
@@ -813,7 +862,7 @@ endfunction
 
 function roadieSampleExcluded(exclusions, sample):
     for exclusion in exclusions:
-        if roadiePointInPolygon(objectGet(sample, 'x'), objectGet(sample, 'y'), exclusion):
+        if roadiePointInPolygonIndex(objectGet(sample, 'x'), objectGet(sample, 'y'), exclusion):
             return true
         endif
     endfor
@@ -938,7 +987,7 @@ function roadieAnalyze(plan, ixOption, topo):
     exclusions = []
     for feature in objectGet(topo, 'features'):
         if objectGet(feature, 'type') == 'exclusion':
-            arrayPush(exclusions, objectGet(feature, 'points'))
+            arrayPush(exclusions, roadiePolygonIndex(objectGet(feature, 'points')))
         endif
     endfor
     roadieRunWarnings(warnings, samples, units, roadieSampleOutside, 'The road is outside the topography')
@@ -952,13 +1001,29 @@ function roadieAnalyze(plan, ixOption, topo):
         'The retaining wall exceeds the maximum wall height')
     roadieRunWarnings(warnings, samples, units, roadieSampleBridgeBuried, 'The bridge deck is below the ground')
 
-    # Stream crossings
+    # Stream crossings - an alignment segment outside a stream's bounding box can't cross it
     for feature in objectGet(topo, 'features'):
         if objectGet(feature, 'type') == 'stream':
             streamPoints = objectGet(feature, 'points')
+            streamXMin = objectGet(arrayGet(streamPoints, 0), 'x')
+            streamXMax = streamXMin
+            streamYMin = objectGet(arrayGet(streamPoints, 0), 'y')
+            streamYMax = streamYMin
+            for streamPoint in streamPoints:
+                streamXMin = mathMin(streamXMin, objectGet(streamPoint, 'x'))
+                streamXMax = mathMax(streamXMax, objectGet(streamPoint, 'x'))
+                streamYMin = mathMin(streamYMin, objectGet(streamPoint, 'y'))
+                streamYMax = mathMax(streamYMax, objectGet(streamPoint, 'y'))
+            endfor
             for point, ixPoint in alignment:
                 if ixPoint > 0:
                     prev = arrayGet(alignment, ixPoint - 1)
+                    if mathMax(objectGet(prev, 'x'), objectGet(point, 'x')) < streamXMin || \
+                            mathMin(objectGet(prev, 'x'), objectGet(point, 'x')) > streamXMax || \
+                            mathMax(objectGet(prev, 'y'), objectGet(point, 'y')) < streamYMin || \
+                            mathMin(objectGet(prev, 'y'), objectGet(point, 'y')) > streamYMax:
+                        continue
+                    endif
                     for streamPoint, ixStream in streamPoints:
                         if ixStream > 0:
                             streamPrev = arrayGet(streamPoints, ixStream - 1)
