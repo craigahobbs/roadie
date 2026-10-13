@@ -568,6 +568,29 @@ function roadieSegmentIntersect(x1, y1, x2, y2, x3, y3, x4, y4):
 endfunction
 
 
+# Compute the bounding box of points - [xMin, xMax, yMin, yMax]
+function roadieBounds(points):
+    first = arrayGet(points, 0)
+    xMin = objectGet(first, 'x')
+    xMax = xMin
+    yMin = objectGet(first, 'y')
+    yMax = yMin
+    for point in points:
+        xMin = mathMin(xMin, objectGet(point, 'x'))
+        xMax = mathMax(xMax, objectGet(point, 'x'))
+        yMin = mathMin(yMin, objectGet(point, 'y'))
+        yMax = mathMax(yMax, objectGet(point, 'y'))
+    endfor
+    return [xMin, xMax, yMin, yMax]
+endfunction
+
+
+# Determine if a bounding box is entirely outside a box ([xMin, xMax, yMin, yMax])
+function roadieOutsideBox(box, xMin, xMax, yMin, yMax):
+    return xMax < arrayGet(box, 0) || xMin > arrayGet(box, 1) || yMax < arrayGet(box, 2) || yMin > arrayGet(box, 3)
+endfunction
+
+
 #
 # Cross sections
 #
@@ -999,44 +1022,25 @@ function roadieAnalyze(plan, ixOption, topo):
     roadieRunWarnings(warnings, samples, units, roadieSampleBridgeBuried, 'The bridge deck is below the ground')
 
     # Stream crossings - an alignment segment outside a stream's bounding box can't cross it, so the alignment's
-    # segments are bounded in chunks ([ixPoint, ixPointEnd, xMin, xMax, yMin, yMax] - the segments ending at points
-    # ixPoint up to ixPointEnd) to skip the chunks outside the stream's bounding box
+    # segments are bounded in chunks ([ixPoint, ixPointEnd, bounds] - the segments ending at points ixPoint up to
+    # ixPointEnd) to skip the chunks outside the stream's bounding box
     alignmentCount = arrayLength(alignment)
     chunks = []
     ixChunk = 1
     while ixChunk < alignmentCount:
         ixChunkEnd = mathMin(alignmentCount, ixChunk + roadieCrossingChunk)
-        point = arrayGet(alignment, ixChunk - 1)
-        chunk = [ixChunk, ixChunkEnd, objectGet(point, 'x'), objectGet(point, 'x'), objectGet(point, 'y'), objectGet(point, 'y')]
-        ixPoint = ixChunk
-        while ixPoint < ixChunkEnd:
-            point = arrayGet(alignment, ixPoint)
-            arraySet(chunk, 2, mathMin(arrayGet(chunk, 2), objectGet(point, 'x')))
-            arraySet(chunk, 3, mathMax(arrayGet(chunk, 3), objectGet(point, 'x')))
-            arraySet(chunk, 4, mathMin(arrayGet(chunk, 4), objectGet(point, 'y')))
-            arraySet(chunk, 5, mathMax(arrayGet(chunk, 5), objectGet(point, 'y')))
-            ixPoint = ixPoint + 1
-        endwhile
-        arrayPush(chunks, chunk)
+        arrayPush(chunks, [ixChunk, ixChunkEnd, roadieBounds(arraySlice(alignment, ixChunk - 1, ixChunkEnd))])
         ixChunk = ixChunkEnd
     endwhile
     for feature in objectGet(topo, 'features'):
         if objectGet(feature, 'type') == 'stream':
             streamPoints = objectGet(feature, 'points')
-            streamXMin = objectGet(arrayGet(streamPoints, 0), 'x')
-            streamXMax = streamXMin
-            streamYMin = objectGet(arrayGet(streamPoints, 0), 'y')
-            streamYMax = streamYMin
-            for streamPoint in streamPoints:
-                streamXMin = mathMin(streamXMin, objectGet(streamPoint, 'x'))
-                streamXMax = mathMax(streamXMax, objectGet(streamPoint, 'x'))
-                streamYMin = mathMin(streamYMin, objectGet(streamPoint, 'y'))
-                streamYMax = mathMax(streamYMax, objectGet(streamPoint, 'y'))
-            endfor
+            streamBounds = roadieBounds(streamPoints)
             streamCount = arrayLength(streamPoints)
             for chunk in chunks:
-                if arrayGet(chunk, 3) < streamXMin || arrayGet(chunk, 2) > streamXMax || \
-                        arrayGet(chunk, 5) < streamYMin || arrayGet(chunk, 4) > streamYMax:
+                chunkBounds = arrayGet(chunk, 2)
+                if roadieOutsideBox(streamBounds, arrayGet(chunkBounds, 0), arrayGet(chunkBounds, 1), \
+                        arrayGet(chunkBounds, 2), arrayGet(chunkBounds, 3)):
                     continue
                 endif
                 ixPoint = arrayGet(chunk, 0) - 1
@@ -1045,10 +1049,9 @@ function roadieAnalyze(plan, ixOption, topo):
                     ixPoint = ixPoint + 1
                     point = arrayGet(alignment, ixPoint)
                     prev = arrayGet(alignment, ixPoint - 1)
-                    if mathMax(objectGet(prev, 'x'), objectGet(point, 'x')) < streamXMin || \
-                            mathMin(objectGet(prev, 'x'), objectGet(point, 'x')) > streamXMax || \
-                            mathMax(objectGet(prev, 'y'), objectGet(point, 'y')) < streamYMin || \
-                            mathMin(objectGet(prev, 'y'), objectGet(point, 'y')) > streamYMax:
+                    if roadieOutsideBox(streamBounds, mathMin(objectGet(prev, 'x'), objectGet(point, 'x')), \
+                            mathMax(objectGet(prev, 'x'), objectGet(point, 'x')), mathMin(objectGet(prev, 'y'), objectGet(point, 'y')), \
+                            mathMax(objectGet(prev, 'y'), objectGet(point, 'y'))):
                         continue
                     endif
                     ixStream = 1

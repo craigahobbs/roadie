@@ -1524,10 +1524,10 @@ function roadieProjectGridRow(view, rows, row, cols, xOrigin, yTop, spacing):
     cosTilt = objectGet(view, 'cosTilt')
     sinTilt = objectGet(view, 'sinTilt')
     scale = objectGet(view, 'scale')
-    halfWidth = objectGet(view, 'width') * 0.5
-    cy = objectGet(view, 'cy')
     width = objectGet(view, 'width')
     height = objectGet(view, 'height')
+    halfWidth = width * 0.5
+    cy = objectGet(view, 'cy')
     rowZ = arrayGet(rows, row)
     y0 = yTop - row * spacing - yc
     points = []
@@ -1680,12 +1680,6 @@ function roadieViewCullBox(view, topo, samples):
         endfor
     endfor
     return box
-endfunction
-
-
-# Determine if a bounding box is entirely outside a cull box (roadieViewCullBox)
-function roadieOutsideBox(box, xMin, xMax, yMin, yMax):
-    return xMax < arrayGet(box, 0) || xMin > arrayGet(box, 1) || yMax < arrayGet(box, 2) || yMin > arrayGet(box, 3)
 endfunction
 
 
