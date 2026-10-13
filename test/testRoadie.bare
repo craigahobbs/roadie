@@ -1194,6 +1194,26 @@ endfunction
 unittestRunTest('testRoadieView3D_smooth')
 
 
+function testRoadieVisibleCells():
+    plan = objectGet(roadieValidate(testRoadiePlanSimple()), 'plan')
+    topo = roadieTopo(plan)
+    rows = objectGet(topo, 'rows')
+
+    # The whole site's top view sees every cell of the 5 x 5 grid
+    view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1}, 400, 400)
+    unittestDeepEqual(roadieVisibleCells(view, topo, rows, 0, 4, 0, 4), [0, 4, 0, 4])
+
+    # Zoomed in on the northwest corner, only its cell is visible - extended by a cell on each side
+    view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1, 'zoom': 4, 'x': 0, 'y': 40}, 400, 400)
+    unittestDeepEqual(roadieVisibleCells(view, topo, rows, 0, 4, 0, 4), [0, 2, 0, 2])
+
+    # High above the terrain, no cell is visible
+    view = roadieProjection(topo, {'azimuth': 0, 'tilt': 45, 'exaggeration': 1, 'zoom': 4, 'z': 100000, 'fill': true}, 400, 400)
+    unittestEqual(roadieVisibleCells(view, topo, rows, 0, 4, 0, 4), null)
+endfunction
+unittestRunTest('testRoadieVisibleCells')
+
+
 function testRoadieViewCaption():
     # The explore link omits the default tilt (35 degrees)
     overview = {'args': {'azimuth': 350, 'tilt': 35}, 'station': 0, 'endStation': 40, 'hidden': 0, 'leftToRight': true}

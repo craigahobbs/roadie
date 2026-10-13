@@ -1657,6 +1657,69 @@ function roadieSmoothRows(rows, rowFirst, rowLast, colFirst, colLast, count):
 endfunction
 
 
+# Find the grid rows and columns of a view's visible terrain cells - [rowFirst, rowLast, colFirst, colLast], the bounds of
+# the cells (within the given grid rows and columns) that aren't culled because all of their corners are outside the same
+# side of the view, extended by a cell on each side - or null if no cell is visible. The cull box (roadieViewCullBox)
+# spans the topography's whole elevation range, so on steep sites it's much larger than the visible terrain.
+function roadieVisibleCells(view, topo, rows, rowFirst, rowLast, colFirst, colLast):
+    nRows = objectGet(topo, 'nRows')
+    spacing = objectGet(topo, 'spacing')
+    xc = objectGet(view, 'xc')
+    yc = objectGet(view, 'yc')
+    zc = objectGet(view, 'zc')
+    exaggeration = objectGet(view, 'exaggeration')
+    cosAz = objectGet(view, 'cosAz')
+    sinAz = objectGet(view, 'sinAz')
+    cosTilt = objectGet(view, 'cosTilt')
+    sinTilt = objectGet(view, 'sinTilt')
+    scale = objectGet(view, 'scale')
+    width = objectGet(view, 'width')
+    height = objectGet(view, 'height')
+    halfWidth = width * 0.5
+    cy = objectGet(view, 'cy')
+    visible = null
+    codesPrev = null
+    row = rowFirst
+    while row <= rowLast:
+        # The row's points' view outcodes (roadieProjectGridRow)
+        rowZ = arrayGet(rows, row)
+        y0 = (nRows - 1 - row) * spacing - yc
+        codes = []
+        col = colFirst
+        while col <= colLast:
+            x0 = col * spacing - xc
+            px = halfWidth + (x0 * cosAz - y0 * sinAz) * scale
+            py = cy - ((x0 * sinAz + y0 * cosAz) * sinTilt + (arrayGet(rowZ, col) - zc) * exaggeration * cosTilt) * scale
+            arrayPush(codes, if(px < 0, 1, if(px > width, 2, 0)) + if(py < 0, 4, if(py > height, 8, 0)))
+            col = col + 1
+        endwhile
+
+        # The visible cells between the previous row and this row
+        if codesPrev != null:
+            ixCol = 0
+            while ixCol < arrayLength(codes) - 1:
+                if !(arrayGet(codesPrev, ixCol) & arrayGet(codesPrev, ixCol + 1) & arrayGet(codes, ixCol + 1) & arrayGet(codes, ixCol)):
+                    cellCol = colFirst + ixCol
+                    visible = if(visible == null, [row - 1, row, cellCol, cellCol + 1], [ \
+                        arrayGet(visible, 0), row, mathMin(arrayGet(visible, 2), cellCol), mathMax(arrayGet(visible, 3), cellCol + 1) \
+                    ])
+                endif
+                ixCol = ixCol + 1
+            endwhile
+        endif
+        codesPrev = codes
+        row = row + 1
+    endwhile
+    if visible == null:
+        return null
+    endif
+    return [ \
+        mathMax(rowFirst, arrayGet(visible, 0) - 1), mathMin(rowLast, arrayGet(visible, 1) + 1), \
+        mathMax(colFirst, arrayGet(visible, 2) - 1), mathMin(colLast, arrayGet(visible, 3) + 1) \
+    ]
+endfunction
+
+
 # Compute a zoomed view's cull box - [xMin, xMax, yMin, yMax], the bounds of the view's corners on the ground between
 # the lowest and highest elevations of the topography and the road samples (their grade and ground - with no samples,
 # the topography's alone). A point within those elevations can only be visible within the box.
@@ -1743,12 +1806,18 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
     xOrigin = 0
     yTop = (nRows - 1) * spacing
     smooth = 1
-    if objectGet(view, 'smooth') && step == 1:
-        visiblePoints = (rowLast - rowFirst + 1) * (colLast - colFirst + 1)
+    visible = if(objectGet(view, 'smooth') && step == 1, roadieVisibleCells(view, topo, rows, rowFirst, rowLast, colFirst, colLast))
+    if visible != null:
+        # The smooth view divides only the visible grid cells, so its point budget is spent on the drawn terrain
+        visiblePoints = (arrayGet(visible, 1) - arrayGet(visible, 0) + 1) * (arrayGet(visible, 3) - arrayGet(visible, 2) + 1)
         smooth = mathMin(roadieMaxSmooth, mathCeil(spacing * scale / roadieSmoothCellPx), \
             mathFloor(mathSqrt(roadieMaxSmoothPoints / visiblePoints)))
     endif
     if smooth > 1:
+        rowFirst = arrayGet(visible, 0)
+        rowLast = arrayGet(visible, 1)
+        colFirst = arrayGet(visible, 2)
+        colLast = arrayGet(visible, 3)
         drawRows = roadieSmoothRows(rows, rowFirst, rowLast, colFirst, colLast, smooth)
         drawSpacing = spacing / smooth
         xOrigin = colFirst * spacing
