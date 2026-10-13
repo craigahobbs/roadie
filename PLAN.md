@@ -292,10 +292,13 @@ and editing alignments.
    or a longer corridor. Check that via points don't make the route double back on itself.
 3. **Every option runs the full trip, from the start point to the end point** - the cost comparison
    depends on it. An option that joins an existing road follows that road to the end point in its
-   alignment. The cost model has no existing-road (upgrade) rates, so those sections are costed as new
-   construction - say so, with their share of the cost, in the option's description. To route to an
-   intermediate point (a junction), route in a scratch copy of the plan whose `end` is that point, then
-   extend the alignment by hand and run `profile`.
+   alignment, with an `existingRoad` structure over that section: the section follows the ground and is
+   costed at the existing road upgrade rate, with no earthwork, and its as-built grades and curves
+   aren't checked. To route to a junction, route in a scratch copy of the plan whose `end` is the
+   junction, then extend the alignment along the existing road (closely spaced points, curves at the
+   minimum radius) and run `profile -n NAME --existing-road STATION,END` to design the new section's
+   profile up to the junction. Note the existing road's condition in the option's description - its
+   width, grade, and surface may not meet the design criteria.
 4. Consider variants where they change the comparison: a bridge versus a culvert fill
    (`--bridge-fill`), asphalt versus gravel on steep routes, or a steeper design grade where the
    criteria allow it.
@@ -420,6 +423,7 @@ prices), for comparing options - not a bid estimate. Default unit rates (overrid
 | Culverts | ~$120 / LF (18 in) to $250 / LF (36 in), plus $3,000 per end |
 | Retaining walls | ~$60 / SF of face |
 | Bridges | ~$250 / SF of deck |
+| Existing road upgrade (reshaping, gravel lift, ditch cleaning, minor widening) | ~$11 / SY of road |
 | Erosion control and revegetation | $3,000 / acre of disturbed area |
 | Mobilization | 10% |
 

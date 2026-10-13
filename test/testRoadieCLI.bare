@@ -175,3 +175,17 @@ function testRoadieCLISide():
     unittestEqual(roadieCLISide({'kind': 'fill', 'offset': 3, 'daylight': false}), 'fill 3.0 (no daylight)')
 endfunction
 unittestRunTest('testRoadieCLISide')
+
+
+function testRoadieCLIStationTable_existingRoad():
+    plan = objectGet(roadieValidate(testRoadiePlanExistingRoad()), 'plan')
+    lines = roadieCLIStationTable(plan, roadieAnalyze(plan, 0))
+    notes = []
+    for line in arraySlice(lines, 2):
+        arrayPush(notes, stringTrim(arrayGet(stringSplit(line, '|'), 10)))
+    endfor
+    unittestEqual(arrayLength(notes), 41)
+    unittestDeepEqual([arrayGet(notes, 0), arrayGet(notes, 15), arrayGet(notes, 25), arrayGet(notes, 40)], \
+        ['', '', 'existing road', 'existing road'])
+endfunction
+unittestRunTest('testRoadieCLIStationTable_existingRoad')

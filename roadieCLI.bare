@@ -139,6 +139,7 @@ function roadieCLIStationTable(plan, analysis):
             'Right': roadieCLISide(right), \
             'Notes': arrayJoin(arrayFlat([ \
                 if(objectGet(sample, 'bridge'), ['bridge'], []), \
+                if(objectGet(sample, 'existing'), ['existing road'], []), \
                 if(objectGet(sample, 'rock'), ['rock'], []), \
                 if(objectGet(sample, 'outside'), ['outside'], []) \
             ]), ', ') \

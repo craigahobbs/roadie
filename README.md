@@ -82,6 +82,9 @@ average bid prices and low-volume road references):
   haul diagram beyond the free haul distance
 - **Clearing, surfacing, ditches and cross drains, erosion control**, by area or length
 - **Culverts, retaining walls (by face area), bridges (by deck area), and turnouts**
+- **Existing road upgrades** (by area) - where an option follows an existing road, reshaping, a
+  gravel lift, ditch cleaning, and minor widening replace the new road's earthwork, clearing,
+  surfacing, and ditches
 - **Mobilization** (10%)
 
 A plan can override any unit rate (`costRates`) for local prices. See [PLAN.md](PLAN.md#appendix-the-cost-score)
@@ -157,7 +160,8 @@ description. It finishes with a before-and-after comparison of the options.
 A road plan model is a JSON file containing the site topography (an elevation grid with streams, rock
 outcrops, and exclusion areas), the start and end points, design criteria, cost rate overrides, and
 one or more road plan options. Each option has a road cross section, a centerline alignment (x, y,
-and grade elevation), and structures (retaining walls, bridges, culverts, and turnouts). Run
+and grade elevation), and structures (retaining walls, bridges, culverts, turnouts, and the existing roads
+it follows). Run
 `make doc` for the model documentation (also linked from the viewer).
 
 

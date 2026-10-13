@@ -185,6 +185,9 @@ roadieTypes = schemaParse( \
     '    # Bridge, per square meter of deck', \
     '    optional float(>= 0) bridge', \
     '', \
+    '    # Existing road upgrade (reshaping, a gravel lift, ditch cleaning, and minor widening), per square meter of road', \
+    '    optional float(>= 0) existingRoad', \
+    '', \
     '    # Erosion control and revegetation, per square meter of disturbed area', \
     '    optional float(>= 0) erosionControl', \
     '', \
@@ -256,10 +259,10 @@ roadieTypes = schemaParse( \
     '    # The structure type', \
     '    StructureType type', \
     '', \
-    '    # The structure\'s station (starting station for walls, bridges, and turnouts)', \
+    '    # The structure\'s station (starting station for walls, bridges, turnouts, and existing roads)', \
     '    float(>= 0) station', \
     '', \
-    '    # The structure\'s ending station (required for walls, bridges, and turnouts)', \
+    '    # The structure\'s ending station (required for walls, bridges, turnouts, and existing roads)', \
     '    optional float(>= 0) endStation', \
     '', \
     '    # The side of the road, facing from the start toward the end (walls and turnouts, default', \
@@ -287,6 +290,11 @@ roadieTypes = schemaParse( \
     '', \
     '    # A turnout widens a single-lane road for passing (10 feet / 3 meters)', \
     '    turnout', \
+    '', \
+    '    # The option follows an existing road - it\'s costed at the existing road upgrade rate, with no earthwork or', \
+    '    # clearing. Its as-built grade follows the ground (alignment elevations within it are ignored), and its grade,', \
+    '    # curves, and stream crossings aren\'t checked.', \
+    '    existingRoad', \
     '', \
     '', \
     '# A side of the road', \
@@ -318,6 +326,7 @@ roadieDefaultRates = { \
     'culvertEnds': 6000, \
     'retainingWall': 650, \
     'bridge': 2700, \
+    'existingRoad': 13, \
     'erosionControl': 0.75, \
     'mobilization': 0.1 \
 }
@@ -587,8 +596,10 @@ endfunction
 #
 
 
-# Compute an option's alignment - point objects with "x", "y", "z", and "station"
+# Compute an option's alignment - point objects with "x", "y", "z", and "station". Within an existing road, the
+# elevation is the ground's.
 function roadieAlignment(topo, option):
+    existingRoads = roadieStructuresOfType(option, 'existingRoad')
     points = []
     station = 0
     prev = null
@@ -599,14 +610,37 @@ function roadieAlignment(topo, option):
             station = station + mathSqrt((x - objectGet(prev, 'x')) ** 2 + (y - objectGet(prev, 'y')) ** 2)
         endif
         z = objectGet(point, 'z')
-        if z == null:
-            z = roadieElevation(topo, x, y)
-            z = if(z == null, 0, z)
+        if z == null || roadieExistingAt(existingRoads, station):
+            ground = roadieElevation(topo, x, y)
+            z = if(ground != null, ground, if(z != null, z, 0))
         endif
         prev = {'x': x, 'y': y, 'z': z, 'station': station}
         arrayPush(points, prev)
     endfor
     return points
+endfunction
+
+
+# Get an option's structures of a type
+function roadieStructuresOfType(option, type):
+    structures = []
+    for structure in objectGet(option, 'structures', []):
+        if objectGet(structure, 'type') == type:
+            arrayPush(structures, structure)
+        endif
+    endfor
+    return structures
+endfunction
+
+
+# Determine if a station is within an existing road (with a tolerance for sample stations' rounding)
+function roadieExistingAt(existingRoads, station):
+    for existingRoad in existingRoads:
+        if station >= objectGet(existingRoad, 'station') - 1e-6 && station <= objectGet(existingRoad, 'endStation') + 1e-6:
+            return true
+        endif
+    endfor
+    return false
 endfunction
 
 
@@ -637,16 +671,9 @@ function roadieSamples(plan, topo, option, alignment):
     fillSlope = objectGet(section, 'fillSlope', 1.5)
     rockCutSlope = objectGet(roadieCriteria(plan), 'rockCutSlope')
     # The bridges and walls (each sample looks them up, so the other structures are filtered out once)
-    bridges = []
-    walls = []
-    for structure in objectGet(option, 'structures', []):
-        type = objectGet(structure, 'type')
-        if type == 'bridge':
-            arrayPush(bridges, structure)
-        elif type == 'retainingWall':
-            arrayPush(walls, structure)
-        endif
-    endfor
+    bridges = roadieStructuresOfType(option, 'bridge')
+    walls = roadieStructuresOfType(option, 'retainingWall')
+    existingRoads = roadieStructuresOfType(option, 'existingRoad')
     rockFeatures = []
     for feature in objectGet(topo, 'features'):
         if objectGet(feature, 'type') == 'rock':
@@ -700,9 +727,10 @@ function roadieSamples(plan, topo, option, alignment):
             endif
         endfor
 
-        # Compute the cross section
+        # Compute the cross section - a bridge or an existing road has no earthwork
         bridge = arrayLength(bridges) > 0 && roadieStructureAt(bridges, 'bridge', station, null) != null
-        if bridge:
+        existing = roadieExistingAt(existingRoads, station)
+        if bridge || existing:
             crossSection = roadieCrossSection(0, 0, halfWidth, cutSlope, fillSlope, false, false)
         else:
             crossSection = roadieCrossSection( \
@@ -728,6 +756,7 @@ function roadieSamples(plan, topo, option, alignment):
             'outside': outside, \
             'rock': rock, \
             'bridge': bridge, \
+            'existing': existing, \
             'cut': objectGet(crossSection, 'cut'), \
             'fill': objectGet(crossSection, 'fill'), \
             'left': objectGet(crossSection, 'left'), \
@@ -804,12 +833,13 @@ function roadieAnalyze(plan, ixOption, topo):
     section = objectGet(option, 'section')
     width = objectGet(section, 'width')
     structures = objectGet(option, 'structures', [])
+    existingRoads = roadieStructuresOfType(option, 'existingRoad')
     alignment = roadieAlignment(topo, option)
     samples = roadieSamples(plan, topo, option, alignment)
     length = objectGet(arrayGet(alignment, arrayLength(alignment) - 1), 'station')
     warnings = []
 
-    # Segment grades
+    # Segment grades - an existing road's (as-built) grades aren't part of the maximum grade
     grades = []
     maxGrade = 0
     for point, ixPoint in alignment:
@@ -818,8 +848,11 @@ function roadieAnalyze(plan, ixOption, topo):
             run = objectGet(point, 'station') - objectGet(prev, 'station')
             if run > 0:
                 grade = 100 * (objectGet(point, 'z') - objectGet(prev, 'z')) / run
-                arrayPush(grades, {'station': objectGet(prev, 'station'), 'endStation': objectGet(point, 'station'), 'grade': grade})
-                maxGrade = mathMax(maxGrade, mathAbs(grade))
+                existing = roadieExistingAt(existingRoads, objectGet(prev, 'station')) && \
+                    roadieExistingAt(existingRoads, objectGet(point, 'station'))
+                arrayPush(grades, {'station': objectGet(prev, 'station'), 'endStation': objectGet(point, 'station'), 'grade': grade, \
+                    'existing': existing})
+                maxGrade = if(existing, maxGrade, mathMax(maxGrade, mathAbs(grade)))
             endif
         endif
     endfor
@@ -828,7 +861,7 @@ function roadieAnalyze(plan, ixOption, topo):
     runStart = null
     runMax = 0
     for grade, ixGrade in grades:
-        steep = mathAbs(objectGet(grade, 'grade')) > objectGet(criteria, 'maxGrade') + 1e-6
+        steep = !objectGet(grade, 'existing') && mathAbs(objectGet(grade, 'grade')) > objectGet(criteria, 'maxGrade') + 1e-6
         if steep:
             runStart = if(runStart == null, objectGet(grade, 'station'), runStart)
             runMax = mathMax(runMax, mathAbs(objectGet(grade, 'grade')))
@@ -847,7 +880,7 @@ function roadieAnalyze(plan, ixOption, topo):
     minRadius = null
     minRadiusStation = null
     for point, ixPoint in alignment:
-        if ixPoint > 0 && ixPoint < arrayLength(alignment) - 1:
+        if ixPoint > 0 && ixPoint < arrayLength(alignment) - 1 && !roadieExistingAt(existingRoads, objectGet(point, 'station')):
             pa = arrayGet(alignment, ixPoint - 1)
             pc = arrayGet(alignment, ixPoint + 1)
             ax = objectGet(pa, 'x')
@@ -936,7 +969,8 @@ function roadieAnalyze(plan, ixOption, topo):
                             )
                             if t != null:
                                 station = objectGet(prev, 'station') + t * (objectGet(point, 'station') - objectGet(prev, 'station'))
-                                crossed = roadieStructureAt(structures, 'bridge', station, null) != null
+                                crossed = roadieStructureAt(structures, 'bridge', station, null) != null || \
+                                    roadieExistingAt(existingRoads, station)
                                 for structure in structures:
                                     if objectGet(structure, 'type') == 'culvert' && \
                                             mathAbs(objectGet(structure, 'station') - station) <= tolerance:
@@ -965,6 +999,7 @@ function roadieAnalyze(plan, ixOption, topo):
     slopeArea = 0
     wallArea = 0
     surfaceLength = 0
+    existingLength = 0
     mass = 0
     haul = 0
     for sample, ixSample in samples:
@@ -980,7 +1015,10 @@ function roadieAnalyze(plan, ixOption, topo):
             fillVolume = fillVolume + intervalFill
             massPrev = mass
             mass = mass + (intervalCut - intervalRock) * shrink + intervalRock * swell - intervalFill
-            haul = haul + mathAbs(massPrev + mass) * 0.5 * ds
+            # Surplus or deficit earth isn't hauled along an existing road
+            if !(objectGet(prev, 'existing') && objectGet(sample, 'existing')):
+                haul = haul + mathAbs(massPrev + mass) * 0.5 * ds
+            endif
 
             # Areas
             for side in ['left', 'right']:
@@ -990,7 +1028,9 @@ function roadieAnalyze(plan, ixOption, topo):
                 slopeArea = slopeArea + slopeWidth * ds
                 wallArea = wallArea + (objectGet(sidePrev, 'wall') + objectGet(sideCur, 'wall')) * 0.5 * ds
             endfor
-            if !(objectGet(prev, 'bridge') && objectGet(sample, 'bridge')):
+            if objectGet(prev, 'existing') && objectGet(sample, 'existing'):
+                existingLength = existingLength + ds
+            elif !(objectGet(prev, 'bridge') && objectGet(sample, 'bridge')):
                 surfaceLength = surfaceLength + ds
             endif
         endif
@@ -1057,6 +1097,8 @@ function roadieAnalyze(plan, ixOption, topo):
         roadieCostItem('Overhaul', overhaul, 'haul', overhaul * scale3 * 0.001 * objectGet(rates, 'overhaul')), \
         roadieCostItem('Surfacing (' + surface + ')', surfaceArea, 'area', surfaceArea * scale2 * objectGet(rates, surface)), \
         roadieCostItem('Ditches and cross drains', surfaceLength, 'length', surfaceLength * scale * objectGet(rates, 'drainage')), \
+        roadieCostItem('Existing road upgrade', existingLength * width, 'area', \
+            existingLength * width * scale2 * objectGet(rates, 'existingRoad')), \
         roadieCostItem('Culverts (' + arrayLength(culverts) + ')', culvertLength, 'length', culvertCost), \
         roadieCostItem('Retaining walls', wallArea, 'area', wallArea * scale2 * objectGet(rates, 'retainingWall')), \
         roadieCostItem('Bridges', bridgeLength * width, 'area', bridgeLength * width * scale2 * objectGet(rates, 'bridge')), \
@@ -1084,6 +1126,7 @@ function roadieAnalyze(plan, ixOption, topo):
         'waste': waste, \
         'wallArea': wallArea, \
         'bridgeLength': bridgeLength, \
+        'existingLength': existingLength, \
         'culvertCount': arrayLength(culverts), \
         'costs': costs, \
         'total': total, \

@@ -249,6 +249,7 @@ function testRoadieAnalyze_simple():
         'outside': false, \
         'rock': false, \
         'bridge': false, \
+        'existing': false, \
         'cut': objectGet(arrayGet(samples, 6), 'cut'), \
         'fill': objectGet(arrayGet(samples, 6), 'fill'), \
         'left': roadieSideSection(0.5, 0.1, 1, 1.5, false), \
@@ -271,21 +272,22 @@ function testRoadieAnalyze_simple():
     unittestEqual(objectGet(analysis, 'wallArea'), 0)
     unittestEqual(objectGet(analysis, 'bridgeLength'), 0)
     unittestEqual(objectGet(analysis, 'culvertCount'), 0)
-    unittestDeepEqual(objectGet(analysis, 'grades'), [{'station': 0, 'endStation': 40, 'grade': 0}])
+    unittestDeepEqual(objectGet(analysis, 'grades'), [{'station': 0, 'endStation': 40, 'grade': 0, 'existing': false}])
     unittestDeepEqual(objectGet(analysis, 'warnings'), [])
 
     # Costs
     costs = objectGet(analysis, 'costs')
-    unittestEqual(arrayLength(costs), 14)
+    unittestEqual(arrayLength(costs), 15)
     unittestDeepEqual(arrayGet(costs, 7), {'name': 'Surfacing (gravel)', 'quantity': 400, 'type': 'area', 'cost': 7600})
     unittestDeepEqual(arrayGet(costs, 8), {'name': 'Ditches and cross drains', 'quantity': 40, 'type': 'length', 'cost': 1800})
+    unittestDeepEqual(arrayGet(costs, 9), {'name': 'Existing road upgrade', 'quantity': 0, 'type': 'area', 'cost': 0})
     subtotal = 0
     for cost, ixCost in costs:
-        if ixCost < 13:
+        if ixCost < 14:
             subtotal = subtotal + objectGet(cost, 'cost')
         endif
     endfor
-    unittestDeepEqual(arrayGet(costs, 13), {'name': 'Mobilization', 'quantity': null, 'type': null, 'cost': subtotal * 0.1})
+    unittestDeepEqual(arrayGet(costs, 14), {'name': 'Mobilization', 'quantity': null, 'type': null, 'cost': subtotal * 0.1})
     unittestEqual(mathRound(objectGet(analysis, 'total'), 6), mathRound(subtotal * 1.1, 6))
     unittestEqual(objectGet(analysis, 'score'), objectGet(analysis, 'total') / 1000)
     unittestEqual(mathRound(objectGet(analysis, 'score'), 3), 13.667)
@@ -337,9 +339,9 @@ function testRoadieAnalyze_complex():
 
     # Quantities
     costs = objectGet(analysis, 'costs')
-    unittestDeepEqual(arrayGet(costs, 9), \
-        {'name': 'Culverts (2)', 'quantity': 29, 'type': 'length', 'cost': objectGet(arrayGet(costs, 9), 'cost')})
-    unittestDeepEqual(arrayGet(costs, 11), \
+    unittestDeepEqual(arrayGet(costs, 10), \
+        {'name': 'Culverts (2)', 'quantity': 29, 'type': 'length', 'cost': objectGet(arrayGet(costs, 10), 'cost')})
+    unittestDeepEqual(arrayGet(costs, 12), \
         {'name': 'Bridges', 'quantity': 40, 'type': 'area', 'cost': 40 * 0.3048 * 0.3048 * 2700})
 endfunction
 unittestRunTest('testRoadieAnalyze_complex')
@@ -351,8 +353,8 @@ function testRoadieAnalyze_groundAlignment():
     unittestEqual(objectGet(analysis, 'name'), 'Alt')
     unittestEqual(objectGet(analysis, 'minRadius'), null)
     unittestDeepEqual(objectGet(analysis, 'grades'), [ \
-        {'station': 0, 'endStation': 40, 'grade': 0}, \
-        {'station': 40, 'endStation': 90, 'grade': -264} \
+        {'station': 0, 'endStation': 40, 'grade': 0, 'existing': false}, \
+        {'station': 40, 'endStation': 90, 'grade': -264, 'existing': false} \
     ])
     unittestDeepEqual(objectGet(analysis, 'warnings'), [ \
         'Grade 264.0% exceeds the maximum grade (10%) from 0+40 to 0+90', \
@@ -366,6 +368,77 @@ function testRoadieAnalyze_groundAlignment():
     ])
 endfunction
 unittestRunTest('testRoadieAnalyze_groundAlignment')
+
+
+function testRoadieAnalyze_existingRoad():
+    # A road east up a 30% plane - its second half follows an existing road. The existing road follows the ground (its
+    # alignment elevation is ignored), with no earthwork, grade or curve checks, or stream crossing structures, and is
+    # costed at the existing road upgrade rate.
+    planValue = testRoadiePlanExistingRoad()
+    plan = objectGet(roadieValidate(planValue), 'plan')
+    analysis = roadieAnalyze(plan, 0)
+    length = objectGet(analysis, 'length')
+
+    # The existing road follows the ground - the end tie-in is on the ground
+    alignment = objectGet(analysis, 'alignment')
+    unittestEqual(mathRound(objectGet(arrayGet(alignment, 3), 'z'), 6), 112)
+    for sample in objectGet(analysis, 'samples'):
+        if objectGet(sample, 'station') >= 20:
+            unittestEqual(objectGet(sample, 'existing'), true)
+            unittestEqual(mathRound(objectGet(sample, 'ground') - objectGet(sample, 'z'), 6), 0)
+            unittestDeepEqual([objectGet(sample, 'cut'), objectGet(sample, 'fill')], [0, 0])
+        else:
+            unittestEqual(objectGet(sample, 'existing'), false)
+        endif
+    endfor
+
+    # Only the new road's grade (30%), curves, and stream crossings are checked
+    grades = objectGet(analysis, 'grades')
+    unittestDeepEqual(arrayGet(grades, 0), {'station': 0, 'endStation': 20, 'grade': 30, 'existing': false})
+    unittestEqual(objectGet(arrayGet(grades, 1), 'existing'), true)
+    unittestEqual(objectGet(analysis, 'maxGrade'), 30)
+    unittestEqual(objectGet(analysis, 'minRadius'), null)
+    unittestDeepEqual(objectGet(analysis, 'warnings'), [ \
+        'Grade 30.0% exceeds the maximum grade (12%) from 0+00 to 0+20', \
+        'The West Creek crossing at 0+10 has no culvert or bridge' \
+    ])
+
+    # The existing road's upgrade replaces its clearing, surfacing, and ditches
+    existingLength = length - 20
+    unittestEqual(mathRound(objectGet(analysis, 'existingLength'), 6), mathRound(existingLength, 6))
+    costs = objectGet(analysis, 'costs')
+    unittestDeepEqual(arrayGet(costs, 7), {'name': 'Surfacing (gravel)', 'quantity': 200, 'type': 'area', 'cost': 200 * 0.3048 * 0.3048 * 19})
+    unittestDeepEqual(arrayGet(costs, 8), {'name': 'Ditches and cross drains', 'quantity': 20, 'type': 'length', 'cost': 20 * 0.3048 * 45})
+    unittestDeepEqual(arrayGet(costs, 9), {'name': 'Existing road upgrade', 'quantity': existingLength * 10, 'type': 'area', \
+        'cost': existingLength * 10 * 0.3048 * 0.3048 * 13})
+endfunction
+unittestRunTest('testRoadieAnalyze_existingRoad')
+
+
+function testRoadieAnalyze_existingRoadHaul():
+    # The new road starts 5 ft below the ground (cut) - with no free haul, its surplus earth is hauled along the new road
+    # only, not along the existing road
+    overhauls = []
+    for hasExisting in [true, false]:
+        planValue = testRoadiePlanExistingRoad()
+        objectSet(planValue, 'costRates', {'freeHaul': 0})
+        option = arrayGet(objectGet(planValue, 'options'), 0)
+        objectSet(arrayGet(objectGet(option, 'alignment'), 0), 'z', 95)
+        if !hasExisting:
+            objectSet(option, 'structures', [])
+            objectSet(arrayGet(objectGet(option, 'alignment'), 3), 'z', 112)
+        endif
+        plan = objectGet(roadieValidate(planValue), 'plan')
+        for cost in objectGet(roadieAnalyze(plan, 0), 'costs'):
+            if objectGet(cost, 'name') == 'Overhaul':
+                arrayPush(overhauls, objectGet(cost, 'quantity'))
+            endif
+        endfor
+    endfor
+    unittestEqual(arrayGet(overhauls, 0) > 0, true)
+    unittestEqual(arrayGet(overhauls, 0) < arrayGet(overhauls, 1), true)
+endfunction
+unittestRunTest('testRoadieAnalyze_existingRoadHaul')
 
 
 function testRoadieSampleAt():

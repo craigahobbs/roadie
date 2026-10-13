@@ -1437,3 +1437,80 @@ function testRoadieProfileView_labels():
     endfor
 endfunction
 unittestRunTest('testRoadieProfileView_labels')
+
+
+#
+# Existing roads
+#
+
+
+function testRoadieStructuresTable_existingRoad():
+    plan = objectGet(roadieValidate(testRoadiePlanExistingRoad()), 'plan')
+    option = arrayGet(objectGet(plan, 'options'), 0)
+    unittestDeepEqual(roadieStructuresTable('feet', option, roadieAnalyze(plan, 0)), [ \
+        '| Type          | Name | Station      | Side | Detail        |', \
+        '|---------------|------|--------------|------|---------------|', \
+        '| Existing road |      | 0+20 to 0+40 |      | Upgrade 20 ft |' \
+    ])
+endfunction
+unittestRunTest('testRoadieStructuresTable_existingRoad')
+
+
+function testRoadieProfileView_existingRoad():
+    plan = objectGet(roadieValidate(testRoadiePlanExistingRoad()), 'plan')
+    option = arrayGet(objectGet(plan, 'options'), 0)
+    elements = objectGet(roadieProfileView(plan, option, roadieAnalyze(plan, 0), 500, 300), 'elem')
+
+    # The existing road's section is shaded and labeled
+    shades = []
+    labels = []
+    steep = []
+    for element in elements:
+        attr = objectGet(element, 'attr')
+        if objectGet(element, 'svg') == 'rect' && objectGet(attr, 'fill') == 'rgba(112,110,104,0.12)':
+            arrayPush(shades, objectGet(attr, 'height'))
+        elif objectGet(element, 'svg') == 'text' && objectGet(objectGet(element, 'elem'), 'text') == 'Existing road':
+            arrayPush(labels, objectGet(attr, 'fill'))
+        elif objectGet(element, 'svg') == 'polyline' && objectGet(attr, 'stroke') == '#e01e1e':
+            arrayPush(steep, objectGet(attr, 'points'))
+        endif
+    endfor
+    unittestDeepEqual(shades, [300 - 40 - 16])
+    unittestDeepEqual(labels, ['#706e68'])
+
+    # Only the new road's 30% grade is highlighted as over the maximum - not the existing road's
+    unittestEqual(arrayLength(steep), 1)
+endfunction
+unittestRunTest('testRoadieProfileView_existingRoad')
+
+
+function testRoadieViews_existingRoad():
+    plan = objectGet(roadieValidate(testRoadiePlanExistingRoad()), 'plan')
+    topo = roadieTopo(plan)
+    analysis = roadieAnalyze(plan, 0)
+    existingFill = roadieRGB(objectGet(roadieColors, 'existing'))
+
+    # The plan view draws the existing road's surface in its color
+    planFills = []
+    for element in objectGet(roadiePlanView(plan, topo, [analysis], 0, 420, []), 'elem'):
+        if objectGet(element, 'svg') == 'polygon' && objectGet(objectGet(element, 'attr'), 'fill') == existingFill:
+            arrayPush(planFills, true)
+        endif
+    endfor
+    unittestEqual(arrayLength(planFills) > 0, true)
+
+    # The 3D view titles its existing road surfaces
+    view = roadieProjection(topo, {'azimuth': 0, 'tilt': 90, 'exaggeration': 1}, 400, 400)
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 5)
+    titles = []
+    for element in objectGet(roadieView3D(plan, topo, rows, 0, analysis, view), 'elem'):
+        if systemType(element) == 'object' && objectGet(element, 'svg') == 'polygon' && objectHas(element, 'elem'):
+            title = objectGet(objectGet(element, 'elem'), 'elem')
+            if stringIndexOf(objectGet(title, 'text'), '(existing road)') != -1:
+                arrayPush(titles, objectGet(objectGet(element, 'attr'), 'fill'))
+            endif
+        endif
+    endfor
+    unittestEqual(arrayLength(titles), 6)
+endfunction
+unittestRunTest('testRoadieViews_existingRoad')

@@ -100,3 +100,28 @@ function testRoadiePlanComplex():
         ] \
     }
 endfunction
+
+
+# A road east up a 30% plane, crossing two creeks - its second half follows an existing road
+function testRoadiePlanExistingRoad():
+    rows = []
+    while arrayLength(rows) < 5:
+        arrayPush(rows, [100, 103, 106, 109, 112])
+    endwhile
+    return { \
+        'title': 'Existing Road', \
+        'units': 'feet', \
+        'topography': {'spacing': 10, 'elevations': rows, 'features': [ \
+            {'type': 'stream', 'name': 'West Creek', 'points': [{'x': 10, 'y': 0}, {'x': 10, 'y': 40}]}, \
+            {'type': 'stream', 'name': 'East Creek', 'points': [{'x': 30, 'y': 0}, {'x': 30, 'y': 40}]} \
+        ]}, \
+        'start': {'x': 0, 'y': 20}, \
+        'end': {'x': 40, 'y': 20}, \
+        'options': [{ \
+            'name': 'Join', \
+            'section': {'width': 10}, \
+            'alignment': [{'x': 0, 'y': 20}, {'x': 20, 'y': 20}, {'x': 30, 'y': 20}, {'x': 40, 'y': 20, 'z': 150}], \
+            'structures': [{'type': 'existingRoad', 'station': 20, 'endStation': 40}] \
+        }] \
+    }
+endfunction

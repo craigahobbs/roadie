@@ -46,6 +46,7 @@ DEFAULT_RATES = {
     'culvertEnds': 6000,
     'retainingWall': 650,
     'bridge': 2700,
+    'existingRoad': 13,
     'erosionControl': 0.75,
     'mobilization': 0.1
 }
@@ -117,6 +118,9 @@ def main(argv=None):
                                   help='the turnout spacing, 0 for none (default is 400 feet / 120 meters for roads under 16 feet wide)')
         parser_route.add_argument('--bridge-fill', type=float,
                                   help='replace stream crossing fills deeper than this with a bridge, up to 150 feet / 45 meters long (default is no bridges)')
+        parser_route.add_argument('--existing-road', action='append', metavar='STATION,END',
+                                  help='a station range where the road follows an existing road - its grade follows the ground, with no '
+                                       'earthwork or structures (may be repeated; profile keeps the option\'s existing roads by default)')
         if name == 'route':
             parser_route.add_argument('-v', '--via', action='append', metavar='X,Y', help='a via point (may be repeated)')
             parser_route.add_argument('--grade-weight', type=float, default=1,
@@ -845,10 +849,12 @@ def turn_radius(x, y):
     return radius
 
 
-def design_profile(topo, design, x, y, stations):
-    """Design the vertical profile by dynamic programming - minimum earthwork cost within the grade limits"""
+def design_profile(topo, design, x, y, stations, existing=None):
+    """Design the vertical profile by dynamic programming - minimum earthwork cost within the grade limits. Within an
+    existing road (the "existing" station mask), the profile follows the ground."""
     ds = stations[1] - stations[0]
     ground = topo.elevation(x, y)
+    existing = np.zeros(len(x), dtype=bool) if existing is None else existing
     heading_x = np.gradient(x)
     heading_y = np.gradient(y)
     heading_length = np.maximum(np.hypot(heading_x, heading_y), 1e-9)
@@ -879,23 +885,39 @@ def design_profile(topo, design, x, y, stations):
     depth = ground[:, None] - levels[None, :]
     section = cross_section(depth, side_slope[:, None], design.half_width, cut_slope[:, None], design.fill_slope)
     cut_unit = np.where(rock, design.cost_rock, design.cost_cut)[:, None]
+    ground_level = np.clip(np.round((ground - z_min) / resolution).astype(int), 0, n_levels - 1)
 
     def solve(balance):
         # balance > 0 makes fill more expensive and cut cheaper (to reduce borrow), < 0 the reverse
         station_cost = ds * (section['cut'] * (cut_unit - balance * design.shrink) + section['fill'] * (design.cost_fill + balance) +
                              section['slopeWidth'] * design.cost_area + section['wall'] * design.cost_wall)
+        # An existing road is at the ground, with no earthwork
+        station_cost[existing] = np.inf
+        station_cost[existing, ground_level[existing]] = 0
         n = len(ground)
         total = np.full(n_levels, np.inf)
         start_level = int(np.argmin(np.abs(levels - ground[0])))
         total[start_level] = station_cost[0, start_level]
         back = np.zeros((n, n_levels), dtype=np.int32)
         for ix in range(1, n):
+            # Within an existing road (or where the grade limit can't reach one), any grade
+            if existing[ix] and (existing[ix - 1] or not np.isfinite(total).any()):
+                arg = int(np.argmin(total))
+                back[ix] = arg
+                total = np.full(n_levels, total[arg]) + station_cost[ix]
+                continue
+            previous = total
             window = int(grade_limit[ix] * ds / resolution + 1e-6)
             padded = np.concatenate([np.full(window, np.inf), total, np.full(window, np.inf)])
             windows = np.lib.stride_tricks.sliding_window_view(padded, 2 * window + 1)
             arg = np.argmin(windows, axis=1)
             back[ix] = np.arange(n_levels) + arg - window
             total = windows[np.arange(n_levels), arg] + station_cost[ix]
+            if existing[ix] and not np.isfinite(total[ground_level[ix]]):
+                # The grade limit can't reach the existing road's ground - break grade at the junction
+                arg = int(np.argmin(previous))
+                back[ix, ground_level[ix]] = arg
+                total[ground_level[ix]] = previous[arg] + station_cost[ix, ground_level[ix]]
         end_level = int(np.argmin(np.abs(levels - ground[-1])))
         if not np.isfinite(total[end_level]):
             # The end elevation is unreachable within the grade limits - end at the best reachable level
@@ -926,13 +948,19 @@ def design_profile(topo, design, x, y, stations):
     if half > 0 and len(profile) > 2 * half + 1:
         padded = np.concatenate([2 * profile[0] - profile[half:0:-1], profile, 2 * profile[-1] - profile[-2:-half - 2:-1]])
         profile = np.convolve(padded, np.ones(2 * half + 1) / (2 * half + 1), mode='valid')
+    profile[existing] = ground[existing]
     return profile, ground, side_slope
 
 
-def design_structures(topo, design, x, y, stations, profile, side_slope):
-    """Place retaining walls (slopes that don't daylight), culverts, bridges, and turnouts"""
+def design_structures(topo, design, x, y, stations, profile, side_slope, existing_roads=()):
+    """Place retaining walls (slopes that don't daylight), culverts, bridges, and turnouts - none within the existing roads
+    ([station, end station] ranges), which are added as existing road structures"""
     ds = stations[1] - stations[0]
     length = stations[-1]
+    existing = existing_mask(stations, existing_roads)
+
+    def in_existing(station):
+        return any(start - 1e-6 <= station <= end + 1e-6 for start, end in existing_roads)
     ground = topo.elevation(x, y)
     depth = ground - profile
     section = cross_section(depth, side_slope, design.half_width, design.cut_slope, design.fill_slope)
@@ -945,7 +973,9 @@ def design_structures(topo, design, x, y, stations, profile, side_slope):
         for ix_point in range(1, len(stream)):
             crosses, t = segments_intersect(points[:-1], points[1:], stream[ix_point - 1], stream[ix_point])
             for ix_segment in np.nonzero(crosses)[0]:
-                crossings.append((stations[ix_segment] + t[ix_segment] * ds, name))
+                station = stations[ix_segment] + t[ix_segment] * ds
+                if not in_existing(station):
+                    crossings.append((station, name))
 
     # Bridges for deep stream crossing fills - a single span (at most 150 feet / 45 meters) over the deepest fill
     bridges = []
@@ -983,13 +1013,13 @@ def design_structures(topo, design, x, y, stations, profile, side_slope):
     for ix in range(1, len(profile) - 1):
         if profile[ix] < profile[ix - 1] and profile[ix] <= profile[ix + 1]:
             station = stations[ix]
-            if not in_bridge(station) and all(abs(station - other) > tolerance for other in culvert_stations):
+            if not in_bridge(station) and not existing[ix] and all(abs(station - other) > tolerance for other in culvert_stations):
                 culvert_stations.append(station)
                 structures.append({'type': 'culvert', 'station': round(station, 1), 'name': 'Sag cross drain'})
 
     # Retaining walls where a slope does not daylight
     for side_name, side in (('left', section['left']), ('right', section['right'])):
-        wall = (side[4] > 0) & ~np.array([in_bridge(station) for station in stations])
+        wall = (side[4] > 0) & ~np.array([in_bridge(station) for station in stations]) & ~existing
         ix = 0
         while ix < len(wall):
             if wall[ix]:
@@ -1009,12 +1039,26 @@ def design_structures(topo, design, x, y, stations, profile, side_slope):
         for ix_turnout in range(count):
             center = length * (ix_turnout + 1) / (count + 1)
             ix_center = int(round(center / ds))
+            if existing[ix_center]:
+                continue
             side_name = 'left' if side_slope[ix_center] > 0 else 'right'
             structures.append({'type': 'turnout', 'station': round(center - turnout_length / 2, 1),
                                'endStation': round(center + turnout_length / 2, 1), 'side': side_name})
 
+    # Existing roads
+    for start, end in existing_roads:
+        structures.append({'type': 'existingRoad', 'station': round(start, 1), 'endStation': round(end, 1), 'name': 'Existing road'})
+
     structures.sort(key=lambda structure: structure['station'])
     return structures
+
+
+def existing_mask(stations, existing_roads):
+    """Get the station mask of the existing roads ([station, end station] ranges)"""
+    mask = np.zeros(len(stations), dtype=bool)
+    for start, end in existing_roads:
+        mask |= (stations >= start - 1e-6) & (stations <= end + 1e-6)
+    return mask
 
 
 def command_route(args):
@@ -1024,6 +1068,15 @@ def command_route(args):
     design = Design(plan, args)
     options = plan.setdefault('options', [])
     existing = next((option for option in options if option['name'] == args.name), None)
+
+    # The existing roads - the argument ranges, or for profile, the option's existing road structures
+    if args.existing_road:
+        existing_roads = [tuple(float(value) for value in text.split(',')) for text in args.existing_road]
+    elif args.command == 'profile' and existing is not None:
+        existing_roads = [(structure['station'], structure['endStation']) for structure in existing.get('structures', [])
+                          if structure['type'] == 'existingRoad']
+    else:
+        existing_roads = []
 
     if args.command == 'route':
         # Horizontal alignment search through the via points. If the profile can't reach the end elevation within the
@@ -1044,7 +1097,7 @@ def command_route(args):
             interval = min(lattice, topo.spacing) * 0.5
             path = smooth_curves(path, interval, design.min_radius)
             x, y, stations = resample_polyline(path, interval)
-            profile, ground, side_slope = design_profile(topo, design, x, y, stations)
+            profile, ground, side_slope = design_profile(topo, design, x, y, stations, existing_mask(stations, existing_roads))
             if abs(profile[-1] - ground[-1]) <= design.tie_tolerance:
                 break
             print(f'The profile ends {ground[-1] - profile[-1]:.1f} {plan["units"]} below the end point - searching with stricter grades')
@@ -1053,10 +1106,12 @@ def command_route(args):
             raise SystemExit(f'error: no option named "{args.name}"')
         path = [(point['x'], point['y']) for point in existing['alignment']]
         x, y, stations = resample_polyline(path, topo.spacing * 0.5)
-        profile, ground, side_slope = design_profile(topo, design, x, y, stations)
+        profile, ground, side_slope = design_profile(topo, design, x, y, stations, existing_mask(stations, existing_roads))
 
-    # Structures
-    structures = design_structures(topo, design, x, y, stations, profile, side_slope)
+    # Structures (the existing roads within the road's length, measured along the alignment points as the viewer does)
+    alignment_length = math.floor(np.hypot(np.diff(x), np.diff(y)).sum() * 10) / 10
+    existing_roads = [(start, min(end, alignment_length)) for start, end in existing_roads if start < alignment_length]
+    structures = design_structures(topo, design, x, y, stations, profile, side_slope, existing_roads)
 
     # Create the option
     option = {
@@ -1075,8 +1130,9 @@ def command_route(args):
         options.append(option)
     write_plan(args.plan, order_plan(plan))
 
-    # Report
-    grades = np.abs(np.diff(profile)) / np.diff(stations) * 100
+    # Report (the new road's grades)
+    mask = existing_mask(stations, existing_roads)
+    grades = np.where(mask[1:] & mask[:-1], 0, np.abs(np.diff(profile)) / np.diff(stations) * 100)
     depth = ground - profile
     print(f'Option "{args.name}": {stations[-1]:.0f} {plan["units"]} long, {len(x)} alignment points, '
           f'max grade {grades.max():.1f}%, max cut {max(0, depth.max()):.1f}, max fill {max(0, -depth.min()):.1f}')
@@ -1135,6 +1191,11 @@ def plot_plan(plan, output, contours_model=None, contours_dir=None):
         segment_lengths = np.hypot(np.diff(alignment[:, 0]), np.diff(alignment[:, 1]))
         stations = np.concatenate([[0], np.cumsum(segment_lengths)])
         for structure in option.get('structures', []):
+            if structure['type'] == 'existingRoad':
+                # The existing road section is dashed over the option's line
+                inside = (stations >= structure['station'] - 1e-6) & (stations <= structure['endStation'] + 1e-6)
+                axes.plot(alignment[inside, 0], alignment[inside, 1], color='black', linewidth=1.5, linestyle=(0, (4, 3)))
+                continue
             sx = np.interp(structure['station'], stations, alignment[:, 0])
             sy = np.interp(structure['station'], stations, alignment[:, 1])
             marker = {'culvert': 'o', 'retainingWall': 's', 'bridge': '^', 'turnout': 'D'}[structure['type']]

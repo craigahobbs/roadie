@@ -899,6 +899,8 @@ function roadieStructuresTable(units, option, analysis):
                 ' ' + lengthUnit
         elif type == 'bridge':
             detail = 'Span ' + numberToFixed(endStation - station, 0) + ' ' + lengthUnit
+        elif type == 'existingRoad':
+            detail = 'Upgrade ' + roadieNumber(endStation - station, 0) + ' ' + lengthUnit
         endif
         arrayPush(rows, { \
             'Type': objectGet(roadieStructureNames, type), \
@@ -917,7 +919,8 @@ roadieStructureNames = { \
     'retainingWall': 'Retaining wall', \
     'bridge': 'Bridge', \
     'culvert': 'Culvert', \
-    'turnout': 'Turnout' \
+    'turnout': 'Turnout', \
+    'existingRoad': 'Existing road' \
 }
 
 
@@ -932,6 +935,7 @@ roadieColors = { \
     'bridge': [120, 104, 88], \
     'concrete': [190, 190, 185], \
     'cut': [196, 120, 64], \
+    'existing': [112, 110, 104], \
     'fill': [218, 184, 96], \
     'gravel': [150, 146, 136], \
     'native': [168, 140, 100], \
@@ -1837,7 +1841,8 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
         if ixSample > 0:
             prev = arrayGet(samples, ixSample - 1)
             bridge = objectGet(prev, 'bridge') && objectGet(sample, 'bridge')
-            title = roadieStation(objectGet(sample, 'station'), units) + ': grade ' + \
+            existing = objectGet(prev, 'existing') && objectGet(sample, 'existing')
+            title = roadieStation(objectGet(sample, 'station'), units) + if(existing, ' (existing road)', '') + ': grade ' + \
                 numberToFixed(objectGet(sample, 'z'), 1) + ', ground ' + numberToFixed(objectGet(sample, 'ground'), 1) + ', ' + \
                 if(objectGet(sample, 'ground') >= objectGet(sample, 'z'), 'cut ', 'fill ') + \
                 numberToFixed(mathAbs(objectGet(sample, 'ground') - objectGet(sample, 'z')), 1)
@@ -1845,7 +1850,7 @@ function roadieView3D(plan, topo, rows, ixOption, analysis, view):
             # Road surface (or bridge deck)
             surfacePoints = [arrayGet(prevPoints, 1), arrayGet(points, 1), arrayGet(points, 2), arrayGet(prevPoints, 2)]
             roadiePushItem(items, roadie3DPolygon(view, surfacePoints, \
-                if(bridge, objectGet(roadieColors, 'bridge'), surfaceColor), bias, title))
+                if(bridge, objectGet(roadieColors, 'bridge'), if(existing, objectGet(roadieColors, 'existing'), surfaceColor)), bias, title))
             if bridge:
                 for ixEdge in [1, 2]:
                     edgePrev = arrayGet(prevPoints, ixEdge)
@@ -2092,6 +2097,7 @@ function roadiePlanView(plan, topo, analyses, ixOption, width, outlines):
     samples = objectGet(analysis, 'samples')
     surfaceFill = roadieRGB(objectGet(roadieColors, objectGet(section, 'surface', 'gravel')))
     bridgeFill = roadieRGB(objectGet(roadieColors, 'bridge'))
+    existingFill = roadieRGB(objectGet(roadieColors, 'existing'))
     prevCoords = null
     for sample, ixSample in samples:
         coords = []
@@ -2120,7 +2126,8 @@ function roadiePlanView(plan, topo, analyses, ixOption, width, outlines):
                     ], color, color, 0.5))
                 endif
             endfor
-            fill = if(objectGet(prev, 'bridge') && objectGet(sample, 'bridge'), bridgeFill, surfaceFill)
+            fill = if(objectGet(prev, 'bridge') && objectGet(sample, 'bridge'), bridgeFill, \
+                if(objectGet(prev, 'existing') && objectGet(sample, 'existing'), existingFill, surfaceFill))
             arrayPush(elements, roadieSvgPolygon([ \
                 arrayGet(prevCoords, 2), arrayGet(prevCoords, 3), arrayGet(coords, 2), arrayGet(coords, 3), \
                 arrayGet(coords, 4), arrayGet(coords, 5), arrayGet(prevCoords, 4), arrayGet(prevCoords, 5) \
@@ -2338,10 +2345,15 @@ function roadieProfileView(plan, option, analysis, width, height):
             arrayPush(elements, {'svg': 'circle', 'attr': {'cx': roadiePx(px1), 'cy': roadiePx(py), 'r': 5, \
                 'fill': 'white', 'stroke': '#2a6fdb', 'stroke-width': 2.5}})
         else:
-            color = if(type == 'retainingWall', '#555555', '#2a8f8f')
+            color = if(type == 'retainingWall', '#555555', if(type == 'existingRoad', '#706e68', '#2a8f8f'))
+            if type == 'existingRoad':
+                # The existing road's (as-built) section is shaded
+                arrayPush(elements, {'svg': 'rect', 'attr': {'x': roadiePx(px1), 'y': top, 'width': roadiePx(mathMax(2, px2 - px1)), \
+                    'height': bottom - top, 'fill': 'rgba(112,110,104,0.12)'}})
+            endif
             arrayPush(elements, {'svg': 'rect', 'attr': {'x': roadiePx(px1), 'y': bottom - 8, 'width': roadiePx(mathMax(2, px2 - px1)), \
                 'height': 8, 'fill': color}})
-            label = if(type == 'retainingWall', 'Wall', 'Turnout')
+            label = if(type == 'retainingWall', 'Wall', if(type == 'existingRoad', 'Existing road', 'Turnout'))
             halfLabel = stringLength(label) * 10 * 0.32
             labelX = (px1 + px2) * 0.5
             if labelRight == null || labelX - halfLabel > labelRight + 4:
@@ -2353,7 +2365,7 @@ function roadieProfileView(plan, option, analysis, width, height):
 
     # Grade line - steep segments are highlighted
     for grade in objectGet(analysis, 'grades'):
-        steep = mathAbs(objectGet(grade, 'grade')) > maxGrade + 1e-6
+        steep = !objectGet(grade, 'existing') && mathAbs(objectGet(grade, 'grade')) > maxGrade + 1e-6
         sample1 = roadieAlignmentPointAt(analysis, objectGet(grade, 'station'))
         sample2 = roadieAlignmentPointAt(analysis, objectGet(grade, 'endStation'))
         arrayPush(elements, roadieSvgPolyline([ \
