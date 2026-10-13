@@ -73,6 +73,9 @@ function testRoadieUnits():
     unittestEqual(roadieUnitScale(testRoadiePlanComplex()), 0.3048)
     unittestEqual(roadieUnitLength(testRoadiePlanSimple(), 3, 10), 3)
     unittestEqual(roadieUnitLength(testRoadiePlanComplex(), 3, 10), 10)
+    unittestEqual(roadieCulvertDiameter('meters', {'type': 'culvert'}), 0.45)
+    unittestEqual(roadieCulvertDiameter('feet', {'type': 'culvert'}), 1.5)
+    unittestEqual(roadieCulvertDiameter('feet', {'type': 'culvert', 'diameter': 3}), 3)
 endfunction
 unittestRunTest('testRoadieUnits')
 
@@ -129,10 +132,10 @@ unittestRunTest('testRoadieGradient')
 
 
 function testRoadiePointInPolygon():
-    square = [{'x': 0, 'y': 0}, {'x': 10, 'y': 0}, {'x': 10, 'y': 10}, {'x': 0, 'y': 10}]
-    unittestEqual(roadiePointInPolygon(5, 5, square), true)
-    unittestEqual(roadiePointInPolygon(15, 5, square), false)
-    unittestEqual(roadiePointInPolygon(5, -5, square), false)
+    index = roadiePolygonIndex([{'x': 0, 'y': 0}, {'x': 10, 'y': 0}, {'x': 10, 'y': 10}, {'x': 0, 'y': 10}])
+    unittestEqual(roadiePointInPolygon(5, 5, index), true)
+    unittestEqual(roadiePointInPolygon(15, 5, index), false)
+    unittestEqual(roadiePointInPolygon(5, -5, index), false)
 endfunction
 unittestRunTest('testRoadiePointInPolygon')
 

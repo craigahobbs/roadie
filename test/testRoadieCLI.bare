@@ -131,7 +131,7 @@ async function testRoadieCLIMain_complex():
         ['markdownPrint', ['### Structures', '']], \
         ['markdownPrint', [roadieStructuresTable('feet', arrayGet(objectGet(plan, 'options'), 0), analysisMain), '']], \
         ['markdownPrint', ['### Stations', '']], \
-        ['markdownPrint', [roadieCLIStationTable(plan, analysisMain), '']], \
+        ['markdownPrint', [roadieCLIStationTable(objectGet(plan, 'units'), analysisMain), '']], \
         ['markdownPrint', ['## Option 1: Alt', '']], \
         ['markdownPrint', [roadieCostTable('feet', analysisAlt), '']], \
         ['markdownPrint', ['### Design Warnings', '']] \
@@ -142,7 +142,7 @@ async function testRoadieCLIMain_complex():
     arrayExtend(expected, [ \
         ['markdownPrint', ['']], \
         ['markdownPrint', ['### Stations', '']], \
-        ['markdownPrint', [roadieCLIStationTable(plan, analysisAlt), '']] \
+        ['markdownPrint', [roadieCLIStationTable(objectGet(plan, 'units'), analysisAlt), '']] \
     ])
     unittestDeepEqual(log, expected)
     systemGlobalSet('vFile', null)
@@ -154,7 +154,7 @@ unittestRunTest('testRoadieCLIMain_complex')
 function testRoadieCLIStationTable():
     plan = objectGet(roadieValidate(testRoadiePlanComplex()), 'plan')
     analysis = roadieAnalyze(plan, 0)
-    lines = roadieCLIStationTable(plan, analysis)
+    lines = roadieCLIStationTable(objectGet(plan, 'units'), analysis)
     unittestEqual(arrayLength(lines), 2 + 18)
     unittestDeepEqual(arrayGet(lines, 0), \
         '| Station | X    | Y    | Ground | Grade | Cut/Fill | Side Slope | Left                   | Right                   | Notes   |')
@@ -179,7 +179,7 @@ unittestRunTest('testRoadieCLISide')
 
 function testRoadieCLIStationTable_existingRoad():
     plan = objectGet(roadieValidate(testRoadiePlanExistingRoad()), 'plan')
-    lines = roadieCLIStationTable(plan, roadieAnalyze(plan, 0))
+    lines = roadieCLIStationTable(objectGet(plan, 'units'), roadieAnalyze(plan, 0))
     notes = []
     for line in arraySlice(lines, 2):
         arrayPush(notes, stringTrim(arrayGet(stringSplit(line, '|'), 10)))

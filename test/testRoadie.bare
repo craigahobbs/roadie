@@ -95,8 +95,9 @@ function testRoadieReportViewsLog(plan, analyses, ixOption):
     analysis = arrayGet(analyses, ixOption)
     option = arrayGet(objectGet(plan, 'options'), ixOption)
     units = objectGet(plan, 'units')
-    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), objectGet(objectGet(option, 'section'), 'width') * 0.5)
-    reportViews = roadieReportViews(plan, topo, rows, analysis, ixOption, 976, false)
+    halfWidth = objectGet(objectGet(option, 'section'), 'width') * 0.5
+    rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), halfWidth)
+    reportViews = roadieReportViews(topo, rows, analysis, halfWidth, 976, false)
     outlines = []
     for reportView, ixReportView in reportViews:
         if ixReportView > 0:
@@ -386,12 +387,6 @@ unittestRunTest('testRoadieRender_oneWarning')
 #
 
 
-function testRoadieCenterArgs():
-    unittestDeepEqual(roadieCenterArgs(1.234, 5.678), {'x': 1.2, 'y': 5.7})
-endfunction
-unittestRunTest('testRoadieCenterArgs')
-
-
 function testRoadieOnPlanClick():
     systemGlobalSet('vFile', 'a.json')
     topo = roadieTopo(testRoadiePlanSimple())
@@ -543,7 +538,7 @@ function testRoadieSvgElements():
         'attr': {'points': '0,0 10,0 10,5', 'fill': 'red', 'stroke': 'red', 'stroke-width': 0.5}, \
         'elem': {'svg': 'title', 'elem': {'text': 'Tip'}} \
     })
-    unittestDeepEqual(roadieSvgPolyline([0, 0, 10, 5], 'blue', 2, null), {'svg': 'polyline', 'attr': { \
+    unittestDeepEqual(roadieSvgPolyline([0, 0, 10, 5], 'blue', 2), {'svg': 'polyline', 'attr': { \
         'points': '0,0 10,5', 'fill': 'none', 'stroke': 'blue', 'stroke-width': 2, 'stroke-linejoin': 'round', \
         'stroke-linecap': 'round'}})
     unittestDeepEqual(roadieSvgPolyline([0, 0, 10, 5], 'blue', 2, '4 3'), {'svg': 'polyline', 'attr': { \
@@ -1040,7 +1035,7 @@ function testRoadieReportViews():
     topo = roadieTopo(plan)
     analysis = roadieAnalyze(plan, 0)
     rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 5)
-    views = roadieReportViews(plan, topo, rows, analysis, 0, 976, false)
+    views = roadieReportViews(topo, rows, analysis, 5, 976, false)
     unittestEqual(arrayLength(views), 1)
     overview = arrayGet(views, 0)
     unittestDeepEqual([objectGet(overview, 'station'), objectGet(overview, 'endStation'), objectGet(overview, 'hidden'), \
@@ -1051,7 +1046,7 @@ function testRoadieReportViews():
     objectSet(objectGet(arrayGet(objectGet(plan, 'options'), 0), 'section'), 'width', 0.1)
     analysis = roadieAnalyze(plan, 0)
     rows = roadieFinishedRows(topo, objectGet(analysis, 'samples'), 0.05)
-    views = roadieReportViews(plan, topo, rows, analysis, 0, 976, false)
+    views = roadieReportViews(topo, rows, analysis, 0.05, 976, false)
     unittestEqual(arrayLength(views), 3)
     baseAzimuth = objectGet(objectGet(arrayGet(views, 0), 'args'), 'azimuth')
     for view, ixView in views:

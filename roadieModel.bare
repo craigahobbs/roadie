@@ -348,6 +348,12 @@ function roadieUnitLength(plan, meters, feet):
 endfunction
 
 
+# Get a culvert structure's pipe diameter (default is 1.5 feet / 0.45 meters)
+function roadieCulvertDiameter(units, structure):
+    return objectGet(structure, 'diameter', if(units == 'feet', 1.5, 0.45))
+endfunction
+
+
 # Validate a road plan model - returns an object with "plan" on success, or "error" on failure
 function roadieValidate(planValue):
     validated = schemaValidateEx(roadieTypes, 'RoadPlan', planValue)
@@ -398,9 +404,7 @@ endfunction
 
 # Get the plan's cost rates, with defaults
 function roadieRates(plan):
-    rates = objectCopy(roadieDefaultRates)
-    objectAssign(rates, objectGet(plan, 'costRates', {}))
-    return rates
+    return objectAssign(objectCopy(roadieDefaultRates), objectGet(plan, 'costRates', {}))
 endfunction
 
 
@@ -486,12 +490,6 @@ function roadieGradient(topo, x, y):
 endfunction
 
 
-# Determine if a point is inside a polygon of points (even-odd rule)
-function roadiePointInPolygon(x, y, points):
-    return roadiePointInPolygonIndex(x, y, roadiePolygonIndex(points))
-endfunction
-
-
 # The number of horizontal bands of a polygon index
 roadiePolygonBands = 32
 
@@ -529,9 +527,9 @@ function roadiePolygonIndex(points):
 endfunction
 
 
-# Determine if a point is inside an indexed polygon (roadiePolygonIndex) - only the edges in the point's band can cross
-# its horizontal ray
-function roadiePointInPolygonIndex(x, y, index):
+# Determine if a point is inside an indexed polygon (roadiePolygonIndex) by the even-odd rule - only the edges in the
+# point's band can cross its horizontal ray
+function roadiePointInPolygon(x, y, index):
     minY = objectGet(index, 'minY')
     if y < minY || y >= objectGet(index, 'maxY'):
         return false
@@ -770,7 +768,7 @@ function roadieSamples(plan, topo, option, alignment):
         # Rock?
         rock = false
         for rockPoints in rockFeatures:
-            if roadiePointInPolygonIndex(x, y, rockPoints):
+            if roadiePointInPolygon(x, y, rockPoints):
                 rock = true
                 break
             endif
@@ -842,14 +840,9 @@ function roadieSampleOutside(sample):
     return objectGet(sample, 'outside')
 endfunction
 
-function roadieSampleFillNoDaylight(sample):
-    return (objectGet(objectGet(sample, 'left'), 'kind') == 'fill' && !objectGet(objectGet(sample, 'left'), 'daylight')) || \
-        (objectGet(objectGet(sample, 'right'), 'kind') == 'fill' && !objectGet(objectGet(sample, 'right'), 'daylight'))
-endfunction
-
-function roadieSampleCutNoDaylight(sample):
-    return (objectGet(objectGet(sample, 'left'), 'kind') == 'cut' && !objectGet(objectGet(sample, 'left'), 'daylight')) || \
-        (objectGet(objectGet(sample, 'right'), 'kind') == 'cut' && !objectGet(objectGet(sample, 'right'), 'daylight'))
+function roadieSampleNoDaylight(kind, sample):
+    return (objectGet(objectGet(sample, 'left'), 'kind') == kind && !objectGet(objectGet(sample, 'left'), 'daylight')) || \
+        (objectGet(objectGet(sample, 'right'), 'kind') == kind && !objectGet(objectGet(sample, 'right'), 'daylight'))
 endfunction
 
 function roadieSampleBridgeBuried(sample):
@@ -862,7 +855,7 @@ endfunction
 
 function roadieSampleExcluded(exclusions, sample):
     for exclusion in exclusions:
-        if roadiePointInPolygonIndex(objectGet(sample, 'x'), objectGet(sample, 'y'), exclusion):
+        if roadiePointInPolygon(objectGet(sample, 'x'), objectGet(sample, 'y'), exclusion):
             return true
         endif
     endfor
@@ -993,9 +986,9 @@ function roadieAnalyze(plan, ixOption, topo):
     roadieRunWarnings(warnings, samples, units, roadieSampleOutside, 'The road is outside the topography')
     roadieRunWarnings(warnings, samples, units, systemPartial(roadieSampleExcluded, exclusions), \
         'The road crosses an exclusion area')
-    roadieRunWarnings(warnings, samples, units, roadieSampleFillNoDaylight, \
+    roadieRunWarnings(warnings, samples, units, systemPartial(roadieSampleNoDaylight, 'fill'), \
         'The fill slope does not daylight (retaining wall needed)')
-    roadieRunWarnings(warnings, samples, units, roadieSampleCutNoDaylight, \
+    roadieRunWarnings(warnings, samples, units, systemPartial(roadieSampleNoDaylight, 'cut'), \
         'The cut slope does not daylight (retaining wall needed)')
     roadieRunWarnings(warnings, samples, units, systemPartial(roadieSampleWallHigh, objectGet(criteria, 'maxWallHeight')), \
         'The retaining wall exceeds the maximum wall height')
@@ -1060,7 +1053,6 @@ function roadieAnalyze(plan, ixOption, topo):
     cutCommon = 0
     cutRock = 0
     fillVolume = 0
-    clearingArea = 0
     slopeArea = 0
     wallArea = 0
     surfaceLength = 0
@@ -1100,12 +1092,13 @@ function roadieAnalyze(plan, ixOption, topo):
             endif
         endif
     endfor
-    clearingArea = slopeArea + surfaceLength * width
 
     # Structures
     bridgeLength = 0
     turnoutArea = 0
-    culverts = []
+    culvertCount = 0
+    culvertLength = 0
+    culvertCost = 0
     turnoutWidth = roadieUnitLength(plan, 3, 10)
     for structure in structures:
         type = objectGet(structure, 'type')
@@ -1121,18 +1114,20 @@ function roadieAnalyze(plan, ixOption, topo):
         elif type == 'culvert':
             # The culvert length spans the road and its fill slopes
             sample = roadieSampleAt(samples, station)
-            culvertLength = width
+            pipeLength = width
             for side in ['left', 'right']:
                 sideSection = objectGet(sample, side)
                 if objectGet(sideSection, 'kind') == 'fill':
-                    culvertLength = culvertLength + objectGet(sideSection, 'offset')
+                    pipeLength = pipeLength + objectGet(sideSection, 'offset')
                 endif
             endfor
-            diameter = objectGet(structure, 'diameter', roadieUnitLength(plan, 0.45, 1.5))
-            arrayPush(culverts, {'length': culvertLength, 'diameter': diameter})
+            diameter = roadieCulvertDiameter(objectGet(plan, 'units'), structure)
+            culvertCount = culvertCount + 1
+            culvertLength = culvertLength + pipeLength
+            culvertCost = culvertCost + pipeLength * scale * diameter * scale * objectGet(rates, 'culvert') + objectGet(rates, 'culvertEnds')
         endif
     endfor
-    clearingArea = clearingArea + turnoutArea
+    clearingArea = slopeArea + surfaceLength * width + turnoutArea
     surfaceArea = surfaceLength * width + turnoutArea
 
     # Mass balance (compacted fill measure)
@@ -1145,13 +1140,6 @@ function roadieAnalyze(plan, ixOption, topo):
     scale2 = scale * scale
     scale3 = scale2 * scale
     surface = objectGet(section, 'surface', 'gravel')
-    culvertLength = 0
-    culvertCost = 0
-    for culvert in culverts:
-        culvertLength = culvertLength + objectGet(culvert, 'length')
-        culvertCost = culvertCost + objectGet(culvert, 'length') * scale * objectGet(culvert, 'diameter') * scale * \
-            objectGet(rates, 'culvert') + objectGet(rates, 'culvertEnds')
-    endfor
     costs = [ \
         roadieCostItem('Clearing and grubbing', clearingArea, 'area', clearingArea * scale2 * objectGet(rates, 'clearing')), \
         roadieCostItem('Common excavation', cutCommon, 'volume', cutCommon * scale3 * objectGet(rates, 'excavation')), \
@@ -1164,7 +1152,7 @@ function roadieAnalyze(plan, ixOption, topo):
         roadieCostItem('Ditches and cross drains', surfaceLength, 'length', surfaceLength * scale * objectGet(rates, 'drainage')), \
         roadieCostItem('Existing road upgrade', existingLength * width, 'area', \
             existingLength * width * scale2 * objectGet(rates, 'existingRoad')), \
-        roadieCostItem('Culverts (' + arrayLength(culverts) + ')', culvertLength, 'length', culvertCost), \
+        roadieCostItem('Culverts (' + culvertCount + ')', culvertLength, 'length', culvertCost), \
         roadieCostItem('Retaining walls', wallArea, 'area', wallArea * scale2 * objectGet(rates, 'retainingWall')), \
         roadieCostItem('Bridges', bridgeLength * width, 'area', bridgeLength * width * scale2 * objectGet(rates, 'bridge')), \
         roadieCostItem('Erosion control', clearingArea, 'area', clearingArea * scale2 * objectGet(rates, 'erosionControl')) \
@@ -1192,7 +1180,7 @@ function roadieAnalyze(plan, ixOption, topo):
         'wallArea': wallArea, \
         'bridgeLength': bridgeLength, \
         'existingLength': existingLength, \
-        'culvertCount': arrayLength(culverts), \
+        'culvertCount': culvertCount, \
         'costs': costs, \
         'total': total, \
         'score': total / 1000, \
