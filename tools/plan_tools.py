@@ -129,20 +129,9 @@ def main(argv=None):
                                       help='the side slope earthwork weight (default is 1)')
 
     args = parser.parse_args(args=argv)
-    if args.command == 'info':
-        command_info(args)
-    elif args.command == 'crop':
-        command_crop(args)
-    elif args.command == 'trace':
-        command_trace(args)
-    elif args.command == 'transect':
-        command_transect(args)
-    elif args.command == 'grid':
-        command_grid(args)
-    elif args.command == 'plot':
-        command_plot(args)
-    else:
-        command_route(args)
+    commands = {'info': command_info, 'crop': command_crop, 'trace': command_trace, 'transect': command_transect, 'grid': command_grid,
+                'plot': command_plot}
+    commands.get(args.command, command_route)(args)
 
 
 #
@@ -252,12 +241,12 @@ def command_trace(args):
         font = ImageFont.load_default()
     for component in components:
         points = component['points']
+        text = str(component['id'])
         for ix_label in sorted({0, len(points) // 2, len(points) - 1}):
             px, py = points[ix_label]
-            text = str(component['id'])
-            box = draw.textbbox((px * 2 + 4, py * 2 - 18), text, font=font)
-            draw.rectangle(box, fill=(255, 255, 255))
-            draw.text((px * 2 + 4, py * 2 - 18), text, fill=(220, 0, 0), font=font)
+            position = (px * 2 + 4, py * 2 - 18)
+            draw.rectangle(draw.textbbox(position, text, font=font), fill=(255, 255, 255))
+            draw.text(position, text, fill=(220, 0, 0), font=font)
     preview.save(args.preview)
     np.save(traced_labels_path(args.output), component_labels)
     with open(args.output, 'w', encoding='utf-8') as output_file:
@@ -287,7 +276,6 @@ def transect_crossings(labels, x1, y1, x2, y2):
     """Get the ordered (component id, x, y) crossings of a transect line over a component label image"""
     count = int(max(abs(x2 - x1), abs(y2 - y1)) * 2) + 1
     crossings = []
-    previous = None
     for ix in range(count + 1):
         px = x1 + (x2 - x1) * ix / count
         py = y1 + (y2 - y1) * ix / count
@@ -296,9 +284,8 @@ def transect_crossings(labels, x1, y1, x2, y2):
         window = labels[max(0, row - 1):row + 2, max(0, col - 1):col + 2]
         found = window[window >= 0]
         component = int(np.bincount(found).argmax()) if len(found) else None
-        if component is not None and component != previous and (not crossings or crossings[-1][0] != component):
+        if component is not None and (not crossings or crossings[-1][0] != component):
             crossings.append((component, round(px), round(py)))
-        previous = component
     return crossings
 
 
@@ -321,8 +308,7 @@ def contour_points(contours_model, contours_dir):
     traced_path = contours_model.get('traced')
     if traced_path:
         traced_path = os.path.join(contours_dir, traced_path)
-        with open(traced_path, 'r', encoding='utf-8') as traced_file:
-            traced = {component['id']: component for component in json.load(traced_file)['components']}
+        traced = {component['id']: component for component in load_json(traced_path)['components']}
 
     # Assign traced component elevations - transects first, then explicit component contours
     excluded = set(contours_model.get('exclude', []))
@@ -394,12 +380,17 @@ def pixel_to_plan(georef, px, py):
     return (px - left) / pixels_per_unit, (bottom - py) / pixels_per_unit
 
 
+def plan_point(georef, px, py):
+    """Get a pixel's plan point model, rounded to hundredths"""
+    x, y = pixel_to_plan(georef, px, py)
+    return {'x': round(x, 2), 'y': round(y, 2)}
+
+
 def command_grid(args):
     from scipy.interpolate import RBFInterpolator # pylint: disable=import-outside-toplevel
 
     contours_dir = os.path.dirname(os.path.abspath(args.contours))
-    with open(args.contours, 'r', encoding='utf-8') as contours_file:
-        contours_model = json.load(contours_file)
+    contours_model = load_json(args.contours)
     points = contour_points(contours_model, contours_dir)
     if len(points) < 10:
         raise SystemExit('error: too few contour points')
@@ -426,14 +417,11 @@ def command_grid(args):
     interpolator = RBFInterpolator(data_xy, data_z, neighbors=min(80, len(data_z)), kernel='thin_plate_spline', smoothing=0.5)
     grid_x, grid_y = np.meshgrid(np.arange(n_cols) * spacing, (n_rows - 1 - np.arange(n_rows)) * spacing)
     grid_z = interpolator(np.column_stack([grid_x.ravel(), grid_y.ravel()])).reshape(n_rows, n_cols)
-    interval = float(contours_model.get('contourInterval', 0) or 0)
+    interval = float(contours_model.get('contourInterval') or 0)
     grid_z = np.clip(grid_z, data_z.min() - interval, data_z.max() + interval)
 
     # Create or update the road plan model
-    plan = {}
-    if os.path.isfile(args.plan):
-        with open(args.plan, 'r', encoding='utf-8') as plan_file:
-            plan = json.load(plan_file)
+    plan = load_json(args.plan) if os.path.isfile(args.plan) else {}
     plan['title'] = contours_model.get('title', plan.get('title', 'Road Plan'))
     if 'description' in contours_model:
         plan['description'] = contours_model['description']
@@ -446,11 +434,7 @@ def command_grid(args):
         topography['contourInterval'] = interval
     features = []
     for feature in contours_model.get('features', []):
-        feature_points = []
-        for px, py in feature['points']:
-            x, y = pixel_to_plan(georef, px, py)
-            feature_points.append({'x': round(x, 2), 'y': round(y, 2)})
-        feature_model = {'type': feature['type'], 'points': feature_points}
+        feature_model = {'type': feature['type'], 'points': [plan_point(georef, px, py) for px, py in feature['points']]}
         if 'name' in feature:
             feature_model['name'] = feature['name']
         features.append(feature_model)
@@ -459,8 +443,7 @@ def command_grid(args):
     plan['topography'] = topography
     for endpoint in ('start', 'end'):
         endpoint_model = contours_model[endpoint]
-        x, y = pixel_to_plan(georef, *endpoint_model['point'])
-        plan[endpoint] = {'x': round(x, 2), 'y': round(y, 2)}
+        plan[endpoint] = plan_point(georef, *endpoint_model['point'])
         if 'label' in endpoint_model:
             plan[endpoint]['label'] = endpoint_model['label']
     plan.setdefault('options', [])
@@ -481,15 +464,20 @@ def command_grid(args):
 
 def nice_number(value):
     power = 10 ** math.floor(math.log10(value))
-    for multiple in (1, 2, 2.5, 5, 10):
+    for multiple in (1, 2, 2.5, 5):
         if multiple * power >= value:
             return multiple * power
-    return 10 * power # pragma: no cover
+    return 10 * power
 
 
 def order_plan(plan):
     keys = ('title', 'description', 'image', 'units', 'topography', 'start', 'end', 'criteria', 'costRates', 'options')
     return {key: plan[key] for key in keys if key in plan} | {key: value for key, value in plan.items() if key not in keys}
+
+
+def load_json(path):
+    with open(path, 'r', encoding='utf-8') as file:
+        return json.load(file)
 
 
 def write_plan(path, plan):
@@ -549,11 +537,16 @@ class Topo:
         return dzdx, dzdy
 
     def polygons(self, feature_type):
-        return [np.array([[p['x'], p['y']] for p in feature['points']]) for feature in self.features if feature['type'] == feature_type]
+        return [xy_array(feature['points']) for feature in self.features if feature['type'] == feature_type]
 
     def streams(self):
-        return [(feature.get('name', 'stream'), np.array([[p['x'], p['y']] for p in feature['points']]))
+        return [(feature.get('name', 'stream'), xy_array(feature['points']))
                 for feature in self.features if feature['type'] == 'stream']
+
+
+def xy_array(points):
+    """Get an array of point models' [x, y] coordinates"""
+    return np.array([[p['x'], p['y']] for p in points])
 
 
 def points_in_polygon(x, y, polygon):
@@ -602,7 +595,7 @@ def linear_areas(v1, v2, length):
 
 
 def side_section(depth, rise, cut_slope, fill_slope):
-    """Returns (cut area, fill area, offset, drop, wall height) - a slope that does not daylight is a wall"""
+    """Returns (cut area, fill area, offset, wall height) - a slope that does not daylight is a wall"""
     cut_approach = 1 / cut_slope - rise
     fill_approach = rise + 1 / fill_slope
     is_cut = depth > 0
@@ -615,9 +608,7 @@ def side_section(depth, rise, cut_slope, fill_slope):
     cut = np.where(cut_day, depth * cut_offset * 0.5, 0)
     fill = np.where(fill_day, -depth * fill_offset * 0.5, 0)
     wall = np.where((is_cut & ~cut_day) | (is_fill & ~fill_day), np.abs(depth), 0)
-    offset = cut_offset + fill_offset
-    drop = cut_offset / cut_slope - fill_offset / fill_slope
-    return cut, fill, offset, drop, wall
+    return cut, fill, cut_offset + fill_offset, wall
 
 
 def cross_section(depth, slope, half_width, cut_slope, fill_slope):
@@ -631,7 +622,7 @@ def cross_section(depth, slope, half_width, cut_slope, fill_slope):
         'cut': road_cut + left[0] + right[0],
         'fill': road_fill + left[1] + right[1],
         'slopeWidth': left[2] + right[2],
-        'wall': left[4] + right[4],
+        'wall': left[3] + right[3],
         'left': left,
         'right': right
     }
@@ -645,12 +636,10 @@ class Design:
     """Road design parameters and unit costs (per plan unit)"""
 
     def __init__(self, plan, args):
-        self.plan = plan
         self.feet = plan['units'] == 'feet'
-        self.scale = METERS_PER_FOOT if self.feet else 1
         criteria = plan.get('criteria', {})
-        self.max_grade = criteria.get('maxGrade', 12) / 100
-        self.grade = (args.grade / 100) if args.grade else max(self.max_grade - 0.01, self.max_grade * 0.9)
+        max_grade = criteria.get('maxGrade', 12) / 100
+        self.grade = (args.grade / 100) if args.grade else max(max_grade - 0.01, max_grade * 0.9)
         self.switchback_grade = min(args.switchback_grade / 100, self.grade)
         self.min_radius = criteria.get('minRadius', 50 if self.feet else 15)
         self.rock_cut_slope = criteria.get('rockCutSlope', 0.5)
@@ -659,10 +648,8 @@ class Design:
         self.surface = args.surface
         self.cut_slope = args.cut_slope
         self.fill_slope = args.fill_slope
-        rates = dict(DEFAULT_RATES)
-        rates.update(plan.get('costRates', {}))
-        self.rates = rates
-        s1 = self.scale
+        rates = DEFAULT_RATES | plan.get('costRates', {})
+        s1 = METERS_PER_FOOT if self.feet else 1
         s2 = s1 * s1
         s3 = s2 * s1
 
@@ -824,10 +811,14 @@ def smooth_curves(points, interval, min_radius):
     return np.column_stack([x, y])
 
 
+def polyline_stations(x, y):
+    """Get the stations (cumulative lengths) of a polyline's points"""
+    return np.concatenate([[0], np.cumsum(np.hypot(np.diff(x), np.diff(y)))])
+
+
 def resample_polyline(points, interval):
     points = np.array(points, dtype=np.float64)
-    segment_lengths = np.hypot(np.diff(points[:, 0]), np.diff(points[:, 1]))
-    stations = np.concatenate([[0], np.cumsum(segment_lengths)])
+    stations = polyline_stations(points[:, 0], points[:, 1])
     length = stations[-1]
     count = max(2, int(math.ceil(length / interval)) + 1)
     sample_stations = np.linspace(0, length, count)
@@ -944,7 +935,7 @@ def design_profile(topo, design, x, y, stations, existing=None):
 
     # Vertical curves - a moving average preserves the grade limits
     # (odd reflection at the ends keeps the end elevations and the grades)
-    half = max(0, int(round((50 if design.feet else 15) / ds)))
+    half = int(round((50 if design.feet else 15) / ds))
     if half > 0 and len(profile) > 2 * half + 1:
         padded = np.concatenate([2 * profile[0] - profile[half:0:-1], profile, 2 * profile[-1] - profile[-2:-half - 2:-1]])
         profile = np.convolve(padded, np.ones(2 * half + 1) / (2 * half + 1), mode='valid')
@@ -952,7 +943,7 @@ def design_profile(topo, design, x, y, stations, existing=None):
     return profile, ground, side_slope
 
 
-def design_structures(topo, design, x, y, stations, profile, side_slope, existing_roads=()):
+def design_structures(topo, design, x, y, stations, profile, side_slope, existing_roads):
     """Place retaining walls (slopes that don't daylight), culverts, bridges, and turnouts - none within the existing roads
     ([station, end station] ranges), which are added as existing road structures"""
     ds = stations[1] - stations[0]
@@ -1018,8 +1009,9 @@ def design_structures(topo, design, x, y, stations, profile, side_slope, existin
                 structures.append({'type': 'culvert', 'station': round(station, 1), 'name': 'Sag cross drain'})
 
     # Retaining walls where a slope does not daylight
+    bridged = np.array([in_bridge(station) for station in stations])
     for side_name, side in (('left', section['left']), ('right', section['right'])):
-        wall = (side[4] > 0) & ~np.array([in_bridge(station) for station in stations]) & ~existing
+        wall = (side[3] > 0) & ~bridged & ~existing
         ix = 0
         while ix < len(wall):
             if wall[ix]:
@@ -1062,18 +1054,17 @@ def existing_mask(stations, existing_roads):
 
 
 def command_route(args):
-    with open(args.plan, 'r', encoding='utf-8') as plan_file:
-        plan = json.load(plan_file)
+    plan = load_json(args.plan)
     topo = Topo(plan)
     design = Design(plan, args)
     options = plan.setdefault('options', [])
-    existing = next((option for option in options if option['name'] == args.name), None)
+    existing_option = next((option for option in options if option['name'] == args.name), None)
 
     # The existing roads - the argument ranges, or for profile, the option's existing road structures
     if args.existing_road:
         existing_roads = [tuple(float(value) for value in text.split(',')) for text in args.existing_road]
-    elif args.command == 'profile' and existing is not None:
-        existing_roads = [(structure['station'], structure['endStation']) for structure in existing.get('structures', [])
+    elif args.command == 'profile' and existing_option is not None:
+        existing_roads = [(structure['station'], structure['endStation']) for structure in existing_option.get('structures', [])
                           if structure['type'] == 'existingRoad']
     else:
         existing_roads = []
@@ -1088,7 +1079,6 @@ def command_route(args):
         waypoints.append((plan['end']['x'], plan['end']['y']))
         for soft_band, grade_margin in ((0.03, 0), (0.01, 0.005), (0, 0.015), (0, 0.03)):
             path = []
-            lattice = None
             heading = None
             for ix_waypoint in range(1, len(waypoints)):
                 leg, lattice, heading = route_search(topo, design, waypoints[ix_waypoint - 1], waypoints[ix_waypoint],
@@ -1102,9 +1092,9 @@ def command_route(args):
                 break
             print(f'The profile ends {ground[-1] - profile[-1]:.1f} {plan["units"]} below the end point - searching with stricter grades')
     else:
-        if existing is None:
+        if existing_option is None:
             raise SystemExit(f'error: no option named "{args.name}"')
-        path = [(point['x'], point['y']) for point in existing['alignment']]
+        path = [(point['x'], point['y']) for point in existing_option['alignment']]
         x, y, stations = resample_polyline(path, topo.spacing * 0.5)
         profile, ground, side_slope = design_profile(topo, design, x, y, stations, existing_mask(stations, existing_roads))
 
@@ -1114,18 +1104,15 @@ def command_route(args):
     structures = design_structures(topo, design, x, y, stations, profile, side_slope, existing_roads)
 
     # Create the option
-    option = {
-        'name': args.name,
+    description = args.description or (existing_option.get('description') if existing_option else None)
+    option = {'name': args.name} | ({'description': description} if description else {}) | {
         'section': {'width': design.width, 'cutSlope': design.cut_slope, 'fillSlope': design.fill_slope, 'surface': design.surface},
         'alignment': [{'x': round(float(px), 2), 'y': round(float(py), 2), 'z': round(float(pz), 2)}
                       for px, py, pz in zip(x, y, profile)],
         'structures': structures
     }
-    description = args.description or (existing.get('description') if existing else None)
-    if description:
-        option = {'name': args.name, 'description': description} | {key: value for key, value in option.items() if key != 'name'}
-    if existing is not None:
-        options[options.index(existing)] = option
+    if existing_option is not None:
+        options[options.index(existing_option)] = option
     else:
         options.append(option)
     write_plan(args.plan, order_plan(plan))
@@ -1160,7 +1147,6 @@ def plot_plan(plan, output, contours_model=None, contours_dir=None):
     if contours_model is not None and contours_model.get('image'):
         image = load_image(os.path.join(contours_dir, contours_model['image']))
         georef = georeference(contours_model, contour_points(contours_model, contours_dir))
-        (left, top, right, bottom), pixels_per_unit = georef
         x0, y0 = pixel_to_plan(georef, 0, image.height)
         x1, y1 = pixel_to_plan(georef, image.width, 0)
         axes.imshow(np.asarray(image), extent=(x0, x1, y0, y1), alpha=0.55)
@@ -1176,7 +1162,7 @@ def plot_plan(plan, output, contours_model=None, contours_dir=None):
 
     # Features
     for feature in topo.features:
-        points = np.array([[p['x'], p['y']] for p in feature['points']])
+        points = xy_array(feature['points'])
         if feature['type'] != 'stream':
             points = np.vstack([points, points[:1]])
         style = {'stream': ('royalblue', '-'), 'rock': ('dimgray', '--'), 'exclusion': ('red', '--')}[feature['type']]
@@ -1186,10 +1172,9 @@ def plot_plan(plan, output, contours_model=None, contours_dir=None):
     colors = ['crimson', 'darkorange', 'purple', 'teal', 'olive', 'navy']
     for ix_option, option in enumerate(plan.get('options', [])):
         color = colors[ix_option % len(colors)]
-        alignment = np.array([[p['x'], p['y']] for p in option['alignment']])
+        alignment = xy_array(option['alignment'])
         axes.plot(alignment[:, 0], alignment[:, 1], color=color, linewidth=2.5, label=f'{ix_option}: {option["name"]}')
-        segment_lengths = np.hypot(np.diff(alignment[:, 0]), np.diff(alignment[:, 1]))
-        stations = np.concatenate([[0], np.cumsum(segment_lengths)])
+        stations = polyline_stations(alignment[:, 0], alignment[:, 1])
         for structure in option.get('structures', []):
             if structure['type'] == 'existingRoad':
                 # The existing road section is dashed over the option's line
@@ -1226,15 +1211,12 @@ def plot_plan(plan, output, contours_model=None, contours_dir=None):
 
 
 def command_plot(args):
-    with open(args.plan, 'r', encoding='utf-8') as plan_file:
-        plan = json.load(plan_file)
     contours_model = None
     contours_dir = None
     if args.contours:
         contours_dir = os.path.dirname(os.path.abspath(args.contours))
-        with open(args.contours, 'r', encoding='utf-8') as contours_file:
-            contours_model = json.load(contours_file)
-    plot_plan(plan, args.output, contours_model, contours_dir)
+        contours_model = load_json(args.contours)
+    plot_plan(load_json(args.plan), args.output, contours_model, contours_dir)
 
 
 if __name__ == '__main__':
