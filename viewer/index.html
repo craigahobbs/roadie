@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Roadie</title>
+        <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 28 C10 20 12 14 16 10 S24 4 28 4' fill='none' stroke='%23968f88' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
+        <link rel="stylesheet" href="app.css">
+        <link rel="modulepreload" href="lib/app.js">
+        <link rel="modulepreload" href="lib/args.js">
+        <link rel="modulepreload" href="lib/canvas.js">
+        <link rel="modulepreload" href="lib/doc.js">
+        <link rel="modulepreload" href="lib/draw.js">
+        <link rel="modulepreload" href="lib/explore.js">
+        <link rel="modulepreload" href="lib/format.js">
+        <link rel="modulepreload" href="lib/markdown.js">
+        <link rel="modulepreload" href="lib/model.js">
+        <link rel="modulepreload" href="lib/planData.js">
+        <link rel="modulepreload" href="lib/planView.js">
+        <link rel="modulepreload" href="lib/report.js">
+        <link rel="modulepreload" href="lib/schema.js">
+        <link rel="modulepreload" href="lib/smoothing.js">
+        <link rel="modulepreload" href="lib/view3d.js">
+    </head>
+    <body>
+        <div id="roadie"></div>
+        <noscript>The Roadie viewer requires JavaScript.</noscript>
+        <script type="module">
+            import {RoadieApp} from './lib/app.js';
+            new RoadieApp(window).start();
+        </script>
+    </body>
+</html>

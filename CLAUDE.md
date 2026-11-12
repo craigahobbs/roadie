@@ -9,6 +9,8 @@ a printable report with 3D views. See [README.md](README.md) for the user-facing
   in BareScript: `roadie.md` / `roadie.bare` (report, 3D views, 3D explorer, plan and profile
   views), `roadieModel.bare` (model schema, validation, earthwork, and cost analysis), and
   `roadieCLI.bare` (`make evaluate`, `make doc`). Use the `bare-script` skill when writing BareScript.
+- **The JavaScript viewer** (`viewer/`, see [viewer/CLAUDE.md](viewer/CLAUDE.md)) is a rewrite of the MarkdownUp viewer
+  that is replacing it - its report must stay identical to the MarkdownUp viewer's (`make -C viewer parity`).
 - `SPEC.md` is the original viewer specification; `example/` is a small synthetic plan.
 
 ## Commands
