@@ -1,10 +1,9 @@
 // report.js - the road plan report page
 
 import {argsLink} from './args.js';
-import {culvertDiameter, sampleAt} from './model.js';
-import {
-    displayQuantity, encodeUrl, escapeHtml, fixed, headerId, number, round, station as formatStation, unitLabel
-} from './format.js';
+import {costTable, structuresTable} from './tables.js';
+import {displayQuantity, encodeUrl, escapeHtml, fixed, headerId, number, station as formatStation, unitLabel} from './format.js';
+import {sampleAt} from './model.js';
 import {planView, profileView} from './planView.js';
 import {view3DParts} from './view3d.js';
 import {markdownHtml} from './markdown.js';
@@ -23,19 +22,17 @@ const compassPoints = [
 ];
 
 
-// The structure type display names
-const structureNames = {
-    'retainingWall': 'Retaining wall',
-    'bridge': 'Bridge',
-    'culvert': 'Culvert',
-    'turnout': 'Turnout',
-    'existingRoad': 'Existing road'
-};
-
-
 // Create a heading's HTML
 function heading(level, text) {
     return `<h${level} id="${escapeHtml(headerId(text))}">${escapeHtml(text)}</h${level}>`;
+}
+
+
+// Create a text table's HTML (see tables.js) - strong cells are bold
+function textTable({fields, rows}) {
+    return table(fields, rows.map((row) => row.map((cell) => (
+        typeof cell === 'string' ? escapeHtml(cell) : `<strong>${escapeHtml(cell.strong)}</strong>`
+    ))));
 }
 
 
@@ -133,7 +130,7 @@ export function buildReport(data, globals, args, width, canvasViews = false) {
     // Cost breakdown
     html.push(heading(3, 'Cost'));
     html.push(`<p>${escapeHtml(scoreNote)}</p>`);
-    html.push(costTable(units, analysis));
+    html.push(textTable(costTable(units, analysis)));
 
     // Design warnings
     html.push(heading(3, 'Design Warnings'));
@@ -146,7 +143,7 @@ export function buildReport(data, globals, args, width, canvasViews = false) {
     // Structures
     if ((option.structures ?? []).length > 0) {
         html.push(heading(3, 'Structures'));
-        html.push(structuresTable(units, option, analysis));
+        html.push(textTable(structuresTable(units, option, analysis)));
     }
 
     // Source topographic map image
@@ -234,67 +231,3 @@ function optionsTable(plan, analyses, ixOption, globals) {
         ['Cost Score', 'right'], ['Relative', 'left']
     ], rows);
 }
-
-
-// Create the cost breakdown table HTML
-function costTable(units, analysis) {
-    const {total} = analysis;
-    const rows = [];
-    for (const cost of analysis.costs) {
-        if (cost.cost > 0) {
-            const {type} = cost;
-            rows.push([
-                escapeHtml(cost.name),
-                type !== null ? escapeHtml(`${number(displayQuantity(units, type, cost.quantity), 0)} ${unitLabel(units, type)}`) : '',
-                number(cost.cost / 1000, 1),
-                `${fixed(100 * cost.cost / total, 1)}%`
-            ]);
-        }
-    }
-    rows.push(['<strong>Total</strong>', '', `<strong>${number(total / 1000, 1)}</strong>`, '']);
-    return table([['Item', 'left'], ['Quantity', 'right'], ['Cost Score', 'right'], ['Share', 'right']], rows);
-}
-
-
-// Create the structures table HTML
-function structuresTable(units, option, analysis) {
-    const {samples} = analysis;
-    const lengthUnit = unitLabel(units, 'length');
-    const rows = [];
-    for (const structure of option.structures) {
-        const {type} = structure;
-        const stationValue = structure.station;
-        const endStation = structure.endStation ?? null;
-        let detail = '';
-        if (type === 'retainingWall') {
-            let maxHeight = 0;
-            for (const sample of samples) {
-                if (sample.station >= stationValue && sample.station <= endStation) {
-                    maxHeight = Math.max(maxHeight, sample.left.wall, sample.right.wall);
-                }
-            }
-            detail = `Maximum height ${fixed(maxHeight, 1)} ${lengthUnit}`;
-        } else if (type === 'culvert') {
-            detail = `Diameter ${round(culvertDiameter(units, structure), 2)} ${lengthUnit}`;
-        } else if (type === 'bridge') {
-            detail = `Span ${fixed(endStation - stationValue, 0)} ${lengthUnit}`;
-        } else if (type === 'existingRoad') {
-            detail = `Upgrade ${number(endStation - stationValue, 0)} ${lengthUnit}`;
-        }
-        let side = '';
-        if (type === 'retainingWall') {
-            side = 'both';
-        } else if (type === 'turnout') {
-            side = 'right';
-        }
-        rows.push([
-            structureNames[type],
-            escapeHtml(structure.name ?? ''),
-            formatStation(stationValue, units) + (endStation !== null ? ` to ${formatStation(endStation, units)}` : ''),
-            structure.side ?? side,
-            escapeHtml(detail)
-        ]);
-    }
-    return table([['Type', 'left'], ['Name', 'left'], ['Station', 'left'], ['Side', 'left'], ['Detail', 'left']], rows);
-}
-

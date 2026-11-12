@@ -1,11 +1,13 @@
 // model.js - the road grading plan model: schema, validation, earthwork, and cost analysis
 
 import {fixed, fixedTrim, station as formatStation, unitLabel} from './format.js';
-import {schemaParse, schemaValidate} from './schema.js';
+import {validateType} from 'schema-markdown/lib/schema.js';
+import {parseSchemaMarkdown} from 'schema-markdown/lib/parser.js';
 
 
-// The road grading plan model's Schema Markdown type model
-export const roadieTypes = schemaParse([
+// The road grading plan model's type model - the model is defined with Schema Markdown
+// (https://craigahobbs.github.io/schema-markdown-js/language/)
+export const roadieTypes = parseSchemaMarkdown([
     '# A road grading plan model. A plan contains the site topography, the road start and end points, and',
     '# one or more road plan options. All lengths and elevations are in the plan\'s units.',
     'struct RoadPlan',
@@ -356,11 +358,12 @@ export function culvertDiameter(units, structure) {
 
 // Validate a road plan model - returns an object with "plan" on success, or "error" on failure
 export function validatePlan(planValue) {
-    const validated = schemaValidate(roadieTypes, 'RoadPlan', planValue);
-    if ('error' in validated) {
-        return {'error': validated.error};
+    let plan;
+    try {
+        plan = validateType(roadieTypes, 'RoadPlan', planValue);
+    } catch ({message}) {
+        return {'error': message};
     }
-    const plan = validated.result;
 
     // Elevation rows must all be the same length
     const rows = plan.topography.elevations;

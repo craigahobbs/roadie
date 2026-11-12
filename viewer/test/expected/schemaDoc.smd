@@ -1,0 +1,67 @@
+# A base struct
+struct Base
+
+    # The identifier
+    int(> 0) id
+
+struct Empty
+
+# A thing
+# with two documentation lines
+#
+# and a second paragraph
+struct Thing (Base)
+
+    # The name
+    string(len > 0, len <= 20) name
+
+    optional Color color
+
+    optional Empty empty
+
+    # The tags
+    optional string(len > 0)[len > 0, len < 10] tags
+
+    # The scores by name
+    optional float(>= 0, <= 1){len == 2} scores
+
+    # The colors by color
+    optional Color : int(nullable) {} colorCounts
+
+    Choice choice
+
+    Score score
+
+# A choice
+union Choice
+
+    int number
+    string text
+
+enum BaseColor
+
+    # The color red
+    red
+
+# The colors
+enum Color (BaseColor)
+
+    green
+    blue
+
+enum EmptyEnum
+
+enum Plain
+    a
+    b
+
+# A score
+typedef float(>= 0, < 100) Score
+
+typedef Plain[] Plains
+
+struct Top
+
+    Thing thing
+    Plains plains
+    EmptyEnum none

@@ -42,13 +42,16 @@ help:
 	@echo "  make parity [PLANS=\"...\"]      Check the output against the MarkdownUp Roadie viewer's"
 
 
-# Stage the application - the page, its stylesheet, and its source modules
+# Stage the application - the page, its stylesheet, its source modules, and the schema-markdown package's (the page's
+# import map resolves "schema-markdown/" there). The command line module isn't part of the application.
 .PHONY: app
 commit: app
 app: build/npm.build
 	rm -rf build/app/
-	mkdir -p build/app/
+	mkdir -p build/app/schema-markdown/
 	cp -R index.html app.css lib build/app/
+	rm build/app/lib/cli.js
+	cp -R node_modules/schema-markdown/lib build/app/schema-markdown/
 
 
 # View a road plan in the browser - the plan's directory is linked into the served directory so the plan (and its map

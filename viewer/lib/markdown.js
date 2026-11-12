@@ -1,5 +1,6 @@
-// markdown.js - a small Markdown renderer for plan and option descriptions: paragraphs, headings, lists, block quotes,
-// code blocks, horizontal rules, and inline code, emphasis, strikethrough, links, and images
+// markdown.js - a small Markdown renderer for plan and option descriptions and the model documentation: paragraphs,
+// headings, lists, block quotes, code blocks, horizontal rules, tables, and inline code, emphasis, strikethrough, links,
+// images, and line breaks - and Markdown text generation: escaping and tables
 
 import {escapeHtml, headerId} from './format.js';
 
@@ -45,6 +46,25 @@ export function markdownHtml(lines) {
         if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
             html.push('<hr>');
             ix += 1;
+            continue;
+        }
+
+        // Table
+        if (rTableRow.test(line) && ix + 1 < textLines.length && rTableSeparator.test(textLines[ix + 1])) {
+            const aligns = tableCells(textLines[ix + 1]).map((cell) => (
+                cell.endsWith(':') ? (cell.startsWith(':') ? 'center' : 'right') : 'left'
+            ));
+            const cellsHtml = (tag, cells) => aligns.map((align, ixCell) => (
+                `<${tag} style="text-align: ${align}">${inlineHtml(cells[ixCell] ?? '')}</${tag}>`
+            )).join('');
+            const header = cellsHtml('th', tableCells(line));
+            const rows = [];
+            ix += 2;
+            while (ix < textLines.length && rTableRow.test(textLines[ix])) {
+                rows.push(`<tr>${cellsHtml('td', tableCells(textLines[ix]))}</tr>`);
+                ix += 1;
+            }
+            html.push(`<table><thead><tr>${header}</tr></thead><tbody>${rows.join('')}</tbody></table>`);
             continue;
         }
 
@@ -96,6 +116,14 @@ export function markdownHtml(lines) {
 }
 
 const rListItem = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+const rTableRow = /^\s*\|.*\|\s*$/;
+const rTableSeparator = /^\s*\|(\s*:?-+:?\s*\|)+\s*$/;
+
+
+// Split a Markdown table row into its trimmed cell texts - an escaped pipe ("\|") doesn't end a cell
+function tableCells(line) {
+    return line.trim().slice(1, -1).split(/(?<!\\)\|/).map((cell) => cell.trim());
+}
 const rBlockStart = /^\s*(```|~~~|#{1,6}\s|>|[-*+]\s|\d+[.)]\s)/;
 
 
@@ -150,6 +178,16 @@ export function inlineHtml(text) {
             }
         }
 
+        // Line break element
+        if (ch === '<') {
+            const mBreak = text.slice(ix).match(/^<br\s*\/?>/i);
+            if (mBreak !== null) {
+                html += '<br>';
+                ix += mBreak[0].length;
+                continue;
+            }
+        }
+
         // Line break
         if (ch === '\n') {
             html += '\n';
@@ -164,3 +202,47 @@ export function inlineHtml(text) {
 }
 
 const rEscapable = /[\\`*_{}[\]()#+\-.!<>"'~|=]/;
+
+
+// Escape text for Markdown
+export function markdownEscape(text) {
+    return text.replace(/([\\[\]()<>"'*_~`#=+|-])/g, '\\$1');
+}
+
+
+// Create a Markdown table's text lines - "fields" is an array of [name, align] ("left", "right", or "center") and the
+// rows are arrays of cell text. A cell's line breaks become spaces, and its blank lines become line break elements.
+export function markdownTable(fields, rows) {
+    // Format the cells and compute the column widths
+    const widths = fields.map(([name]) => name.length);
+    const rowsFormat = rows.map((row) => row.map((cell, ixCell) => {
+        const cellFormat = cell.trim().replace(/\r?\n(?:\r?\n)+/g, '<br><br>').replace(/\r?\n/g, ' ');
+        widths[ixCell] = Math.max(widths[ixCell], cellFormat.length);
+        return cellFormat;
+    }));
+
+    // The header and its separator, then the rows
+    const lines = [
+        `| ${fields.map(([name, align], ixField) => tableField(name, widths[ixField], align, ' ')).join(' | ')} |`,
+        `|${fields.map(([, align], ixField) => (
+            (align === 'center' ? ':' : '-') + tableField('', widths[ixField], align, '-') + (align === 'left' ? '-' : ':')
+        )).join('|')}|`
+    ];
+    for (const row of rowsFormat) {
+        lines.push(`| ${row.map((cell, ixCell) => tableField(cell, widths[ixCell], fields[ixCell][1], ' ')).join(' | ')} |`);
+    }
+    return lines;
+}
+
+
+// Pad a Markdown table cell's text to its column's width
+function tableField(text, width, align, fill) {
+    const spaces = width - text.length;
+    if (align === 'right') {
+        return fill.repeat(spaces) + text;
+    } else if (align === 'center') {
+        const spacesLeft = Math.floor(spaces / 2);
+        return fill.repeat(spacesLeft) + text + fill.repeat(spaces - spacesLeft);
+    }
+    return text + fill.repeat(spaces);
+}

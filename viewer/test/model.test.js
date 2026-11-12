@@ -35,7 +35,7 @@ test('validatePlan', () => {
     const shortRow = fixturePlan();
     shortRow.topography.elevations = [[1, 2]];
     assert.equal(validatePlan(shortRow).error,
-        'Invalid value [[1,2]] (type "array") for member "topography.elevations", expected type "array" [len > 1]');
+        'Invalid value [[1,2]] (type "object") for member "topography.elevations", expected type "array" [len > 1]');
 
     const numericString = fixturePlan();
     numericString.start.x = '20';

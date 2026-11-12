@@ -22,6 +22,13 @@ Real plans for `check` and `parity`: `../example/example.json`, `../../roadie-te
 
 ## Conventions
 
+- The road plan model is defined, validated, and documented with Schema Markdown: its schema text is in `model.js`
+  (`roadieTypes`), plans are validated with the `schema-markdown` package (`validatePlan` - the application validates
+  every plan it loads), and the documentation page and `bin/roadie.js doc` are generated from the type model
+  (`schemaDoc.js`). Don't hand-write schema parsing, validation, or documentation.
+- `bin/roadie.js` (`lib/cli.js`) is the command line behind the project's `make evaluate` and `make doc` - the planning
+  instructions depend on its output, so keep it stable. `lib/cli.js` isn't part of the web application.
+
 - The report (as `tools/render.js` renders it - SVG 3D views, with the MarkdownUp viewer's terrain) must stay identical
   to the MarkdownUp viewer's, apart from its "Terrain" links - port Roadie viewer changes function by
   function (same names, order of floating-point operations, and comments), then run `make parity` on all the plans
@@ -32,7 +39,8 @@ Real plans for `check` and `parity`: `../example/example.json`, `../../roadie-te
   `view3DParts` code as the SVG 3D views - run `make check` after changing either. Their terrain point limit adapts to
   a time budget (`smoothing.js`); `make check` uses the fixed `smoothLimitsCanvas`. Add `?debug` to the page URL to
   log each 3D drawing's operations, grid step, smoothing, and timing.
-- `index.html` preloads every `lib/` module (a unit test checks the list) - add a `modulepreload` link with a new module.
+- `index.html` preloads every application module (a unit test checks the list) - add a `modulepreload` link with a new
+  module. Its import map resolves the `schema-markdown` package, which `make app` stages next to `lib/`.
 - Measure performance changes in Chrome with `tools/bench.js` (serve `build/app` and a plan directory), and in
   Node with `tools/render.js --time`. Add `?debug` to the page URL for render timing in the console.
 - Plans and map images are user data - never commit them here (the repository and its Pages site may be public).

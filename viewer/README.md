@@ -93,10 +93,29 @@ The source is ES modules in `lib/`, loaded by `index.html`:
 | Module | Contents |
 | --- | --- |
 | `app.js` | The application - routing on the URL hash, plan loading (URLs and local files), the pages |
-| `model.js`, `schema.js` | The road plan model - its schema and validation, and the earthwork, structure, and cost analysis |
-| `report.js`, `planView.js`, `view3d.js` | The report, the plan and profile views, and the 3D views |
+| `model.js` | The road plan model - its schema and validation, and the earthwork, structure, and cost analysis |
+| `report.js`, `tables.js`, `planView.js`, `view3d.js` | The report, its cost and structures tables, the plan and profile views, and the 3D views |
 | `explore.js`, `canvas.js` | The 3D explorer and its canvas drawing |
-| `args.js`, `format.js`, `draw.js`, `markdown.js`, `doc.js` | URL arguments, formatting, drawing helpers, Markdown, and the model documentation |
+| `doc.js`, `schemaDoc.js` | The model documentation page, generated from the model's schema |
+| `args.js`, `format.js`, `draw.js`, `markdown.js` | URL arguments, formatting, drawing helpers, and Markdown |
+| `cli.js` | The command line (`bin/roadie.js`) - not part of the web application |
+
+The road plan model is defined with [Schema Markdown](https://craigahobbs.github.io/schema-markdown-js/language/) (in
+`model.js`) and validated with the [schema-markdown](https://github.com/craigahobbs/schema-markdown-js#readme) package -
+the viewer validates every plan it loads. The package is the viewer's only dependency: the application serves its
+modules next to its own (`schema-markdown/lib/`), and the page's import map resolves them.
+
+
+### The command line
+
+`bin/roadie.js` prints a plan's analysis and cost, and the model's documentation, as Markdown text:
+
+```sh
+node bin/roadie.js evaluate <plan.json> [--detail]   # each option's earthwork, cost, design warnings, and structures
+node bin/roadie.js doc                               # the road plan model documentation
+```
+
+`--detail` adds each option's station table. The command exits with status 1 if the plan can't be loaded or is invalid.
 
 
 ### Checking parity
