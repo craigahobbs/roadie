@@ -2,8 +2,8 @@
 // BareScript library's "schemaDocMarkdown" function)
 
 import {getEnumValues, getReferencedTypes, getStructMembers} from 'schema-markdown/lib/schema.js';
-import {headerId} from './format.js';
 import {markdownEscape, markdownTable} from './markdown.js';
+import {headerId} from './format.js';
 
 
 // Create a user type's documentation Markdown text lines - the type's documentation, then its referenced types'

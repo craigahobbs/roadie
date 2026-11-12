@@ -8,10 +8,11 @@
 // links are removed before comparing - this viewer smooths its canvas 3D views automatically. (The 3D explorer and the
 // report's canvas 3D views are checked against the SVG drawing by tools/checkCanvas.js.)
 
-import {mkdirSync, writeFileSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
+import {mkdirSync, writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import process from 'node:process';
 import {tokenize} from './compare.js';
 
 

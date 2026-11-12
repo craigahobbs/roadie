@@ -1,8 +1,8 @@
 // model.js - the road grading plan model: schema, validation, earthwork, and cost analysis
 
 import {fixed, fixedTrim, station as formatStation, unitLabel} from './format.js';
-import {validateType} from 'schema-markdown/lib/schema.js';
 import {parseSchemaMarkdown} from 'schema-markdown/lib/parser.js';
+import {validateType} from 'schema-markdown/lib/schema.js';
 
 
 // The road grading plan model's type model - the model is defined with Schema Markdown
@@ -424,8 +424,9 @@ export function planTopo(plan) {
     const nCols = rows[0].length;
 
     // Compute the elevation range
-    let minZ = rows[0][0];
-    let maxZ = minZ;
+    const [[firstZ]] = rows;
+    let minZ = firstZ;
+    let maxZ = firstZ;
     for (const row of rows) {
         for (const z of row) {
             if (z < minZ) {
@@ -474,12 +475,12 @@ export function elevation(topo, x, y) {
 
 // Get the ground elevation gradient [dz/dx, dz/dy] at a point within the grid
 export function gradient(topo, x, y) {
-    const h = topo.spacing * 0.5;
+    const half = topo.spacing * 0.5;
     const {width, height} = topo;
-    const x1 = Math.max(0, x - h);
-    const x2 = Math.min(width, x + h);
-    const y1 = Math.max(0, y - h);
-    const y2 = Math.min(height, y + h);
+    const x1 = Math.max(0, x - half);
+    const x2 = Math.min(width, x + half);
+    const y1 = Math.max(0, y - half);
+    const y2 = Math.min(height, y + half);
     const yc = Math.max(0, Math.min(height, y));
     const xc = Math.max(0, Math.min(width, x));
     const dzdx = (elevation(topo, x2, yc) - elevation(topo, x1, yc)) / (x2 - x1);
@@ -506,19 +507,19 @@ function polygonIndex(points) {
     while (bands.length < polygonBands) {
         bands.push([]);
     }
-    let j = points.length - 1;
-    for (let i = 0; i < points.length; i++) {
-        const xi = points[i].x;
-        const yi = points[i].y;
-        const xj = points[j].x;
-        const yj = points[j].y;
+    let ixPrev = points.length - 1;
+    for (let ix = 0; ix < points.length; ix++) {
+        const xi = points[ix].x;
+        const yi = points[ix].y;
+        const xj = points[ixPrev].x;
+        const yj = points[ixPrev].y;
         let band = Math.min(polygonBands - 1, Math.floor((Math.min(yi, yj) - minY) / bandHeight));
         const bandLast = Math.min(polygonBands - 1, Math.floor((Math.max(yi, yj) - minY) / bandHeight));
         while (band <= bandLast) {
             bands[band].push(xi, yi, xj, yj);
             band += 1;
         }
-        j = i;
+        ixPrev = ix;
     }
     return {minY, maxY, bandHeight, bands};
 }
@@ -553,12 +554,12 @@ function segmentIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
     if (denom === 0) {
         return null;
     }
-    const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / denom;
-    const u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / denom;
-    if (t < 0 || t > 1 || u < 0 || u > 1) {
+    const fraction1 = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / denom;
+    const fraction2 = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / denom;
+    if (fraction1 < 0 || fraction1 > 1 || fraction2 < 0 || fraction2 > 1) {
         return null;
     }
-    return t;
+    return fraction1;
 }
 
 
@@ -670,7 +671,7 @@ function optionAlignment(topo, option) {
     for (const point of option.alignment) {
         const {x, y} = point;
         if (prev !== null) {
-            stationValue = stationValue + Math.sqrt((x - prev.x) ** 2 + (y - prev.y) ** 2);
+            stationValue += Math.sqrt((x - prev.x) ** 2 + (y - prev.y) ** 2);
         }
         let z = point.z ?? null;
         if (z === null || existingAt(existingRoads, stationValue)) {
@@ -755,10 +756,10 @@ function optionSamples(plan, topo, option, alignment) {
         const p1 = alignment[ixSegment];
         const p2 = alignment[ixSegment + 1];
         const segmentLength = p2.station - p1.station;
-        const t = segmentLength > 0 ? Math.max(0, Math.min(1, (stationValue - p1.station) / segmentLength)) : 0;
-        const x = p1.x + (p2.x - p1.x) * t;
-        const y = p1.y + (p2.y - p1.y) * t;
-        const z = p1.z + (p2.z - p1.z) * t;
+        const fraction = segmentLength > 0 ? Math.max(0, Math.min(1, (stationValue - p1.station) / segmentLength)) : 0;
+        const x = p1.x + (p2.x - p1.x) * fraction;
+        const y = p1.y + (p2.y - p1.y) * fraction;
+        const z = p1.z + (p2.z - p1.z) * fraction;
         const dx = segmentLength > 0 ? (p2.x - p1.x) / segmentLength : 1;
         const dy = segmentLength > 0 ? (p2.y - p1.y) / segmentLength : 0;
 
@@ -937,7 +938,7 @@ export function analyzeOption(plan, ixOption, topo) {
 
     // Start and end points
     const tolerance = Math.max(width, topo.spacing);
-    const first = alignment[0];
+    const [first] = alignment;
     const last = alignment[alignment.length - 1];
     for (const [name, planPoint, alignPoint] of [['start', plan.start, first], ['end', plan.end, last]]) {
         const distance = Math.sqrt((planPoint.x - alignPoint.x) ** 2 + (planPoint.y - alignPoint.y) ** 2);
@@ -1000,9 +1001,11 @@ export function analyzeOption(plan, ixOption, topo) {
                     for (let ixStream = 1; ixStream < streamCount; ixStream++) {
                         const streamPrev = streamPoints[ixStream - 1];
                         const streamPoint = streamPoints[ixStream];
-                        const t = segmentIntersect(prev.x, prev.y, point.x, point.y, streamPrev.x, streamPrev.y, streamPoint.x, streamPoint.y);
-                        if (t !== null) {
-                            const stationValue = prev.station + t * (point.station - prev.station);
+                        const crossing = segmentIntersect(
+                            prev.x, prev.y, point.x, point.y, streamPrev.x, streamPrev.y, streamPoint.x, streamPoint.y
+                        );
+                        if (crossing !== null) {
+                            const stationValue = prev.station + crossing * (point.station - prev.station);
                             let crossed = structureAt(structures, 'bridge', stationValue, null) !== null ||
                                 existingAt(existingRoads, stationValue);
                             for (const structure of structures) {
@@ -1039,14 +1042,14 @@ export function analyzeOption(plan, ixOption, topo) {
         const intervalCut = (prev.cut + sample.cut) * 0.5 * ds;
         const intervalRock = ((prev.rock ? prev.cut : 0) + (sample.rock ? sample.cut : 0)) * 0.5 * ds;
         const intervalFill = (prev.fill + sample.fill) * 0.5 * ds;
-        cutRock = cutRock + intervalRock;
+        cutRock += intervalRock;
         cutCommon = cutCommon + intervalCut - intervalRock;
-        fillVolume = fillVolume + intervalFill;
+        fillVolume += intervalFill;
         const massPrev = mass;
         mass = mass + (intervalCut - intervalRock) * shrink + intervalRock * swell - intervalFill;
         // Surplus or deficit earth isn't hauled along an existing road
         if (!(prev.existing && sample.existing)) {
-            haul = haul + Math.abs(massPrev + mass) * 0.5 * ds;
+            haul += Math.abs(massPrev + mass) * 0.5 * ds;
         }
 
         // Areas
@@ -1054,13 +1057,13 @@ export function analyzeOption(plan, ixOption, topo) {
             const sidePrev = prev[side];
             const sideCur = sample[side];
             const slopeWidth = (sidePrev.offset + sideCur.offset) * 0.5;
-            slopeArea = slopeArea + slopeWidth * ds;
-            wallArea = wallArea + (sidePrev.wall + sideCur.wall) * 0.5 * ds;
+            slopeArea += slopeWidth * ds;
+            wallArea += (sidePrev.wall + sideCur.wall) * 0.5 * ds;
         }
         if (prev.existing && sample.existing) {
-            existingLength = existingLength + ds;
+            existingLength += ds;
         } else if (!(prev.bridge && sample.bridge)) {
-            surfaceLength = surfaceLength + ds;
+            surfaceLength += ds;
         }
     }
 
@@ -1081,7 +1084,7 @@ export function analyzeOption(plan, ixOption, topo) {
             bridgeLength = bridgeLength + structure.endStation - stationValue;
         } else if (type === 'turnout') {
             const turnoutSides = (structure.side ?? 'right') === 'both' ? 2 : 1;
-            turnoutArea = turnoutArea + (structure.endStation - stationValue) * turnoutWidth * turnoutSides;
+            turnoutArea += (structure.endStation - stationValue) * turnoutWidth * turnoutSides;
         } else if (type === 'culvert') {
             // The culvert length spans the road and its fill slopes
             const sample = sampleAt(samples, stationValue);
@@ -1089,12 +1092,12 @@ export function analyzeOption(plan, ixOption, topo) {
             for (const side of ['left', 'right']) {
                 const sideSection2 = sample[side];
                 if (sideSection2.kind === 'fill') {
-                    pipeLength = pipeLength + sideSection2.offset;
+                    pipeLength += sideSection2.offset;
                 }
             }
             const diameter = culvertDiameter(plan.units, structure);
-            culvertCount = culvertCount + 1;
-            culvertLength = culvertLength + pipeLength;
+            culvertCount += 1;
+            culvertLength += pipeLength;
             culvertCost = culvertCost + pipeLength * scale * diameter * scale * rates.culvert + rates.culvertEnds;
         }
     }
@@ -1129,7 +1132,7 @@ export function analyzeOption(plan, ixOption, topo) {
     ];
     let subtotal = 0;
     for (const cost of costs) {
-        subtotal = subtotal + cost.cost;
+        subtotal += cost.cost;
     }
     const mobilization = subtotal * rates.mobilization;
     costs.push(costItem('Mobilization', null, null, mobilization));

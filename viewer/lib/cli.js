@@ -1,7 +1,7 @@
 // cli.js - the Roadie command line - a road plan model's analysis and cost, and the model's documentation, as Markdown
 // text (see bin/roadie.js)
 
-import {analyzeOption, planCriteria, planTopo, elevation as planElevation, roadieTypes, sampleAt, validatePlan} from './model.js';
+import {analyzeOption, planCriteria, elevation as planElevation, planTopo, roadieTypes, sampleAt, validatePlan} from './model.js';
 import {costTable, structuresTable} from './tables.js';
 import {displayQuantity, fixed, fixedTrim, station as formatStation, number, unitLabel} from './format.js';
 import {markdownTable} from './markdown.js';

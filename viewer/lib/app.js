@@ -1,15 +1,15 @@
 // app.js - the Roadie viewer web application
 
+import {AdaptiveSmoothing, reportBudget} from './smoothing.js';
+import {Explorer, exploreStyle} from './explore.js';
 import {argsLink, argsParse, argsURL, parseHash} from './args.js';
 import {buildReport, planImageURL} from './report.js';
 import {escapeHtml, round} from './format.js';
-import {Explorer, exploreStyle} from './explore.js';
 import {hitTitle, opCell, paintOps} from './canvas.js';
-import {AdaptiveSmoothing, reportBudget} from './smoothing.js';
-import {smoothLimitsCanvas} from './view3d.js';
 import {PlanData} from './planData.js';
 import {buildDoc} from './doc.js';
 import {planPad} from './planView.js';
+import {smoothLimitsCanvas} from './view3d.js';
 import {validatePlan} from './model.js';
 
 
@@ -69,7 +69,9 @@ function showCanvasTitle(canvas, drawing, event) {
     if (drawing !== null) {
         const rect = canvas.getBoundingClientRect();
         const scale = drawing.width / rect.width;
-        const title = hitTitle(drawing.ops ?? drawing.elements, (event.clientX - rect.left - 1) * scale, (event.clientY - rect.top - 1) * scale);
+        const title = hitTitle(
+            drawing.ops ?? drawing.elements, (event.clientX - rect.left - 1) * scale, (event.clientY - rect.top - 1) * scale
+        );
         if ((canvas.title || null) !== title) {
             canvas.title = title ?? '';
         }
@@ -204,7 +206,8 @@ export class RoadieApp {
         let planName = null;
         for (const file of files) {
             this.localFiles.set(file.name, file);
-            await dbRequest(db, 'readwrite', (store) => store.put({'name': file.name, 'type': file.type, 'blob': file, 'time': Date.now()}));
+            const record = {'name': file.name, 'type': file.type, 'blob': file, 'time': Date.now()};
+            await dbRequest(db, 'readwrite', (store) => store.put(record));
             if (planName === null && file.name.toLowerCase().endsWith('.json')) {
                 planName = file.name;
             }
@@ -241,7 +244,7 @@ export class RoadieApp {
     // The local files kept in IndexedDB - [{name, time}]
     async localFileList() {
         const records = await dbRequest(await this.db(), 'readonly', (store) => store.getAll());
-        return (records ?? []).map(({name, time}) => ({name, time})).sort((a, b) => b.time - a.time);
+        return (records ?? []).map(({name, time}) => ({name, time})).sort((file1, file2) => file2.time - file1.time);
     }
 
 
@@ -263,7 +266,7 @@ export class RoadieApp {
 
     async loadPlanHelper(file) {
         const isLocal = file.startsWith(localPrefix);
-        let text = null;
+        let text;
         try {
             if (isLocal) {
                 const blob = await this.localFile(file.slice(localPrefix.length));
@@ -275,7 +278,7 @@ export class RoadieApp {
         } catch {
             text = null;
         }
-        let planValue = null;
+        let planValue;
         try {
             planValue = text !== null ? JSON.parse(text) : null;
         } catch {
@@ -338,8 +341,11 @@ export class RoadieApp {
         }
         if (typeof data === 'string') {
             const [message, error] = data.split('\n\n');
-            this.render('Roadie', `<h1>Roadie</h1><p>${markdownStrong(message)}</p>${error !== undefined ? `<p>${escapeHtml(error)}</p>` : ''}` +
-                `<p><a href="#var=">Open another road plan</a></p>`);
+            const errorHtml = error !== undefined ? `<p>${escapeHtml(error)}</p>` : '';
+            this.render(
+                'Roadie',
+                `<h1>Roadie</h1><p>${markdownStrong(message)}</p>${errorHtml}<p><a href="#var=">Open another road plan</a></p>`
+            );
             return;
         }
 
@@ -423,9 +429,8 @@ export class RoadieApp {
             const recentPlans = recent.filter(({name}) => name.toLowerCase().endsWith('.json'));
             const element = this.document.getElementById('roadie-recent');
             if (routeCount === this.routeCount && element !== null && recentPlans.length > 0) {
-                element.innerHTML = '<h2 id="recent-plans">Recent Plans</h2><ul>' +
-                    recentPlans.map(({name}) => `<li><p>${argsLink(globals, name, {'file': `${localPrefix}${name}`})}</p></li>`).join('') +
-                    '</ul>';
+                const items = recentPlans.map(({name}) => `<li><p>${argsLink(globals, name, {'file': `${localPrefix}${name}`})}</p></li>`);
+                element.innerHTML = `<h2 id="recent-plans">Recent Plans</h2><ul>${items.join('')}</ul>`;
             }
         });
     }

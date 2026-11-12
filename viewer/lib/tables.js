@@ -3,7 +3,7 @@
 // A table is an object with "fields", an array of [name, align], and "rows", arrays of cells - a cell is its text, or
 // an object with a "strong" text member.
 
-import {displayQuantity, fixed, number, round, station as formatStation, unitLabel} from './format.js';
+import {displayQuantity, fixed, station as formatStation, number, round, unitLabel} from './format.js';
 import {culvertDiameter} from './model.js';
 
 

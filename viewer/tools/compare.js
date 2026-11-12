@@ -3,6 +3,7 @@
 //
 // usage: node tools/compare.js <reference.html> <new.html> [--max <n>]
 
+import process from 'node:process';
 import {readFileSync} from 'node:fs';
 
 
@@ -69,7 +70,8 @@ function main(argv) {
     for (let ix = 0; ix < count && diffs < maxDiffs; ix++) {
         if (refTokens[ix] !== newTokens[ix]) {
             diffs += 1;
-            process.stdout.write(`token ${ix}:\n  ref: ${(refTokens[ix] ?? '<end>').slice(0, 400)}\n  new: ${(newTokens[ix] ?? '<end>').slice(0, 400)}\n`);
+            process.stdout.write(`token ${ix}:\n  ref: ${(refTokens[ix] ?? '<end>').slice(0, 400)}\n` +
+                `  new: ${(newTokens[ix] ?? '<end>').slice(0, 400)}\n`);
         }
     }
     process.stdout.write(`${refTokens.length} reference tokens, ${newTokens.length} new tokens - ` +

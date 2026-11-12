@@ -26,12 +26,12 @@ export const minRoadPx = 4;
 
 
 // Format a color array as a CSS rgb() color, with an optional brightness factor
-export function rgb(color, brightness = null) {
-    const factor = brightness !== null ? brightness : 1;
-    return 'rgb(' +
-        Math.floor(Math.max(0, Math.min(255, color[0] * factor)) + 0.5) + ',' +
-        Math.floor(Math.max(0, Math.min(255, color[1] * factor)) + 0.5) + ',' +
-        Math.floor(Math.max(0, Math.min(255, color[2] * factor)) + 0.5) + ')';
+export function rgb(color, shade = null) {
+    const factor = shade !== null ? shade : 1;
+    const red = Math.floor(Math.max(0, Math.min(255, color[0] * factor)) + 0.5);
+    const green = Math.floor(Math.max(0, Math.min(255, color[1] * factor)) + 0.5);
+    const blue = Math.floor(Math.max(0, Math.min(255, color[2] * factor)) + 0.5);
+    return `rgb(${red},${green},${blue})`;
 }
 
 
@@ -50,17 +50,17 @@ const light2 = 0.7071;
 // Compute a terrain cell's fill color - the terrain color for a normalized elevation (0 to 1), blended between the low,
 // middle, and high colors, shaded by the cell's surface normal (nx, ny, 1)
 export function terrainFill(fraction, nx, ny) {
-    let t;
-    let a;
-    let b;
+    let blend;
+    let colorLow;
+    let colorHigh;
     if (fraction < 0.5) {
-        t = Math.max(0, fraction) * 2;
-        a = terrainLow;
-        b = terrainMid;
+        blend = Math.max(0, fraction) * 2;
+        colorLow = terrainLow;
+        colorHigh = terrainMid;
     } else {
-        t = Math.min(1, fraction) * 2 - 1;
-        a = terrainMid;
-        b = terrainHigh;
+        blend = Math.min(1, fraction) * 2 - 1;
+        colorLow = terrainMid;
+        colorHigh = terrainHigh;
     }
     const length = Math.sqrt(nx * nx + ny * ny + 1);
     let dot = (nx * light0 + ny * light1 + light2) / length;
@@ -68,12 +68,9 @@ export function terrainFill(fraction, nx, ny) {
         dot = Math.abs(dot);
     }
     const factor = 0.5 + 0.6 * Math.max(0, dot);
-    const a0 = a[0];
-    const a1 = a[1];
-    const a2 = a[2];
-    const red = Math.floor(Math.max(0, Math.min(255, (a0 + (b[0] - a0) * t) * factor)) + 0.5);
-    const green = Math.floor(Math.max(0, Math.min(255, (a1 + (b[1] - a1) * t) * factor)) + 0.5);
-    const blue = Math.floor(Math.max(0, Math.min(255, (a2 + (b[2] - a2) * t) * factor)) + 0.5);
+    const red = Math.floor(Math.max(0, Math.min(255, (colorLow[0] + (colorHigh[0] - colorLow[0]) * blend) * factor)) + 0.5);
+    const green = Math.floor(Math.max(0, Math.min(255, (colorLow[1] + (colorHigh[1] - colorLow[1]) * blend) * factor)) + 0.5);
+    const blue = Math.floor(Math.max(0, Math.min(255, (colorLow[2] + (colorHigh[2] - colorLow[2]) * blend) * factor)) + 0.5);
 
     // The terrain colors repeat - a few thousand colors for tens of thousands of cells - so their strings are cached, by
     // red and green, then blue
@@ -110,13 +107,13 @@ function brightness(nx, ny, nz) {
 
 
 // Compute the brightness of a quadrilateral of world points ([x, y, z] arrays, z exaggerated)
-export function quadBrightness(a, b, c, d) {
-    const ux = c[0] - a[0];
-    const uy = c[1] - a[1];
-    const uz = c[2] - a[2];
-    const vx = d[0] - b[0];
-    const vy = d[1] - b[1];
-    const vz = d[2] - b[2];
+export function quadBrightness(point1, point2, point3, point4) {
+    const ux = point3[0] - point1[0];
+    const uy = point3[1] - point1[1];
+    const uz = point3[2] - point1[2];
+    const vx = point4[0] - point2[0];
+    const vy = point4[1] - point2[1];
+    const vz = point4[2] - point2[2];
     return brightness(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
 }
 
@@ -169,7 +166,7 @@ export function cellContours(zNW, zNE, zSE, zSW, level, out) {
 export function svgPoints(coords) {
     let points = '';
     for (let ix = 0; ix < coords.length; ix += 2) {
-        points += (ix === 0 ? '' : ' ') + px(coords[ix]) + ',' + px(coords[ix + 1]);
+        points += `${(ix === 0 ? '' : ' ') + px(coords[ix])},${px(coords[ix + 1])}`;
     }
     return points;
 }

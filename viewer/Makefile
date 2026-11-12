@@ -16,6 +16,10 @@ $(eval $(call WGET, https://craigahobbs.github.io/javascript-build/eslint.config
 GHPAGES_SRC :=
 
 
+# Lint the command line and the tools, too. The coordinate names "x", "y", and "z" are allowed - they're the model's.
+ESLINT_ARGS := --rule '{"id-length": ["error", {"exceptions": ["x", "y", "z"]}]}' bin/ lib/ test/ tools/
+
+
 # Include javascript-build
 USE_JSDOM := 1
 include Makefile.base

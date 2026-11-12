@@ -8,12 +8,21 @@
 
 import {mkdtempSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
+import process from 'node:process';
 import {spawn} from 'node:child_process';
 import {tmpdir} from 'node:os';
 
 
 const keyCodes = {'ArrowLeft': 37, 'ArrowUp': 38, 'ArrowRight': 39, 'ArrowDown': 40, 'KeyQ': 81, 'KeyG': 71};
 const defaultChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+
+// Wait for a number of milliseconds
+function sleep(milliseconds) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, milliseconds);
+    });
+}
 
 
 async function connect(port) {
@@ -28,7 +37,7 @@ async function connect(port) {
             });
             return socket;
         } catch {
-            await new Promise((resolve) => setTimeout(resolve, 100));
+            await sleep(100);
         }
     }
     throw new Error('Could not connect to Chrome');
@@ -58,7 +67,9 @@ function client(socket) {
         pending.set(id, resolve);
         socket.send(JSON.stringify({id, method, params}));
     });
-    const waitLoad = () => new Promise((resolve) => loadWaiters.push(resolve));
+    const waitLoad = () => new Promise((resolve) => {
+        loadWaiters.push(resolve);
+    });
     return [send, messages, waitLoad];
 }
 
@@ -92,7 +103,7 @@ async function main(argv) {
         const times = [];
         for (let ixRun = 0; ixRun <= runs; ixRun++) {
             await send('Page.navigate', {'url': 'about:blank'});
-            await new Promise((resolve) => setTimeout(resolve, 200));
+            await sleep(200);
             if (process.env.BENCH_DEBUG) { process.stderr.write(`run ${ixRun}\n`); }
             messages.length = 0;
             const loaded = waitLoad();
@@ -116,8 +127,8 @@ async function main(argv) {
                 if (response.result?.result?.type === 'number') {
                     result = response.result.result.value;
                 } else {
-                    if (process.env.BENCH_DEBUG) { process.stderr.write(JSON.stringify(response).slice(0, 300) + '\n'); }
-                    await new Promise((resolve) => setTimeout(resolve, 50));
+                    if (process.env.BENCH_DEBUG) { process.stderr.write(`${JSON.stringify(response).slice(0, 300)}\n`); }
+                    await sleep(50);
                 }
             }
             // Time a key press?
@@ -151,14 +162,17 @@ async function main(argv) {
                 times.push(result);
             }
         }
-        times.sort((a, b) => a - b);
-        process.stdout.write(`median ${times[Math.floor(times.length / 2)].toFixed(0)} ms (runs: ${times.map((time) => time.toFixed(0)).join(', ')})\n`);
+        times.sort((time1, time2) => time1 - time2);
+        const median = times[Math.floor(times.length / 2)];
+        process.stdout.write(`median ${median.toFixed(0)} ms (runs: ${times.map((time) => time.toFixed(0)).join(', ')})\n`);
         if (argv.includes('--console')) {
             process.stdout.write(`${messages.join('\n')}\n`);
         }
         socket.close();
     } finally {
-        const exited = new Promise((resolve) => proc.once('exit', resolve));
+        const exited = new Promise((resolve) => {
+            proc.once('exit', resolve);
+        });
         proc.kill();
         await exited;
         rmSync(userDir, {'recursive': true, 'force': true, 'maxRetries': 10});

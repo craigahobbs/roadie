@@ -13,7 +13,9 @@ export function fixturePlan(options = null) {
         for (let col = 0; col < nCols; col++) {
             const x = col * spacing;
             // A slope rising to the north, a ridge to the east, and a stream valley through the middle
-            values.push(Math.round((500 + 0.12 * y + 20 * Math.exp(-(((x - 300) / 60) ** 2)) - 8 * Math.exp(-(((x - 200) / 25) ** 2))) * 10) / 10);
+            const ridge = 20 * Math.exp(-(((x - 300) / 60) ** 2));
+            const valley = 8 * Math.exp(-(((x - 200) / 25) ** 2));
+            values.push(Math.round((500 + 0.12 * y + ridge - valley) * 10) / 10);
         }
         elevations.push(values);
     }
@@ -27,7 +29,11 @@ export function fixturePlan(options = null) {
             'features': [
                 {'type': 'stream', 'name': 'Test Creek', 'points': [{'x': 200, 'y': 0}, {'x': 200, 'y': 300}]},
                 {'type': 'rock', 'points': [{'x': 260, 'y': 100}, {'x': 320, 'y': 100}, {'x': 320, 'y': 160}, {'x': 260, 'y': 160}]},
-                {'type': 'exclusion', 'name': 'Barn', 'points': [{'x': 40, 'y': 240}, {'x': 80, 'y': 240}, {'x': 80, 'y': 280}, {'x': 40, 'y': 280}]}
+                {
+                    'type': 'exclusion',
+                    'name': 'Barn',
+                    'points': [{'x': 40, 'y': 240}, {'x': 80, 'y': 240}, {'x': 80, 'y': 280}, {'x': 40, 'y': 280}]
+                }
             ]
         },
         'start': {'x': 20, 'y': 30, 'label': 'Road'},

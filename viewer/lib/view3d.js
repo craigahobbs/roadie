@@ -5,7 +5,7 @@ import {
     svgOpen, svgPolygon, svgPolyline, svgText, terrainFill
 } from './draw.js';
 import {elevation, gradient, outsideBox, sampleAt, unitLength} from './model.js';
-import {fixed, px, round, station as formatStation} from './format.js';
+import {fixed, station as formatStation, px, round} from './format.js';
 import {opCircle, opPolygon, opPolyline, opTerrainCell, opText} from './canvas.js';
 
 
@@ -200,10 +200,10 @@ function viewUpRange(view, topo) {
 // Find the point ([x, y]) at an elevation under a view pixel - the inverse of project
 function unprojectZ(view, pxValue, pyValue, z) {
     const {cosAz, sinAz, scale} = view;
-    const u = (pxValue - view.width * 0.5) / scale;
+    const across = (pxValue - view.width * 0.5) / scale;
     const up = (view.cy - pyValue) / scale;
-    const v = (up - (z - view.zc) * view.exaggeration * view.cosTilt) / view.sinTilt;
-    return [view.xc + u * cosAz + v * sinAz, view.yc - u * sinAz + v * cosAz];
+    const away = (up - (z - view.zc) * view.exaggeration * view.cosTilt) / view.sinTilt;
+    return [view.xc + across * cosAz + away * sinAz, view.yc - across * sinAz + away * cosAz];
 }
 
 
@@ -229,12 +229,12 @@ export function project(view, x, y, z) {
     const y0 = y - view.yc;
     const z0 = (z - view.zc) * view.exaggeration;
     const {cosAz, sinAz} = view;
-    const u = x0 * cosAz - y0 * sinAz;
-    const v = x0 * sinAz + y0 * cosAz;
-    const up = v * view.sinTilt + z0 * view.cosTilt;
-    const depth = v * view.cosTilt - z0 * view.sinTilt;
+    const across = x0 * cosAz - y0 * sinAz;
+    const away = x0 * sinAz + y0 * cosAz;
+    const up = away * view.sinTilt + z0 * view.cosTilt;
+    const depth = away * view.cosTilt - z0 * view.sinTilt;
     const {scale} = view;
-    return [view.width * 0.5 + u * scale, view.cy - up * scale, depth];
+    return [view.width * 0.5 + across * scale, view.cy - up * scale, depth];
 }
 
 
@@ -255,9 +255,9 @@ function projectPoints(view, points) {
         const x0 = point[0] - xc;
         const y0 = point[1] - yc;
         const z0 = (point[2] - zc) * exaggeration;
-        const v = x0 * sinAz + y0 * cosAz;
-        coords.push(halfWidth + (x0 * cosAz - y0 * sinAz) * scale, cy - (v * sinTilt + z0 * cosTilt) * scale);
-        depth = depth + (v * cosTilt - z0 * sinTilt);
+        const away = x0 * sinAz + y0 * cosAz;
+        coords.push(halfWidth + (x0 * cosAz - y0 * sinAz) * scale, cy - (away * sinTilt + z0 * cosTilt) * scale);
+        depth += (away * cosTilt - z0 * sinTilt);
     }
     return [coords, depth / points.length];
 }
@@ -294,7 +294,7 @@ class DepthItems {
         if (count < 2) {
             return elements.flat();
         }
-        let minDepth = depths[0];
+        let [minDepth] = depths;
         let maxDepth = minDepth;
         for (let ix = 0; ix < count; ix++) {
             minDepth = Math.min(minDepth, depths[ix]);
@@ -360,15 +360,15 @@ function projectGridRow(view, rows, row, cols, xOrigin, yTop, spacing, points, p
         const col = cols[ixCol];
         const x0 = xOrigin + col * spacing - xc;
         const z0 = (rowZ[col] - zc) * exaggeration;
-        const v = x0 * sinAz + y0CosAz;
+        const away = x0 * sinAz + y0CosAz;
         const pxValue = halfWidth + (x0 * cosAz - y0SinAz) * scale;
-        const pyValue = cy - (v * sinTilt + z0 * cosTilt) * scale;
+        const pyValue = cy - (away * sinTilt + z0 * cosTilt) * scale;
         if (points !== null) {
-            points[ixCol] = px(pxValue) + ',' + px(pyValue);
+            points[ixCol] = `${px(pxValue)},${px(pyValue)}`;
         }
         pxs[ixCol] = pxValue;
         pys[ixCol] = pyValue;
-        depths[ixCol] = v * cosTilt - z0 * sinTilt;
+        depths[ixCol] = away * cosTilt - z0 * sinTilt;
         codes[ixCol] = (pxValue < 0 ? 1 : (pxValue > width ? 2 : 0)) + (pyValue < 0 ? 4 : (pyValue > height ? 8 : 0));
     }
 }
@@ -376,9 +376,8 @@ function projectGridRow(view, rows, row, cols, xOrigin, yTop, spacing, points, p
 
 // Determine if any of a flat array of pixel coordinates' bounding box is within a view
 function coordsVisible(view, coords) {
-    let xMin = coords[0];
+    let [xMin, yMin] = coords;
     let xMax = xMin;
-    let yMin = coords[1];
     let yMax = yMin;
     for (let ix = 2; ix < coords.length; ix += 2) {
         xMin = Math.min(xMin, coords[ix]);
@@ -391,23 +390,23 @@ function coordsVisible(view, coords) {
 
 
 // Add a 3D shaded quadrilateral item ([depth, element]) from world points, unless it's outside the view
-function pushQuad(items, view, a, b, c, d, color, bias, title, canvas) {
-    const [coords, depth] = projectPoints(view, [a, b, c, d]);
+function pushQuad(items, view, point1, point2, point3, point4, color, bias, title, canvas) {
+    const [coords, depth] = projectPoints(view, [point1, point2, point3, point4]);
     if (!coordsVisible(view, coords)) {
         return;
     }
     const {exaggeration} = view;
     const fill = rgb(color, quadBrightness(
-        [a[0], a[1], a[2] * exaggeration], [b[0], b[1], b[2] * exaggeration],
-        [c[0], c[1], c[2] * exaggeration], [d[0], d[1], d[2] * exaggeration]
+        [point1[0], point1[1], point1[2] * exaggeration], [point2[0], point2[1], point2[2] * exaggeration],
+        [point3[0], point3[1], point3[2] * exaggeration], [point4[0], point4[1], point4[2] * exaggeration]
     ));
     items.push(depth - bias, canvas ? opPolygon(coords, fill, fill, 0.5, title) : svgPolygon(coords, fill, fill, 0.5, title));
 }
 
 
 // Interpolate a Catmull-Rom spline through four values at a fraction (0 to 1) between the middle two
-function cubic(z0, z1, z2, z3, t) {
-    return z1 + 0.5 * t * (z2 - z0 + t * (2 * z0 - 5 * z1 + 4 * z2 - z3 + t * (3 * (z1 - z2) + z3 - z0)));
+function cubic(z0, z1, z2, z3, fraction) {
+    return z1 + 0.5 * fraction * (z2 - z0 + fraction * (2 * z0 - 5 * z1 + 4 * z2 - z3 + fraction * (3 * (z1 - z2) + z3 - z0)));
 }
 
 
@@ -427,9 +426,9 @@ function smoothRows(rows, rowFirst, rowLast, colFirst, colLast, count) {
         const values = new Float64Array(fineCols + 1);
         for (let fineCol = 0; fineCol <= fineCols; fineCol++) {
             const col = colFirst + Math.floor(fineCol / count);
-            const t = (fineCol % count) / count;
-            values[fineCol] = t === 0 ? rowZ[col] : cubic(
-                rowZ[Math.max(0, col - 1)], rowZ[col], rowZ[col + 1], rowZ[Math.min(nCols - 1, col + 2)], t
+            const fraction = (fineCol % count) / count;
+            values[fineCol] = fraction === 0 ? rowZ[col] : cubic(
+                rowZ[Math.max(0, col - 1)], rowZ[col], rowZ[col + 1], rowZ[Math.min(nCols - 1, col + 2)], fraction
             );
         }
         colRows.push(values);
@@ -439,7 +438,7 @@ function smoothRows(rows, rowFirst, rowLast, colFirst, colLast, count) {
     const fineRows = [];
     for (let fineRow = 0; fineRow <= (rowLast - rowFirst) * count; fineRow++) {
         const row = rowFirst + Math.floor(fineRow / count);
-        const t = (fineRow % count) / count;
+        const fraction = (fineRow % count) / count;
         const ixRow = row - rowFirst + 1;
         const rowTop = rows[row];
         const rowBottom = rows[Math.min(nRows - 1, row + 1)];
@@ -450,10 +449,10 @@ function smoothRows(rows, rowFirst, rowLast, colFirst, colLast, count) {
         const values = new Float64Array(fineCols + 1);
         for (let fineCol = 0; fineCol <= fineCols; fineCol++) {
             let z;
-            if (t === 0) {
+            if (fraction === 0) {
                 z = colRow[fineCol];
             } else {
-                z = cubic(colRowNorth[fineCol], colRow[fineCol], colRowSouth[fineCol], colRowSouth2[fineCol], t);
+                z = cubic(colRowNorth[fineCol], colRow[fineCol], colRowSouth[fineCol], colRowSouth2[fineCol], fraction);
             }
             const col = colFirst + Math.floor(fineCol / count);
             const col2 = Math.min(nCols - 1, col + 1);
@@ -679,7 +678,9 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
         const zRowNorth = drawRows[rowNorth];
         const zRowSouth = drawRows[rowSouth];
         const dySpan = (rowSouth - rowNorth) * drawSpacing;
-        projectGridRow(view, drawRows, row2, cols, xOrigin, yTop, drawSpacing, pointsBottom, pxsBottom, pysBottom, depthsBottom, codesBottom);
+        projectGridRow(
+            view, drawRows, row2, cols, xOrigin, yTop, drawSpacing, pointsBottom, pxsBottom, pysBottom, depthsBottom, codesBottom
+        );
         for (let ixCol = 0; ixCol <= ixColLast; ixCol++) {
             // Skip the cell if its corners' bounding box is outside the view - if all of its corners are outside the same
             // side of the view
@@ -740,7 +741,7 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
                                 (minorSegments ??= []).push(sx1, sy1, sx2, sy2);
                             }
                         } else {
-                            const segment = 'M' + px(sx1) + ' ' + px(sy1) + 'L' + px(sx2) + ' ' + px(sy2);
+                            const segment = `M${px(sx1)} ${px(sy1)}L${px(sx2)} ${px(sy2)}`;
                             if (isIndex) {
                                 indexPath += segment;
                             } else {
@@ -749,7 +750,7 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
                         }
                     }
                 }
-                level = level + interval;
+                level += interval;
             }
             if (canvas) {
                 const offset = cellCount * 8;
@@ -819,10 +820,8 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
                     pointB = projectGround(view, topo, xb, yb);
                     ixPointB = ixStep + 1;
                     if (pointA !== null && pointB !== null) {
-                        const pxa = pointA[0];
-                        const pya = pointA[1];
-                        const pxb = pointB[0];
-                        const pyb = pointB[1];
+                        const [pxa, pya] = pointA;
+                        const [pxb, pyb] = pointB;
                         if (Math.max(pxa, pxb) >= 0 && Math.min(pxa, pxb) <= width && Math.max(pya, pyb) >= 0 &&
                             Math.min(pya, pyb) <= viewHeight) {
                             items.push((pointA[2] + pointB[2]) / 2 - cellSize * 0.5, polyline([pxa, pya, pxb, pyb], stroke,
@@ -857,9 +856,9 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
 
             const bridge = prev.bridge && sample.bridge;
             const existing = prev.existing && sample.existing;
-            const title = formatStation(sample.station, units) + (existing ? ' (existing road)' : '') + ': grade ' +
-                fixed(sample.z, 1) + ', ground ' + fixed(sample.ground, 1) + ', ' +
-                (sample.ground >= sample.z ? 'cut ' : 'fill ') + fixed(Math.abs(sample.ground - sample.z), 1);
+            const title = `${formatStation(sample.station, units)}${existing ? ' (existing road)' : ''}: grade ${fixed(sample.z, 1)}, ` +
+                `ground ${fixed(sample.ground, 1)}, ${sample.ground >= sample.z ? 'cut' : 'fill'} ` +
+                `${fixed(Math.abs(sample.ground - sample.z), 1)}`;
 
             // Road surface (or bridge deck)
             pushQuad(items, view, prevPoints[1], points[1], points[2], prevPoints[2],
@@ -888,7 +887,9 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
                         [edgePrev[0], edgePrev[1], edgePrev[2] + sidePrev.drop], colors.wall, bias * 0.9, null, canvas);
                 } else if (kind !== 'none' || kindPrev !== 'none') {
                     const slopeKind = kind !== 'none' ? kind : kindPrev;
-                    pushQuad(items, view, edgePrev, prevPoints[ixDaylight], points[ixDaylight], edge, colors[slopeKind], bias * 0.9, null, canvas);
+                    pushQuad(
+                        items, view, edgePrev, prevPoints[ixDaylight], points[ixDaylight], edge, colors[slopeKind], bias * 0.9, null, canvas
+                    );
                 }
             }
         }
@@ -927,7 +928,7 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
     // Station labels, about a fifth of the view's width apart - depth-sorted with the terrain
     const {length} = analysis;
     const labelStep = niceStep(width / scale, 5);
-    for (let stationValue = labelStep; stationValue < length - labelStep * 0.25; stationValue = stationValue + labelStep) {
+    for (let stationValue = labelStep; stationValue < length - labelStep * 0.25; stationValue += labelStep) {
         const sample = sampleAt(samples, stationValue);
         const [pxValue, pyValue, depth] = project(view, sample.x, sample.y, sample.z);
         if (pxValue >= 0 && pxValue <= width && pyValue >= 0 && pyValue <= viewHeight) {
@@ -960,14 +961,15 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
         elements.push(compass(view, width - 36, 36));
     }
 
-    return {'width': width, 'height': viewHeight, 'label': `3D view of the ${option.name} road plan option`, elements, smooth, step, pointLimited};
+    const label = `3D view of the ${option.name} road plan option`;
+    return {width, 'height': viewHeight, label, elements, smooth, step, pointLimited};
 }
 
 
 // Create a 3D view SVG element markup
 export function view3D(plan, topo, rows, ixOption, analysis, view) {
     const parts = view3DParts(plan, topo, rows, ixOption, analysis, view);
-    return svgOpen(parts.width, parts.height, parts.label) + parts.elements.join('') + '</svg>';
+    return `${svgOpen(parts.width, parts.height, parts.label)}${parts.elements.join('')}</svg>`;
 }
 
 
@@ -999,8 +1001,7 @@ function compassOps(view, cx, cy) {
 function compass(view, cx, cy) {
     const [pointer, labelXValue, labelYValue] = compassGeometry(view, cx, cy);
     return `<circle cx="${cx}" cy="${cy}" r="22" fill="white" fill-opacity="0.8" stroke="#888"/>` +
-        svgPolygon(pointer, '#c0392b', '#c0392b', 1) +
-        svgText('N', labelXValue, labelYValue, 11, 'middle', '#333', true);
+        `${svgPolygon(pointer, '#c0392b', '#c0392b', 1)}${svgText('N', labelXValue, labelYValue, 11, 'middle', '#333', true)}`;
 }
 
 
@@ -1125,7 +1126,7 @@ function angleDifference(angle, otherAngle) {
 // hiding the fewest.
 function chooseViewpoint(topo, finishedTopo, samples, stationValue, endStation, tilts, baseAzimuth) {
     const segment = segmentSamples(samples, stationValue, endStation);
-    const first = segment[0];
+    const [first] = segment;
     const last = segment[segment.length - 1];
     let travelX = last.x - first.x;
     let travelY = last.y - first.y;
@@ -1145,8 +1146,8 @@ function chooseViewpoint(topo, finishedTopo, samples, stationValue, endStation, 
             const {x, y, z} = segment[ixSample];
             points.push([x, y, z]);
             const grad = gradient(topo, x, y);
-            uphillX = uphillX + grad[0];
-            uphillY = uphillY + grad[1];
+            uphillX += grad[0];
+            uphillY += grad[1];
         }
     }
 
@@ -1203,10 +1204,10 @@ function hiddenPoints(topo, points, azimuth, tilt, exaggeration) {
                 break;
             }
             if (ground > z + distance * rise + tolerance) {
-                hidden = hidden + 1;
+                hidden += 1;
                 break;
             }
-            distance = distance + spacing;
+            distance += spacing;
         }
     }
     return hidden;
@@ -1220,9 +1221,9 @@ function fitViewpoint(topo, points, viewpoint, width, maxHeight) {
     let sumY = 0;
     let sumZ = 0;
     for (const point of points) {
-        sumX = sumX + point[0];
-        sumY = sumY + point[1];
-        sumZ = sumZ + point[2];
+        sumX += point[0];
+        sumY += point[1];
+        sumZ += point[2];
     }
     const count = points.length;
     const viewArgs = {
@@ -1238,9 +1239,8 @@ function fitViewpoint(topo, points, viewpoint, width, maxHeight) {
     // The points' pixel extent in the unzoomed view
     const view = projection(topo, viewArgs, width, maxHeight);
     const [coords] = projectPoints(view, points);
-    let pxMin = coords[0];
+    let [pxMin, pyMin] = coords;
     let pxMax = pxMin;
-    let pyMin = coords[1];
     let pyMax = pyMin;
     for (let ix = 2; ix < coords.length; ix += 2) {
         pxMin = Math.min(pxMin, coords[ix]);

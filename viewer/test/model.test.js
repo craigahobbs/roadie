@@ -30,7 +30,10 @@ test('validatePlan', () => {
 
     const noEnd = fixturePlan();
     delete noEnd.options[0].structures[1].endStation;
-    assert.deepEqual(validatePlan(noEnd), {'error': 'Option "Direct" turnout at station 100 requires an endStation greater than its station'});
+    assert.deepEqual(
+        validatePlan(noEnd),
+        {'error': 'Option "Direct" turnout at station 100 requires an endStation greater than its station'}
+    );
 
     const shortRow = fixturePlan();
     shortRow.topography.elevations = [[1, 2]];

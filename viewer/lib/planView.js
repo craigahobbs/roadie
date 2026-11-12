@@ -4,7 +4,7 @@ import {
     cellContours, colors, contourInterval, labelX, minRoadPx, niceStep, rgb, roadColor, samplePoints, svgOpen, svgPolygon,
     svgPolyline, svgStyle, svgText
 } from './draw.js';
-import {fixedTrim, number, px, station as formatStation, unitLabel} from './format.js';
+import {fixedTrim, station as formatStation, number, px, unitLabel} from './format.js';
 import {planCriteria, sampleAt} from './model.js';
 import {unproject} from './view3d.js';
 
@@ -40,15 +40,15 @@ export function planView(plan, topo, analyses, ixOption, width, outlines) {
             const zSE = rowBottom[col + 1];
             const zSW = rowBottom[col];
             const zMax = Math.max(zNW, zNE, zSE, zSW);
-            for (let level = Math.ceil(Math.min(zNW, zNE, zSE, zSW) / interval) * interval; level <= zMax; level = level + interval) {
+            for (let level = Math.ceil(Math.min(zNW, zNE, zSE, zSW) / interval) * interval; level <= zMax; level += interval) {
                 const indexLevel = level / interval / 5;
                 const isIndex = Math.abs(indexLevel - Math.floor(indexLevel + 0.5)) < 1e-6;
                 const segmentCount = cellContours(zNW, zNE, zSE, zSW, level, segments);
                 for (let ixSegment = 0; ixSegment < segmentCount; ixSegment++) {
                     const ix = ixSegment * 4;
                     (isIndex ? indexPath : minorPath).push(
-                        'M' + px(pad + (col + segments[ix]) * spacing * scale) + ' ' + px(pad + (row + segments[ix + 1]) * spacing * scale) +
-                        'L' + px(pad + (col + segments[ix + 2]) * spacing * scale) + ' ' + px(pad + (row + segments[ix + 3]) * spacing * scale)
+                        `M${px(pad + (col + segments[ix]) * spacing * scale)} ${px(pad + (row + segments[ix + 1]) * spacing * scale)}` +
+                        `L${px(pad + (col + segments[ix + 2]) * spacing * scale)} ${px(pad + (row + segments[ix + 3]) * spacing * scale)}`
                     );
                 }
             }
@@ -67,8 +67,8 @@ export function planView(plan, topo, analyses, ixOption, width, outlines) {
             const pxValue = pad + point.x * scale;
             const pyValue = pad + (topoHeight - point.y) * scale;
             coords.push(pxValue, pyValue);
-            sumX = sumX + pxValue;
-            sumY = sumY + pyValue;
+            sumX += pxValue;
+            sumY += pyValue;
         }
         if (type === 'stream') {
             elements.push(svgPolyline(coords, '#2a6fdb', 2.5));
@@ -158,8 +158,7 @@ export function planView(plan, topo, analyses, ixOption, width, outlines) {
         if (structure.type === 'culvert') {
             const sample = sampleAt(samples, structure.station);
             const points = samplePoints(sample, halfWidth);
-            const pointLeft = points[0];
-            const pointRight = points[3];
+            const [pointLeft, , , pointRight] = points;
             elements.push(svgPolyline([
                 pad + pointLeft[0] * scale, pad + (topoHeight - pointLeft[1]) * scale,
                 pad + pointRight[0] * scale, pad + (topoHeight - pointRight[1]) * scale
@@ -170,7 +169,7 @@ export function planView(plan, topo, analyses, ixOption, width, outlines) {
     // Station ticks
     const {length} = analysis;
     const tickStep = niceStep(length, 8);
-    for (let stationValue = tickStep; stationValue < length; stationValue = stationValue + tickStep) {
+    for (let stationValue = tickStep; stationValue < length; stationValue += tickStep) {
         const sample = sampleAt(samples, stationValue);
         const pxValue = pad + sample.x * scale;
         const pyValue = pad + (topoHeight - sample.y) * scale;
@@ -220,8 +219,10 @@ export function planView(plan, topo, analyses, ixOption, width, outlines) {
             `text-anchor="middle" dominant-baseline="central" fill="white">${outlineNumber}</text>`);
     }
 
-    const svg = svgOpen(width, height, `Plan view of the ${option.name} road plan option`, `${svgStyle} cursor: crosshair;`,
-        ' class="roadie-plan"') + elements.join('') + '</svg>';
+    const svgElement = svgOpen(
+        width, height, `Plan view of the ${option.name} road plan option`, `${svgStyle} cursor: crosshair;`, ' class="roadie-plan"'
+    );
+    const svg = `${svgElement}${elements.join('')}</svg>`;
     return {svg, scale, height};
 }
 
@@ -257,13 +258,13 @@ export function profileView(plan, option, analysis, width, height) {
     const yScale = (bottom - top) / (maxZ - minZ);
 
     // Grid and axes
-    for (let z = minZ; z <= maxZ + 1e-9; z = z + zStep) {
+    for (let z = minZ; z <= maxZ + 1e-9; z += zStep) {
         const pyValue = bottom - (z - minZ) * yScale;
         elements.push(svgPolyline([left, pyValue, right, pyValue], '#dddddd', 1));
         elements.push(svgText(number(z, 0), left - 6, pyValue, 10, 'end', '#444', false));
     }
     const stationStep = niceStep(length, 10);
-    for (let stationValue = 0; stationValue <= length + 1e-9; stationValue = stationValue + stationStep) {
+    for (let stationValue = 0; stationValue <= length + 1e-9; stationValue += stationStep) {
         const pxValue = left + stationValue * xScale;
         elements.push(svgPolyline([pxValue, top, pxValue, bottom], '#dddddd', 1));
         elements.push(svgText(formatStation(stationValue, units), pxValue, bottom + 14, 10, 'middle', '#444', false));
@@ -279,7 +280,7 @@ export function profileView(plan, option, analysis, width, height) {
         const isBridge = sample.bridge;
         let ixEnd = ixRun + 1;
         while (ixEnd < samples.length - 1 && (samples[ixEnd].ground >= samples[ixEnd].z) === isCut && samples[ixEnd].bridge === isBridge) {
-            ixEnd = ixEnd + 1;
+            ixEnd += 1;
         }
         if (!isBridge) {
             const gradeCoords = [];
@@ -375,7 +376,7 @@ export function profileView(plan, option, analysis, width, height) {
         elements.push(svgText(legend, lx + 13, top + 8, 10, 'start', '#444', false));
     }
 
-    return svgOpen(width, height, `Profile of the ${option.name} road plan option`) + elements.join('') + '</svg>';
+    return `${svgOpen(width, height, `Profile of the ${option.name} road plan option`)}${elements.join('')}</svg>`;
 }
 
 

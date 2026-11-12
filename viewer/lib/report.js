@@ -1,13 +1,13 @@
 // report.js - the road plan report page
 
-import {argsLink} from './args.js';
 import {costTable, structuresTable} from './tables.js';
-import {displayQuantity, encodeUrl, escapeHtml, fixed, headerId, number, station as formatStation, unitLabel} from './format.js';
-import {sampleAt} from './model.js';
+import {displayQuantity, encodeUrl, escapeHtml, fixed, station as formatStation, headerId, number, unitLabel} from './format.js';
 import {planView, profileView} from './planView.js';
-import {view3DParts} from './view3d.js';
-import {markdownHtml} from './markdown.js';
 import {svgOpen, svgStyle} from './draw.js';
+import {argsLink} from './args.js';
+import {markdownHtml} from './markdown.js';
+import {sampleAt} from './model.js';
+import {view3DParts} from './view3d.js';
 
 
 // The cost score explanation
@@ -49,7 +49,7 @@ function table(fields, rows) {
 // render function, which takes the canvas terrain limits (smoothLimitsCanvas, with a point limit) and returns the
 // drawing (view3DParts). Otherwise, they're SVG drawings with the MarkdownUp viewer's terrain limits.
 export function buildReport(data, globals, args, width, canvasViews = false) {
-    const {plan, topo, file} = data;
+    const {plan, topo} = data;
     const {units, options} = plan;
     const ixOption = Math.max(0, Math.min(options.length - 1, args.option));
     const option = options[ixOption];
@@ -122,8 +122,8 @@ export function buildReport(data, globals, args, width, canvasViews = false) {
                 )
             });
         } else {
-            html.push(svgOpen(view.width, view.height, label) +
-                view3DParts(plan, topo, data.rows(ixOption), ixOption, analysis, view).elements.join('') + '</svg>');
+            const {elements} = view3DParts(plan, topo, data.rows(ixOption), ixOption, analysis, view);
+            html.push(`${svgOpen(view.width, view.height, label)}${elements.join('')}</svg>`);
         }
     }
 
@@ -183,12 +183,13 @@ function viewCaption(globals, units, reportView, ixView, viewCount) {
         caption = `<strong>View 1 of ${viewCount}: Overview</strong> - the whole site`;
     } else {
         caption = `<strong>View ${ixView + 1} of ${viewCount}</strong> - stations ${formatStation(reportView.station, units)} to ` +
-            formatStation(reportView.endStation, units);
+            `${formatStation(reportView.endStation, units)}`;
     }
     caption = `${caption}, looking ${direction} (${fixed(azimuth, 0)}°) from ${fixed(viewArgs.tilt, 0)}° above the horizon. ` +
         `The road runs ${reportView.leftToRight ? 'left to right' : 'right to left'} from its start to its end`;
     if (reportView.hidden > 0) {
-        caption = `${caption} - the terrain hides parts of the road${ixView === 0 && viewCount > 1 ? ', shown in the views that follow' : ''}`;
+        const following = ixView === 0 && viewCount > 1 ? ', shown in the views that follow' : '';
+        caption = `${caption} - the terrain hides parts of the road${following}`;
     }
     return `${caption}. ${argsLink(globals, 'Explore this view', {...viewArgs, 'explore': true})}`;
 }

@@ -1,6 +1,6 @@
+import {readFileSync, readdirSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
-import {readFileSync, readdirSync} from 'node:fs';
 import test from 'node:test';
 
 

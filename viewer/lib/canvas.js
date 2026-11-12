@@ -1,8 +1,8 @@
 // canvas.js - canvas drawing operations for the 3D explorer - the same drawing as the SVG 3D view, painted directly,
 // without building and parsing SVG markup and laying out its elements
 
-import {px} from './format.js';
 import {svgPolygon, svgPolyline, svgText} from './draw.js';
+import {px} from './format.js';
 
 
 // The drawing operation types
@@ -37,8 +37,8 @@ export function opText(text, x, y, size, anchor, fill, bold) {
 }
 
 
-export function opCircle(x, y, r, fill, stroke, strokeWidth = null, fillOpacity = null) {
-    return {'t': opCircleType, x, y, r, 'f': fill, 's': stroke, 'w': strokeWidth, 'o': fillOpacity};
+export function opCircle(x, y, radius, fill, stroke, strokeWidth = null, fillOpacity = null) {
+    return {'t': opCircleType, x, y, 'r': radius, 'f': fill, 's': stroke, 'w': strokeWidth, 'o': fillOpacity};
 }
 
 
@@ -125,12 +125,13 @@ export function paintOps(ctx, ops) {
     for (const op of ops) {
         const type = op.t;
         if (type === opCell) {
-            const {c, o} = op;
+            const coords = op.c;
+            const offset = op.o;
             ctx.beginPath();
-            ctx.moveTo(c[o], c[o + 1]);
-            ctx.lineTo(c[o + 2], c[o + 3]);
-            ctx.lineTo(c[o + 4], c[o + 5]);
-            ctx.lineTo(c[o + 6], c[o + 7]);
+            ctx.moveTo(coords[offset], coords[offset + 1]);
+            ctx.lineTo(coords[offset + 2], coords[offset + 3]);
+            ctx.lineTo(coords[offset + 4], coords[offset + 5]);
+            ctx.lineTo(coords[offset + 6], coords[offset + 7]);
             ctx.closePath();
             painter.fillStyle(op.f);
             ctx.fill();
@@ -204,7 +205,9 @@ function pointInCoords(x, y, coords, start = 0, end = coords.length) {
 export function hitTitle(ops, x, y) {
     for (let ixOp = ops.length - 1; ixOp >= 0; ixOp--) {
         const op = ops[ixOp];
-        if (op.t === opCell ? pointInCoords(x, y, op.c, op.o, op.o + 8) : (op.t === opPolygonType && op.f !== 'none' && pointInCoords(x, y, op.c))) {
+        const hit = op.t === opCell ? pointInCoords(x, y, op.c, op.o, op.o + 8) :
+            (op.t === opPolygonType && op.f !== 'none' && pointInCoords(x, y, op.c));
+        if (hit) {
             return op.title ?? null;
         }
     }
@@ -218,9 +221,10 @@ export function opsToSvg(ops) {
     for (const op of ops) {
         const type = op.t;
         if (type === opCell) {
-            const {c, o} = op;
-            svg += `<polygon points="${px(c[o])},${px(c[o + 1])} ${px(c[o + 2])},${px(c[o + 3])} ${px(c[o + 4])},${px(c[o + 5])} ` +
-                `${px(c[o + 6])},${px(c[o + 7])}" ` +
+            const coords = op.c;
+            const offset = op.o;
+            svg += `<polygon points="${px(coords[offset])},${px(coords[offset + 1])} ${px(coords[offset + 2])},${px(coords[offset + 3])} ` +
+                `${px(coords[offset + 4])},${px(coords[offset + 5])} ${px(coords[offset + 6])},${px(coords[offset + 7])}" ` +
                 `fill="${op.f}" stroke="${op.f}" stroke-width="0.6"/>`;
             for (const [segments, width] of [[op.m, 0.5], [op.i, 1.2]]) {
                 if (segments !== null) {
@@ -238,10 +242,12 @@ export function opsToSvg(ops) {
         } else if (type === opTextType) {
             svg += svgText(op.text, op.x, op.y, op.size, op.anchor, op.f, op.bold);
         } else if (type === opCircleType) {
-            svg += `<circle cx="${px(op.x)}" cy="${px(op.y)}" r="${op.r}" fill="${op.f}"${op.o !== null ? ` fill-opacity="${op.o}"` : ''} ` +
+            const opacity = op.o !== null ? ` fill-opacity="${op.o}"` : '';
+            svg += `<circle cx="${px(op.x)}" cy="${px(op.y)}" r="${op.r}" fill="${op.f}"${opacity} ` +
                 `stroke="${op.s}"${op.w !== null ? ` stroke-width="${op.w}"` : ''}/>`;
         } else {
-            svg += `<rect x="${op.x}" y="${op.y}" width="${op.width}" height="${op.height}" rx="${op.rx}" fill="${op.f}" fill-opacity="${op.o}"/>`;
+            svg += `<rect x="${op.x}" y="${op.y}" width="${op.width}" height="${op.height}" rx="${op.rx}" fill="${op.f}" ` +
+                `fill-opacity="${op.o}"/>`;
         }
     }
     return svg;

@@ -1,3 +1,5 @@
+import {planTopo, validatePlan} from '../lib/model.js';
+import {projection, smoothLimitsCanvas, visibleCells} from '../lib/view3d.js';
 import {Explorer} from '../lib/explore.js';
 import {PlanData} from '../lib/planData.js';
 import {argsParse} from '../lib/args.js';
@@ -6,10 +8,7 @@ import {buildDoc} from '../lib/doc.js';
 import {buildReport} from '../lib/report.js';
 import {fixturePlan} from './fixture.js';
 import {opsToSvg} from '../lib/canvas.js';
-import {planTopo} from '../lib/model.js';
-import {projection, smoothLimitsCanvas, visibleCells} from '../lib/view3d.js';
 import test from 'node:test';
-import {validatePlan} from '../lib/model.js';
 
 
 function fixtureData() {
@@ -25,19 +24,30 @@ test('buildReport', () => {
     const {html} = report;
     assert.ok(html.startsWith('<h1 id="fixture-plan">Fixture Plan</h1>\n<p>A synthetic plan for the <strong>tests</strong>.</p>'));
     assert.ok(html.includes('<a href="#var.vFile=&#039;plans%2Ffixture.json&#039;&amp;var.vOption=1">Bridge - East</a>'));
-    assert.ok(html.includes('<svg width="976" height="737" viewBox="0 0 976 737" role="img" aria-label="Plan view of the Direct road plan option"'));
+    assert.ok(html.includes(
+        '<svg width="976" height="737" viewBox="0 0 976 737" role="img" aria-label="Plan view of the Direct road plan option"'
+    ));
     assert.ok(html.includes('aria-label="Profile of the Direct road plan option"'));
     assert.ok(html.includes('<li><p>Grade 20.9% exceeds the maximum grade (12%) from 2+11 to 3+11</p></li>'));
     assert.ok(html.includes('<td style="text-align: left">Creek culvert</td>'));
     // The SVG report's 3D views are drawn in place
     assert.equal(report.views.length, 0);
-    assert.ok(/<svg width="976" height="\d+" viewBox="[^"]*" role="img" aria-label="3D view of the Direct road plan option"[^>]*><polygon /.test(html));
+    assert.match(
+        html,
+        /<svg width="976" height="\d+" viewBox="[^"]*" role="img" aria-label="3D view of the Direct road plan option"[^>]*><polygon /
+    );
 
     assert.ok(!html.includes('Terrain:'));
 
     // The canvas report's 3D views are empty canvases until drawn - smoothed where the canvas limits allow
     const canvasReport = buildReport(data, globals, argsParse(globals), 976, true);
-    const canvases = canvasReport.html.match(/<canvas width="976" height="\d+" role="img" aria-label="3D view of the Direct road plan option" style="[^"]*" data-view="\d+"><\/canvas>/g);
+    const canvases = canvasReport.html.match(
+        new RegExp(
+            '<canvas width="976" height="\\d+" role="img" aria-label="3D view of the Direct road plan option" style="[^"]*" ' +
+            'data-view="\\d+"></canvas>',
+            'g'
+        )
+    );
     assert.equal(canvases.length, canvasReport.views.length);
     const drawing = canvasReport.views[0].render({...smoothLimitsCanvas, 'points': 1e6});
     // The overview's 14.7 pixel grid cells are divided into 5 x 5 cells (at least 3 pixels) - all 40 x 30 grid cells
@@ -68,7 +78,9 @@ test('the explorer keys', () => {
     const globals = {'vFile': 'plans/fixture.json', 'vExplore': true};
     const explorer = new Explorer(data, globals, argsParse(globals));
     explorer.render(800, 600, true);
-    const key = (code, key = '', shiftKey = false) => explorer.keyDown({code, key, shiftKey, 'ctrlKey': false, 'metaKey': false, 'altKey': false});
+    const key = (code, keyValue = '', shiftKey = false) => (
+        explorer.keyDown({code, 'key': keyValue, shiftKey, 'ctrlKey': false, 'metaKey': false, 'altKey': false})
+    );
     assert.equal(key('KeyQ'), 'render');
     assert.equal(explorer.state.azimuth, 20);
     assert.equal(key('ArrowUp', '', true), 'render');
@@ -102,11 +114,11 @@ test('buildDoc', () => {
 test('visibleCells', () => {
     // The MarkdownUp viewer's simple test plan - a 5 x 5 grid, 10 meters apart, rising to the north
     const elevations = [0, 1, 2, 3, 4].map((row) => [0, 1, 2, 3, 4].map(() => 100 + 0.1 * (4 - row) * 10));
-    const plan = validatePlan({
+    const {plan} = validatePlan({
         'title': 'Simple Plan', 'units': 'meters', 'topography': {'spacing': 10, elevations},
         'start': {'x': 0, 'y': 20}, 'end': {'x': 40, 'y': 20},
         'options': [{'name': 'Flat', 'section': {'width': 10}, 'alignment': [{'x': 0, 'y': 20, 'z': 102}, {'x': 40, 'y': 20, 'z': 102}]}]
-    }).plan;
+    });
     const topo = planTopo(plan);
 
     // The whole site's top view sees every cell

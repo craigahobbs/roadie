@@ -6,11 +6,12 @@
 //
 // The "--file" value is the plan's "file" URL argument for the report's links and image (default is the plan path).
 
-import {argsParse} from '../lib/args.js';
-import {buildDoc} from '../lib/doc.js';
 import {buildReport, planImageURL} from '../lib/report.js';
 import {Explorer} from '../lib/explore.js';
 import {PlanData} from '../lib/planData.js';
+import {argsParse} from '../lib/args.js';
+import {buildDoc} from '../lib/doc.js';
+import process from 'node:process';
 import {readFileSync} from 'node:fs';
 import {validatePlan} from '../lib/model.js';
 
@@ -72,7 +73,8 @@ function main(argv) {
     const timeEnd = performance.now();
     process.stdout.write(`${html}\n`);
     if (options.time) {
-        process.stderr.write(`load/validate ${(timeValidate - timeBegin).toFixed(1)} ms, render ${(timeEnd - timeValidate).toFixed(1)} ms, ` +
+        const timeLoad = (timeValidate - timeBegin).toFixed(1);
+        process.stderr.write(`load/validate ${timeLoad} ms, render ${(timeEnd - timeValidate).toFixed(1)} ms, ` +
             `${html.length} characters\n`);
     }
 }

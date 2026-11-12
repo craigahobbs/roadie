@@ -1,10 +1,10 @@
 // explore.js - the full-window 3D explorer, controlled with the keyboard
 
-import {argsURL} from './args.js';
 import {escapeHtml, number, round, unitLabel} from './format.js';
 import {maxZoom, projection, view3DParts} from './view3d.js';
 import {opRect, opText} from './canvas.js';
 import {svgOpen, svgStyle, svgText} from './draw.js';
+import {argsURL} from './args.js';
 
 
 // The 3D explorer's keyboard help lines
@@ -85,7 +85,8 @@ export class Explorer {
         // The overlays - the report link, the keyboard help, and the view status
         const overlays = [];
         if (!canvas) {
-            overlays.push(`<a href="${escapeHtml(this.backURL())}">${svgText('Back to the report', 12, 20, 14, 'start', '#1f4e8c', true)}</a>`);
+            const backText = svgText('Back to the report', 12, 20, 14, 'start', '#1f4e8c', true);
+            overlays.push(`<a href="${escapeHtml(this.backURL())}">${backText}</a>`);
         }
         const helpLines = state.help ? exploreHelp : ['H - keyboard help'];
         const helpTop = height - 36 - 18 * helpLines.length;
@@ -109,7 +110,7 @@ export class Explorer {
                 'smooth': parts.smooth, 'step': parts.step, 'pointLimited': parts.pointLimited
             };
         }
-        return svgOpen(parts.width, parts.height, parts.label, exploreStyle) + parts.elements.join('') + overlays.join('') + '</svg>';
+        return `${svgOpen(parts.width, parts.height, parts.label, exploreStyle)}${parts.elements.join('')}${overlays.join('')}</svg>`;
     }
 
 

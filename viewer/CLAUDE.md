@@ -28,7 +28,6 @@ Real plans for `check` and `parity`: `../example/example.json`, `../../roadie-te
   (`schemaDoc.js`). Don't hand-write schema parsing, validation, or documentation.
 - `bin/roadie.js` (`lib/cli.js`) is the command line behind the project's `make evaluate` and `make doc` - the planning
   instructions depend on its output, so keep it stable. `lib/cli.js` isn't part of the web application.
-
 - The report (as `tools/render.js` renders it - SVG 3D views, with the MarkdownUp viewer's terrain) must stay identical
   to the MarkdownUp viewer's, apart from its "Terrain" links - port Roadie viewer changes function by
   function (same names, order of floating-point operations, and comments), then run `make parity` on all the plans

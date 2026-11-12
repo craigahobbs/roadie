@@ -8,7 +8,7 @@ test('parseHash', () => {
     assert.deepEqual(globals, {'vFile': 'plans/a b.json', 'vOption': 2, 'vSmooth': true});
     assert.equal(headerId, 'cost');
     assert.deepEqual(parseHash('#var=').globals, {});
-    assert.deepEqual(parseHash("#var.vX=bogus(1)&var.vY=-1.5e2").globals, {'vY': -150});
+    assert.deepEqual(parseHash('#var.vX=bogus(1)&var.vY=-1.5e2').globals, {'vY': -150});
     assert.deepEqual(parseHash('#url=plans%2Fsite.json&var.vOption=1').globals, {'vFile': 'plans/site.json', 'vOption': 1});
     assert.deepEqual(parseHash("#url=a.json&var.vFile='b.json'").globals, {'vFile': 'b.json'});
     assert.deepEqual(parseHash('#url=').globals, {});

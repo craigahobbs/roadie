@@ -43,7 +43,7 @@ export function px(value) {
             const tenths = fraction < 0.5 ? floor : floor + 1;
             const whole = Math.floor(tenths / 10);
             const tenth = tenths - whole * 10;
-            return (negative ? '-' : '') + (tenth === 0 ? whole : whole + '.' + tenth);
+            return (negative ? '-' : '') + (tenth === 0 ? whole : `${whole}.${tenth}`);
         }
     }
     return fixedTrim(value, 1);
@@ -56,8 +56,8 @@ export function station(value, units) {
     const digits = units === 'feet' ? 2 : 3;
     const rounded = Math.round(value);
     const major = Math.floor(rounded / base);
-    const minor = '' + (rounded - major * base);
-    return major + '+' + '0'.repeat(Math.max(0, digits - minor.length)) + minor;
+    const minor = `${rounded - major * base}`;
+    return `${major}+${'0'.repeat(Math.max(0, digits - minor.length))}${minor}`;
 }
 
 

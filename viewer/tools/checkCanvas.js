@@ -4,12 +4,13 @@
 //
 // usage: node tools/checkCanvas.js <plan.json> ...
 
-import {argsParse} from '../lib/args.js';
+import {smoothLimitsCanvas, view3DParts} from '../lib/view3d.js';
 import {Explorer} from '../lib/explore.js';
 import {PlanData} from '../lib/planData.js';
-import {smoothLimitsCanvas, view3DParts} from '../lib/view3d.js';
+import {argsParse} from '../lib/args.js';
 import {buildReport} from '../lib/report.js';
 import {opsToSvg} from '../lib/canvas.js';
+import process from 'node:process';
 import {readFileSync} from 'node:fs';
 import {validatePlan} from '../lib/model.js';
 
@@ -34,7 +35,8 @@ for (const planPath of process.argv.slice(2)) {
                 const svg = explorer.render(1052, 852, false, smoothLimits);
                 const svgElements = svg.slice(svg.indexOf('>') + 1, -'</svg>'.length).replace(/<a href="[^"]*">.*?<\/a>/, '');
                 const canvasElements = opsToSvg(explorer.render(1052, 852, true, smoothLimits).ops);
-                const name = `${planPath} option ${ixOption} ${JSON.stringify(viewGlobals)}${smoothLimits ? ' (canvas smooth limits)' : ''}`;
+                const limitsName = smoothLimits ? ' (canvas smooth limits)' : '';
+                const name = `${planPath} option ${ixOption} ${JSON.stringify(viewGlobals)}${limitsName}`;
                 if (canvasElements === svgElements) {
                     process.stdout.write(`ok   ${name}\n`);
                 } else {
