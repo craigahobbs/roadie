@@ -380,7 +380,7 @@ export function profileView(plan, option, analysis, width, height) {
 }
 
 
-// Find the alignment point at a station
+// Find the alignment point at a station - a grade's station, which is an alignment point's, so there's always one
 function alignmentPointAt(analysis, stationValue) {
     // Binary search for the first point at or beyond the station (alignment stations are non-decreasing)
     const {alignment} = analysis;
@@ -394,5 +394,5 @@ function alignmentPointAt(analysis, stationValue) {
             ixLow = ixMid + 1;
         }
     }
-    return ixLow < alignment.length ? alignment[ixLow] : null;
+    return alignment[ixLow];
 }

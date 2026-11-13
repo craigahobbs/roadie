@@ -1175,8 +1175,11 @@ function chooseViewpoint(topo, finishedTopo, samples, stationValue, endStation, 
                 best = {azimuth, tilt, hidden};
             }
             if (hidden === 0) {
-                return best;
+                break;
             }
+        }
+        if (best.hidden === 0) {
+            break;
         }
     }
     return best;

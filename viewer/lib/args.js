@@ -130,12 +130,10 @@ export function argsParse(globals) {
 
 // Format an argument value for the URL
 function formatValue(value, type) {
-    if (type === 'bool') {
-        return value ? 'true' : 'false';
-    } else if (type === 'float' || type === 'int') {
-        return `${value}`;
+    if (type === 'string') {
+        return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
     }
-    return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+    return `${value}`;
 }
 
 

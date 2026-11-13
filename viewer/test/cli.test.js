@@ -1,3 +1,4 @@
+import {planComplex, planSimple} from './planFixtures.js';
 import assert from 'node:assert/strict';
 import {cliMain} from '../lib/cli.js';
 import {fileURLToPath} from 'node:url';
@@ -117,6 +118,23 @@ test('cliMain evaluate, warnings, walls, and a bridge', () => {
 });
 
 
+// The complex plan has every warning and structure - samples outside the topography and slopes that don't daylight
+test('cliMain evaluate, the complex plan with detail', () => {
+    assert.deepEqual(
+        run(['evaluate', 'complex.json', '--detail'], {'complex.json': JSON.stringify(planComplex())}),
+        {'code': 0, 'output': expected('complex.evaluate-detail.md')}
+    );
+});
+
+
+test('cliMain evaluate, a meters plan', () => {
+    assert.deepEqual(
+        run(['evaluate', 'simple.json'], {'simple.json': JSON.stringify(planSimple())}),
+        {'code': 0, 'output': expected('simple.evaluate.md')}
+    );
+});
+
+
 test('cliMain evaluate, endpoints outside the topography and no structures', () => {
     const plan = fixturePlan();
     plan.end = {'x': 1000, 'y': 1000};
@@ -148,6 +166,14 @@ test('cliMain evaluate, an invalid plan', () => {
         'code': 1,
         'output': '**Error:** The road plan "plan.json" is invalid:\n\n' +
             'Invalid value "" (type "string") for member "title", expected type "string" [len > 0]\n'
+    });
+
+    // Ragged elevation rows
+    const plan = planSimple();
+    plan.topography.elevations[2].pop();
+    assert.deepEqual(run(['evaluate', 'plan.json', '--detail'], {'plan.json': JSON.stringify(plan)}), {
+        'code': 1,
+        'output': '**Error:** The road plan "plan.json" is invalid:\n\nElevation row 2 has 4 elevations, expected 5\n'
     });
 });
 

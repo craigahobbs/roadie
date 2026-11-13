@@ -705,7 +705,7 @@ function existingAt(existingRoads, stationValue) {
 // Find the structures of a type covering a station
 function structureAt(structures, type, stationValue, side) {
     for (const structure of structures) {
-        if (structure.type === type && stationValue >= structure.station && stationValue <= (structure.endStation ?? structure.station)) {
+        if (structure.type === type && stationValue >= structure.station && stationValue <= structure.endStation) {
             const structureSide = structure.side ?? 'both';
             if (side === null || structureSide === 'both' || structureSide === side) {
                 return structure;
