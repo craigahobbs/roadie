@@ -56,21 +56,16 @@ app: build/npm.build
 	cp -R node_modules/schema-markdown/lib build/app/schema-markdown/
 
 
-# View a road plan in the browser - the plan's directory is linked into the served directory so the plan (and its map
-# image) can be fetched
+# View a road plan in the browser - the application is served with the plan's directory, so the plan (and its map
+# image) can be fetched, and opened in the browser (macOS, Linux, and Windows)
 .PHONY: run
 run: app
-	rm -rf build/run/
-	mkdir -p build/run/
-	cp -R build/app/. build/run/
 ifeq ($(FILE),)
-	(sleep 1 && open "http://127.0.0.1:$(PORT)/") &
+	node tools/serve.js build/app $(PORT) --open
 else
 	@test -f "$(FILE)" || (echo 'error: "$(FILE)" does not exist' && exit 1)
-	ln -s "$(abspath $(dir $(FILE)))" build/run/plan
-	(sleep 1 && open "http://127.0.0.1:$(PORT)/#var.vFile='plan%2F$(notdir $(FILE))'") &
+	node tools/serve.js build/app $(PORT) --open --plan "$(abspath $(FILE))"
 endif
-	node tools/serve.js build/run $(PORT)
 
 
 # Check the canvas 3D drawings' operations (the explorer's and the report's) against the SVG drawing

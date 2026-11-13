@@ -19,8 +19,156 @@ terrain, and views the resulting road grading plans in 3D.
 
 Roadie has two parts: the **viewer** ([viewer/](viewer/)) and the **planning tools and instructions**
 (`plan/`) - both JavaScript. It requires `make` and Node.js 22 or later - and
-[Claude Code](https://claude.com/claude-code) to plan and update roads. A site must be in the United
-States, where the USGS has 1 meter lidar terrain.
+[Claude Code](https://claude.com/claude-code) to plan and update roads (see [Installing](#installing)).
+A site must be in the United States, where the USGS has 1 meter lidar terrain.
+
+
+## Installing
+
+Roadie runs from a clone of its repository, on macOS, Linux, and Windows. It needs:
+
+- `make`, `git`, and `curl` (or `wget`)
+- [Node.js](https://nodejs.org/en/download) 22 or later
+- [Claude Code](https://code.claude.com/docs/en/setup), to plan and update roads - viewing a plan
+  doesn't need it
+
+The first `make` command downloads the build's files and npm packages, so it takes a minute.
+
+
+### macOS
+
+1. Install the Xcode Command Line Tools - they have `make` and `git`:
+
+   ```
+   xcode-select --install
+   ```
+
+2. Install [Node.js](https://nodejs.org/en/download) - its installer, or `brew install node` with
+   [Homebrew](https://brew.sh).
+3. Install Claude Code:
+
+   ```
+   curl -fsSL https://claude.ai/install.sh | bash
+   ```
+
+4. Clone Roadie:
+
+   ```
+   git clone https://github.com/craigahobbs/roadie.git
+   ```
+
+
+### Linux
+
+1. Install `make`, `git`, and `curl` with your distribution's package manager - for example,
+   `sudo apt install make git curl` (Debian and Ubuntu) or `sudo dnf install make git curl` (Fedora).
+2. Install [Node.js](https://nodejs.org/en/download) 22 or later. A distribution's own Node.js package
+   may be older - check it with `node --version`.
+3. Install Claude Code:
+
+   ```
+   curl -fsSL https://claude.ai/install.sh | bash
+   ```
+
+4. Clone Roadie:
+
+   ```
+   git clone https://github.com/craigahobbs/roadie.git
+   ```
+
+`make run` opens the browser with `xdg-open` - without it (on a server, or in the Windows Subsystem
+for Linux), open the URL that `make run` prints.
+
+
+### Windows
+
+Roadie's `make` commands need a Unix shell. On Windows, that's [MSYS2](https://www.msys2.org/) - run
+every Roadie command in its terminal.
+
+1. Install [MSYS2](https://www.msys2.org/), in its default folder (`C:\msys64`).
+2. Install [Node.js](https://nodejs.org/en/download) with its Windows installer.
+3. Install Claude Code - in PowerShell:
+
+   ```
+   irm https://claude.ai/install.ps1 | iex
+   ```
+
+   If the installer's setup notes say that its folder isn't in your `PATH`, add it as they describe.
+4. Let the MSYS2 terminal find Windows programs (`node` and `claude`) - MSYS2 hides them unless this
+   Windows environment variable is set. In PowerShell:
+
+   ```
+   setx MSYS2_PATH_TYPE inherit
+   ```
+
+5. Open a new "MSYS2 UCRT64" terminal from the Start menu, and install `make` and `git` - MSYS2 doesn't
+   come with them:
+
+   ```
+   pacman -S --needed make git
+   ```
+
+6. Have Claude Code run its commands with the MSYS2 shell, where `make` is - add its setting to the
+   terminal's startup file, and open a new terminal:
+
+   ```
+   echo "export CLAUDE_CODE_GIT_BASH_PATH='C:\msys64\usr\bin\bash.exe'" >> ~/.bashrc
+   ```
+
+7. Clone Roadie:
+
+   ```
+   git clone https://github.com/craigahobbs/roadie.git
+   ```
+
+The MSYS2 terminal starts in its own home folder, `C:\msys64\home\<your name>`. Your Windows folders
+are under `/c/` there - `cd /c/Users/<your name>/Documents`, for example.
+
+
+### Checking the installation
+
+In a new terminal, each of these prints a version:
+
+```
+make --version
+node --version
+claude --version
+```
+
+Then view the example plan - it opens in your web browser (Ctrl-C stops the viewer's server):
+
+```
+cd roadie
+make run FILE=example/example.json
+```
+
+
+### Your first road
+
+1. Make a folder for the road's files, beside the `roadie` folder - not in it:
+
+   ```
+   mkdir driveway
+   ```
+
+2. Create the road site model in it - a text file, `driveway/driveway.site.json`, with the road's start and
+   end points (see [Planning a road](#planning-a-road) for its contents). Name it `<name>.site.json`.
+3. Plan the road, from the `roadie` folder:
+
+   ```
+   cd roadie
+   make plan FILE=../driveway/driveway.site.json
+   ```
+
+   Claude Code asks you to log in the first time it runs. Log in with your Claude subscription (the
+   free plan doesn't include Claude Code) - not with API billing, which charges for each token the
+   planning session uses. The session takes a while, and writes the road plan model,
+   `driveway/driveway.json`.
+4. View the plan when the session finishes:
+
+   ```
+   make run FILE=../driveway/driveway.json
+   ```
 
 
 ## The viewer
@@ -258,7 +406,7 @@ On the project's web site, [view the example](viewer/#url=../example/example.jso
 ```
 make commit       # the pre-commit gate: the viewer's and the planning tools' tests and lint
 make test         # run the viewer's and the planning tools' unit tests (TEST=name runs one viewer test)
-make lint         # run ESLint on the viewer and pylint on the planning tools
+make lint         # run ESLint on the viewer and the planning tools
 make site         # stage the project's web site (build/gh-pages/)
 make clean        # remove the build directories
 ```

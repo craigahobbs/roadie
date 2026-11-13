@@ -57,14 +57,14 @@ Run `make` in `viewer/` or `plan/` for a subproject's own targets (e.g.
 
 ## Checking the viewer visually
 
-Stage and serve the application with a plan's directory, and screenshot it with headless Chrome:
+Stage and serve the application with a plan (its directory is served as `plan/`), and screenshot it with headless
+Chrome:
 
 ```sh
 make -C viewer app
-mkdir -p build/check && cp -R viewer/build/app/. build/check/ && ln -sfn "$PWD/example" build/check/plan
-node viewer/tools/serve.js build/check 8931 &
+node viewer/tools/serve.js viewer/build/app 8931 --plan example/example.json &
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
-    --virtual-time-budget=15000 --screenshot=build/report.png --window-size=1100,3000 \
+    --virtual-time-budget=15000 --screenshot=viewer/build/report.png --window-size=1100,3000 \
     "http://127.0.0.1:8931/#var.vFile='plan%2Fexample.json'"
 ```
 
