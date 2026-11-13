@@ -3,9 +3,10 @@
 
 import {cellContours, contourInterval, contourLevel, niceStep, svgPoints, svgPolyline, svgText} from '../../viewer/lib/draw.js';
 import {escapeHtml, px} from '../../viewer/lib/format.js';
-import {planTopo, validatePlan} from '../../viewer/lib/model.js';
 import {Buffer} from 'node:buffer';
 import {grayPng} from './png.js';
+import {planTopo} from '../../viewer/lib/model.js';
+import {readPlan} from './planFile.js';
 
 
 // The plot's margins, in pixels - the left and bottom margins have the plan's coordinates
@@ -306,26 +307,14 @@ export function plotCommand(args, io) {
     }
     const [planPath, plotPath] = args;
 
-    // Load and validate the road plan model - a plan without options yet (a site) is plotted, too
-    let planValue;
-    try {
-        planValue = JSON.parse(io.readFile(planPath));
-    } catch {
-        return {'code': 1, 'lines': [`error: Could not load the road plan "${planPath}"`]};
+    // Read the road plan model - a plan without options yet (a site) is plotted, too
+    const {plan, error} = readPlan(io, planPath);
+    if (error !== undefined) {
+        return {'code': 1, 'lines': error};
     }
-    const siteOnly = Array.isArray(planValue?.options) && planValue.options.length === 0;
-    const validated = validatePlan(siteOnly ? {...planValue, 'options': [siteOption]} : planValue);
-    if ('error' in validated) {
-        return {'code': 1, 'lines': [`error: The road plan "${planPath}" is invalid:`, '', validated.error]};
-    }
-    const plan = siteOnly ? {...validated.plan, 'options': []} : validated.plan;
 
     // Plot the plan
     const {svg, width, height} = planPlot(plan, planTopo(plan));
     io.writeBytes(plotPath, io.renderPng(svg));
     return {'code': 0, 'lines': [`Wrote ${plotPath} (${width} x ${height} pixels)`]};
 }
-
-
-// An option that stands in for a site's options, to validate the site's plan
-const siteOption = {'name': 'Site', 'section': {'width': 1}, 'alignment': [{'x': 0, 'y': 0}, {'x': 1, 'y': 0}]};

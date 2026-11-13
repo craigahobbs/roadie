@@ -15,11 +15,13 @@ async function run(argv) {
 const usage = `\
 usage: plan site <site.json> <plan.json>
        plan plot <plan.json> <plot.png>
+       plan locate <plan.json> [--xy] <latitude,longitude | x,y>...
        plan doc
 
   site    Create a road plan model's site from a road site model - its topography (USGS lidar terrain),
           georeference, start and end points, features, and topographic map image
   plot    Plot a road plan model - its terrain, features, and options
+  locate  Convert latitudes and longitudes to a road plan model's coordinates, and back
   doc     Print the road site model documentation
 `;
 

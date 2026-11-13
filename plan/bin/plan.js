@@ -3,6 +3,7 @@
 //
 // usage: node bin/plan.js site <site.json> <plan.json>
 //        node bin/plan.js plot <plan.json> <plot.png>
+//        node bin/plan.js locate <plan.json> [--xy] <latitude,longitude | x,y>...
 //        node bin/plan.js doc
 
 import {fetchBytes, fetchJson} from '../lib/usgs.js';
