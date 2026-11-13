@@ -9,10 +9,13 @@ The project is two subprojects, and the top-level makefile delegates to them:
   the web application (report, plan and profile views, 3D views, and 3D explorer), the road plan model (its Schema
   Markdown schema, validation, earthwork, and cost analysis), and the command line behind `make evaluate` and
   `make doc`. See [viewer/CLAUDE.md](viewer/CLAUDE.md).
-- **The planning tools** (`plan/`, Python, [python-build](https://github.com/craigahobbs/python-build#readme)) -
-  `plan/plan_tools.py` and the planning instructions, [plan/PLAN.md](plan/PLAN.md). **Planning a road** (`make plan`,
-  `make update`) follows PLAN.md - when asked to plan or update a road, follow PLAN.md exactly. The planning session
-  runs in `plan/`.
+- **The planning tools** (`plan/`) and the planning instructions, [plan/PLAN.md](plan/PLAN.md). The tools are being
+  converted from Python to JavaScript ([javascript-build](https://github.com/craigahobbs/javascript-build#readme)), and
+  from digitizing a topographic map image to USGS lidar terrain: the new tools are `plan/bin/plan.js` (`plan/lib/`),
+  and until they're complete the Python tools (`plan/legacy/plan_tools.py`,
+  [python-build](https://github.com/craigahobbs/python-build#readme)) plan the roads. **Planning a road**
+  (`make plan`, `make update`) follows PLAN.md - when asked to plan or update a road, follow PLAN.md exactly. The
+  planning session runs in `plan/legacy/`.
 
 `example/` is a small synthetic plan. `index.html` renders this project's README on its web site.
 
@@ -28,18 +31,20 @@ make run FILE=<plan.json>         # view a plan in the browser
 make site                         # stage the web site (build/gh-pages/): README, example, and viewer/
 ```
 
-Run `make` in `viewer/` or `plan/` for a subproject's own targets (e.g. `make -C viewer test TEST=name`,
-`make -C viewer check`, `make -C plan lint`).
+Run `make` in `viewer/`, `plan/`, or `plan/legacy/` for a subproject's own targets (e.g.
+`make -C viewer test TEST=name`, `make -C viewer check`, `make -C plan lint`).
 
 ## Conventions
 
-- Run `make commit` before committing; it must pass - the viewer with 100% coverage and both lint clean.
+- Run `make commit` before committing; it must pass - the viewer and the planning tools (`plan/`) with 100% coverage
+  and every lint clean.
 - Commit directly on `main`. Commit messages: a short imperative subject, then a body of bullets
   (or a paragraph) explaining what changed and why.
 - The road plan model stays defined, validated, and documented with Schema Markdown (see viewer/CLAUDE.md), and the
   viewer validates every plan it loads.
-- The planning tools mirror parts of the viewer's model (`DEFAULT_RATES` and the cross sections in
-  `plan/plan_tools.py`) - keep them in sync with `viewer/lib/model.js`.
+- The planning tools use the viewer's model (`plan/lib/` imports `viewer/lib/`). The Python tools mirror parts of it
+  (`DEFAULT_RATES` and the cross sections in `plan/legacy/plan_tools.py`) - keep them in sync with
+  `viewer/lib/model.js` until they're removed.
 - Keep the README's viewer section and key table in sync with the viewer's controls.
 - `FILE` and `OUTPUT` paths are relative to the directory `make` runs in - the top-level makefile makes them absolute
   before delegating.

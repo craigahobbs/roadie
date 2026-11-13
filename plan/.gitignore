@@ -1,4 +1,6 @@
 /build/
-/Makefile.tool
-/pylintrc
-__pycache__/
+/node_modules/
+/Makefile.base
+/eslint.config.js
+/jsdoc.json
+/package-lock.json

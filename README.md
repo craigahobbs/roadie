@@ -121,7 +121,7 @@ scale bar and contour interval. The Claude Code session follows [PLAN.md](plan/P
 digitizing the topography, design criteria, road engineering principles, generating and refining
 options, and finalizing the model. It uses these tools:
 
-- `plan/plan_tools.py` - image inspection (`info`, `crop`), contour tracing
+- `plan/legacy/plan_tools.py` - image inspection (`info`, `crop`), contour tracing
   (`trace`, `transect`), the topography grid (`grid`), plotting (`plot`), and road engineering
   (`route`, `profile`). `route` finds the least-cost horizontal alignment with a lattice search
   (radius-constrained turns, grade, side slope, stream crossing, rock, and exclusion costs), designs
@@ -223,7 +223,7 @@ targets:
 | Directory | Contents |
 | --- | --- |
 | [viewer/](viewer/) | The Roadie viewer - the web application, the road plan model (its schema, validation, earthwork, and cost analysis), and the command line behind `make evaluate` and `make doc`. JavaScript, built with [javascript-build](https://github.com/craigahobbs/javascript-build#readme) - see its [README](viewer/README.md). |
-| `plan/` | The planning tools (`plan_tools.py`) and the road planning instructions for Claude Code ([PLAN.md](plan/PLAN.md)). Python, built with [python-build](https://github.com/craigahobbs/python-build#readme). |
+| `plan/` | The planning tools (`legacy/plan_tools.py`) and the road planning instructions for Claude Code ([PLAN.md](plan/PLAN.md)). Python, built with [python-build](https://github.com/craigahobbs/python-build#readme). |
 | `example/` | The example plan |
 
 `CLAUDE.md` is the repository guide for Claude Code.

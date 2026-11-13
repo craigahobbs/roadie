@@ -1,7 +1,8 @@
 # Roadie's top-level makefile - it delegates to the project's two subprojects:
 #
 #   viewer/  The Roadie viewer - a JavaScript web application (javascript-build)
-#   plan/    The planning tools and instructions - Python (python-build)
+#   plan/    The planning tools and instructions - JavaScript (javascript-build). The planning tools are being
+#            converted from Python - until they're complete, the Python tools (plan/legacy/, python-build) plan the roads.
 
 .DEFAULT_GOAL := help
 
@@ -34,6 +35,7 @@ help:
 commit test lint:
 	$(call SUBMAKE,viewer,$@)
 	$(call SUBMAKE,plan,$@)
+	$(call SUBMAKE,plan/legacy,$@)
 
 
 # View a road plan model in the browser (the viewer)
@@ -43,16 +45,16 @@ run:
 
 
 # Engineer road plan options from a topographic map image, and update an existing road plan model with review
-# feedback (Claude Code or Grok) - see plan/Makefile and plan/PLAN.md
+# feedback (Claude Code or Grok) - see plan/legacy/Makefile and plan/PLAN.md
 .PHONY: plan update
 plan update:
-	$(call SUBMAKE,plan,$@)
+	$(call SUBMAKE,plan/legacy,$@)
 
 
 # Print a road plan model's analysis and cost (DETAIL=1 adds the station table), and the road plan model documentation
 .PHONY: evaluate doc
 evaluate doc:
-	$(call SUBMAKE,plan,$@)
+	$(call SUBMAKE,plan/legacy,$@)
 
 
 # Stage the project's web site - the documentation at its root (index.html renders README.md), the planning
@@ -89,4 +91,5 @@ gh-pages: commit
 clean superclean:
 	$(call SUBMAKE,viewer,$@)
 	$(call SUBMAKE,plan,$@)
+	$(call SUBMAKE,plan/legacy,$@)
 	rm -rf build/
