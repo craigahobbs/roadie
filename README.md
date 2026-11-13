@@ -1,12 +1,14 @@
 # Roadie
 
-Roadie engineers low-volume roads (driveways, rural access roads, and forest roads) from a
-topographic map image, and views the resulting road grading plans in 3D.
+Roadie engineers low-volume roads (driveways, rural access roads, and forest roads) on USGS lidar
+terrain, and views the resulting road grading plans in 3D.
 
-- **`make plan FILE=<plan.png> [OUTPUT=<plan.json>]`** launches a Claude Code session with detailed
-  road engineering instructions ([PLAN.md](#url=plan/PLAN.md)). Claude digitizes the map's topography, engineers
-  one or more cost-optimal road plan options from the labeled start point to the labeled end point,
-  and writes the road plan model (`OUTPUT`, default `<plan>.json`).
+- **`make plan FILE=<plan>.site.json [OUTPUT=<plan.json>]`** launches a Claude Code session with detailed
+  road engineering instructions ([PLAN.md](#url=plan/PLAN.md)). The road site model (`FILE`) has the road's
+  start and end points - their latitudes and longitudes - and its planning notes. Claude builds the
+  site from the USGS 3D Elevation Program's 1 meter lidar terrain, engineers one or more cost-optimal
+  road plan options from the start point to the end point, and writes the road plan model (`OUTPUT`,
+  default `<plan>.json`).
 - **`make update FILE=<plan.json>`** launches a Claude Code session that
   updates an existing road plan model with review feedback (from the city or county, a surveyor, or
   the owner, for example).
@@ -15,9 +17,10 @@ topographic map image, and views the resulting road grading plans in 3D.
 
 ![The Roadie viewer](example/screenshot.png)
 
-Roadie has two parts: the **viewer** ([viewer/](viewer/), JavaScript) and the **planning tools and
-instructions** (`plan/`, Python). It requires `make`, Python 3, and Node.js 22 or later - and
-[Claude Code](https://claude.com/claude-code) to plan and update roads.
+Roadie has two parts: the **viewer** ([viewer/](viewer/)) and the **planning tools and instructions**
+(`plan/`) - both JavaScript. It requires `make` and Node.js 22 or later - and
+[Claude Code](https://claude.com/claude-code) to plan and update roads. A site must be in the United
+States, where the USGS has 1 meter lidar terrain.
 
 
 ## The viewer
@@ -112,40 +115,82 @@ for the default rates.
 
 ## Planning a road
 
-```
-make plan FILE=site.png
+A road is planned from a **road site model** - a JSON file with the road's start and end points and
+its planning notes:
+
+```json
+{
+    "title": "Hillside Driveway",
+    "units": "feet",
+    "start": {
+        "latitude": 44.0000, "longitude": -115.0000,
+        "label": "County Rd",
+        "description": "At the gate on the county road"
+    },
+    "end": {
+        "latitude": 44.0030, "longitude": -114.9960,
+        "label": "House site",
+        "description": "The bench above the creek"
+    },
+    "notes": [
+        "A single-lane gravel driveway with fire apparatus access.",
+        "Stay off the creek's east bank."
+    ]
+}
 ```
 
-The map (an image or a PDF) must clearly label the road's start and end points and should include a
-scale bar and contour interval. The Claude Code session follows [PLAN.md](#url=plan/PLAN.md), which covers reading the map,
-digitizing the topography, design criteria, road engineering principles, generating and refining
-options, and finalizing the model. It uses these tools:
+The points' latitudes and longitudes are decimal degrees, as a phone or a map application gives them
+(the United States' longitudes are negative). A point's `label` and `description`, and the `notes` -
+the road's purpose, constraints, and preferences - are the planning session's instructions. A site may
+also have exclusion areas (`exclusions` - polygons of latitudes and longitudes the road must avoid),
+design criteria (`criteria`), cost rates (`costRates`), the distance its topography extends beyond the
+start and end points (`margin`), and its topography grid's spacing (`spacing`). Run
+`node plan/bin/plan.js doc` for the road site model's documentation.
 
-- `plan/plan_tools.py` - image inspection (`info`, `crop`), contour tracing
-  (`trace`, `transect`), the topography grid (`grid`), plotting (`plot`), and road engineering
-  (`route`, `profile`). `route` finds the least-cost horizontal alignment with a lattice search
-  (radius-constrained turns, grade, side slope, stream crossing, rock, and exclusion costs), designs
-  the vertical profile by dynamic programming (minimum earthwork within the grade limits, with flatter
-  switchbacks), and places culverts, retaining walls, bridges, and turnouts.
+```
+make plan FILE=driveway.site.json
+```
+
+The Claude Code session follows [PLAN.md](#url=plan/PLAN.md), which covers reading and verifying the site,
+design criteria, road engineering principles, generating and refining options, and finalizing the
+model. It uses these tools:
+
+- `plan/bin/plan.js` - the planning tools:
+  - `site` creates the plan's site from the road site model. Its topography is the USGS 3D Elevation
+    Program's 1 meter elevation models - lidar ground elevations: `site` finds the site's models,
+    reads only the site's part of each (it's cached in the work directory), and grids them in the
+    plan's coordinates, a map projection centered on the site. It adds the site's streams (the USGS
+    National Hydrography Dataset's), its roads and trails and its topographic map image (the USGS
+    National Map's), and its exclusion areas. A site the USGS has no 1 meter elevation models of
+    can't be planned.
+  - `plot` plots the plan - its shaded terrain, contours, features, and options - for the session to
+    study (all of it, or a part of it for a closer look), and `locate` converts latitudes and
+    longitudes to the plan's coordinates.
+  - `route` and `profile` engineer a road option. `route` finds the least-cost horizontal alignment
+    with a lattice search (radius-constrained turns, grade, side slope, stream crossing, rock, and
+    exclusion costs), designs the vertical profile by dynamic programming (minimum earthwork within
+    the grade limits, with flatter switchbacks), and places culverts, retaining walls, bridges, and
+    turnouts.
 - `make evaluate FILE=<plan.json> [DETAIL=1]` - the viewer's own analysis and cost score from the
   command line (with a station-by-station table), so the planner optimizes the same cost the viewer
   shows
 
-The session writes `site.json`, with intermediate files in `site.work/`. Use `OUTPUT` to write the
-model elsewhere - for example, to compare planning runs without overwriting earlier ones:
+The session writes `driveway.json` (and the site's topographic map image, `driveway.png`), with
+intermediate files in `driveway.work/`. Use `OUTPUT` to write the model elsewhere - for example, to
+compare planning runs without overwriting earlier ones:
 
 ```
-make plan FILE=site.png OUTPUT=site-run2.json
+make plan FILE=driveway.site.json OUTPUT=driveway-run2.json
 ```
 
-The intermediate files go next to the output (here, `site-run2.work/`).
+The intermediate files go next to the output (here, `driveway-run2.work/`).
 
 The session uses the Opus model at high effort by default. Use `MODEL` and `EFFORT` to change them
 (any Claude Code `--model` alias or name, and `--effort` level - `low`, `medium`, `high`, `xhigh`, or
 `max`), for both `make plan` and `make update`:
 
 ```
-make plan FILE=site.png MODEL=sonnet EFFORT=max
+make plan FILE=driveway.site.json MODEL=sonnet EFFORT=max
 ```
 
 Use `OLLAMA=1` to run the session on a local or cloud [Ollama](https://ollama.com) model instead
@@ -153,39 +198,40 @@ Use `OLLAMA=1` to run the session on a local or cloud [Ollama](https://ollama.co
 it, Ollama picks the model (prompting if needed):
 
 ```
-make plan FILE=site.png OLLAMA=1 MODEL=qwen3.8:27b-mlx
+make plan FILE=driveway.site.json OLLAMA=1 MODEL=qwen3.8:27b-mlx
 ```
 
 Use `GROK=1` to run the session with the [Grok CLI](https://docs.x.ai/build/overview) (`grok`) instead of Claude Code.
 `MODEL` then names the Grok model; without it, Grok uses its default model:
 
 ```
-make plan FILE=site.png GROK=1 MODEL=grok-4.6
+make plan FILE=driveway.site.json GROK=1 MODEL=grok-4.6
 ```
 
 
 ## Updating a plan
 
 Plans often change after review - the city or county may require a 10% fire code grade, a property
-line setback, or a larger culvert, and a surveyor may correct the topography. To update a plan, run:
+line setback, or a larger culvert, and the owner may move the house site. To update a plan, run:
 
 ```
-make update FILE=site.json
+make update FILE=driveway.json
 ```
 
 The session asks for the feedback - paste it in, or give the path of a file that contains it. It
 follows [Updating a plan](#url=plan/PLAN.md&updating-a-plan): it saves a dated copy of the plan in the work
-directory (`site.work/`), restates each feedback item and how it will address it, updates the
-criteria, site features, topography, or options (reusing the original session's digitized contours),
-re-engineers and re-evaluates the affected options, and adds a revision history to the plan's
-description. It finishes with a before-and-after comparison of the options.
+directory (`driveway.work/`), restates each feedback item and how it will address it, updates the
+criteria, site features, site, or options, re-engineers and re-evaluates the affected options, and
+adds a revision history to the plan's description. It finishes with a before-and-after comparison of
+the options.
 
 
 ## The road plan model
 
-A road plan model is a JSON file containing the site topography (an elevation grid with streams, rock
-outcrops, and exclusion areas), the start and end points, design criteria, cost rate overrides, and
-one or more road plan options. Each option has a road cross section, a centerline alignment (x, y,
+A road plan model is a JSON file containing the site topography (an elevation grid with streams,
+roads, rock outcrops, and exclusion areas, and its elevation data's sources), the plan's georeference
+(its place on the Earth), the start and end points, design criteria, cost rate overrides, and one or
+more road plan options. Each option has a road cross section, a centerline alignment (x, y,
 and grade elevation), and structures (retaining walls, bridges, culverts, turnouts, and the existing roads
 it follows).
 
@@ -196,9 +242,9 @@ The model is defined with [Schema Markdown](https://craigahobbs.github.io/schema
 
 ## The example
 
-The [example](example/example.json) is a synthetic hillside site. Its topography was digitized from
-[example.png](example/example.png) with the planning tools, and its options were engineered with
-`route`:
+The [example](example/example.json) is a synthetic hillside site - its topography was digitized from
+a drawn map, [example.png](example/example.png), so it has no georeference - and its options were
+engineered with `route`:
 
 ```
 make run FILE=example/example.json
@@ -223,7 +269,7 @@ targets:
 | Directory | Contents |
 | --- | --- |
 | [viewer/](viewer/) | The Roadie viewer - the web application, the road plan model (its schema, validation, earthwork, and cost analysis), and the command line behind `make evaluate` and `make doc`. JavaScript, built with [javascript-build](https://github.com/craigahobbs/javascript-build#readme) - see its [README](#url=viewer/README.md). |
-| `plan/` | The planning tools (`plan_tools.py`) and the road planning instructions for Claude Code ([PLAN.md](#url=plan/PLAN.md)). Python, built with [python-build](https://github.com/craigahobbs/python-build#readme). |
+| `plan/` | The planning tools (`bin/plan.js`) - the road site model, the site's USGS lidar terrain and features, plotting, and road engineering - and the road planning instructions for Claude Code ([PLAN.md](#url=plan/PLAN.md)). JavaScript, built with [javascript-build](https://github.com/craigahobbs/javascript-build#readme). |
 | `example/` | The example plan |
 
 `CLAUDE.md` is the repository guide for Claude Code.

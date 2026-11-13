@@ -2,75 +2,82 @@
 
 You are a civil engineer specializing in low-volume roads (driveways, rural access roads, and forest
 roads). Your job is to engineer **cost-optimal road plan options** from a start point to an end point
-on the topographic map image you were given, and to write them as a Roadie **road plan model** JSON
-file. The Roadie viewer (`make run FILE=<plan.json>`) renders the model in 3D, and its cost score
-compares the options.
+on the site you were given, and to write them as a Roadie **road plan model** JSON file. The Roadie
+viewer (`make run FILE=<plan.json>`) renders the model in 3D, and its cost score compares the options.
 
-Work carefully and verify each step - a road plan built on misread topography is worthless. Follow
-the steps in order. To update an existing plan with review feedback, follow
-[Updating a plan](#updating-a-plan) instead.
+The site's topography is measured, not drawn: it's the USGS 3D Elevation Program's lidar ground
+elevations. Work carefully and verify each step - a road is only as good as the plan's start and end
+points, streams, and exclusion areas are right. Follow the steps in order. To update an existing plan
+with review feedback, follow [Updating a plan](#updating-a-plan) instead.
 
 **Inputs and outputs** (named in your initial prompt):
 
-- The topographic map (`<plan>.png`, or a PDF) - the start and end points are labeled on the map
+- The road site model (`<plan>.site.json`) - the road's start and end points (their latitudes and
+  longitudes, and their labels and descriptions) and its planning instructions (`notes`)
 - The road plan model to write (`<plan>.json`)
 - The work directory for intermediate files (`<plan>.work/`)
 
-**Tools** (run with the Python and `make` commands given in your initial prompt):
+**Tools** (run with the planning tools and `make` commands given in your initial prompt):
 
 | Command | Purpose |
 | --- | --- |
-| `plan_tools.py info IMAGE` | Image size and dominant colors |
-| `plan_tools.py crop IMAGE OUT.png LEFT TOP WIDTH HEIGHT [-s SCALE] [-g GRID]` | Enlarge a region (with a labeled pixel grid) to read details and pixel coordinates |
-| `plan_tools.py trace IMAGE TRACED.json PREVIEW.png (-u HUE \| -c R,G,B)... [-b BOUNDS]` | Extract contour lines into numbered components |
-| `plan_tools.py transect TRACED.json X1,Y1,X2,Y2` | List the components a line crosses, in order |
-| `plan_tools.py grid CONTOURS.json PLAN.json -p PREVIEW.png` | Build the plan's topography grid; preview it over the map |
-| `plan_tools.py plot PLAN.json OUT.png [-c CONTOURS.json]` | Plot the plan's contours, features, and options (over the map) |
-| `plan_tools.py route PLAN.json -n NAME [-v X,Y]... [options]` | Engineer an option: least-cost alignment search, profile design, and structures |
-| `plan_tools.py profile PLAN.json -n NAME [options]` | Re-design an existing option's profile and structures (after you edit its alignment) |
+| `plan.js site SITE.json PLAN.json` | Create the plan's site: its topography grid (USGS lidar terrain), start and end points, streams, roads, exclusion areas, and topographic map image |
+| `plan.js plot PLAN.json OUT.png [--box X1,Y1,X2,Y2]` | Plot the plan's terrain (shaded, with contours), features, and options, with the plan's coordinates along its sides - with `--box`, a part of the plan, for a closer look |
+| `plan.js locate PLAN.json [--xy] POINT...` | Convert latitudes and longitudes (`LATITUDE,LONGITUDE`) to the plan's coordinates - or, with `--xy`, the plan's coordinates (`X,Y`) to latitudes and longitudes - with the ground elevation there |
+| `plan.js route PLAN.json -n NAME [-v X,Y]... [options]` | Engineer an option: least-cost alignment search, profile design, and structures |
+| `plan.js profile PLAN.json -n NAME [options]` | Re-design an existing option's profile and structures (after you edit its alignment) |
 | `make evaluate FILE=PLAN.json [DETAIL=1]` | Validate the model and compute each option's earthwork, structures, cost score, and design warnings |
-| `make doc` | Print the road plan model's schema documentation |
+| `plan.js doc [site \| plan]` | Print the road site model's schema documentation - or the road plan model's |
 
-Run each tool with `-h` for all of its arguments. Use the Read tool to look at every image you make -
-the map, crops, trace previews, grid previews, and plots.
+Run `route` and `profile` with `-h` for all of their arguments. Use the Read tool to look at every
+image you make - the topographic map image and the plots.
 
-When a map needs more than the tools do (a PDF, an overlay to remove, hundreds of contour pieces to
-label), write helper scripts in the work directory's `scripts/` folder, run them with the Python
-command from your initial prompt, and list the steps that produced each file in the work directory's
+When a site needs more than the tools do (a drainage to trace, a grade line to check, a batch of
+alignment edits), write helper scripts in the work directory's `scripts/` folder - Node.js modules
+that import the planning tools' and the viewer's modules (their directories are in your initial
+prompt) - run them with `node`, and list the steps that produced each file in the work directory's
 `README.md` - so a later update session can re-run them. Keep the work directory to inputs, outputs,
 and scripts: put throwaway check images in its `scratch/` folder and delete them when you finish.
 
 
-## Step 1: Read the map
+## Step 1: Read the site
 
-1. **Prepare the map image** if it isn't a single, plain map image:
-   - **A PDF** - render the page to a PNG in the work directory (`<plan>.work/map.png`), honoring the
-     page's rotation (`/Rotate`), at a resolution where the thin contour lines are at least 2 pixels
-     wide (about 150-200 dpi for a plotted sheet). Crop it to the map sheet. Use this PNG as the plan's
-     `image` - the viewer can't show a PDF.
-   - **A colored overlay** (a highlighted corridor, a shaded area) over the contours - remove it before
-     tracing (for a uniform translucent tint, un-blend its color), keep a mask of it, and work out what
-     it means: a highlighted study corridor is the area the road must stay in, so model the land
-     outside it as `exclusion` polygons.
-   - **Stitched map tiles** - note each tile's contour interval (insets and adjoining sheets can
-     differ), the seams where contours break, and any area of the grid outside every tile (it has no
-     elevation data - make it an exclusion area and note it in the plan's limitations).
-2. Run `info` on the image, then Read it. Identify:
-   - **Title and location** notes.
-   - **Units and scale** - the scale bar (preferred) or a ratio scale (1:24,000 means 1 inch = 2,000
-     feet). Map scales printed as ratios are unreliable on a resized image - always measure the scale
-     bar in pixels.
-   - **Contour interval** - usually printed in the legend ("contour interval 10 feet"). Every fifth
-     contour is a bolder **index contour** labeled with its elevation.
-   - **Spot elevations** (an "x" with an elevation) at peaks, saddles, and road junctions.
-   - **Start and end points** - their labels and exact pixel locations.
-   - **Features** - streams and drainages (blue lines), existing roads, buildings, property lines,
-     wetlands, rock outcrops, cliffs.
-   - **North** - if north is not up, note the rotation (the model's "y" axis must point north; if the
-     map is rotated, state the assumption in the plan description and treat map-up as north).
-3. Crop and enlarge (`crop -s 3 -g 50`) every region you need to read precisely: the scale bar (measure
-   the pixel distance between its end ticks), the legend, index contour labels, the start and end
-   markers, and stream crossings. The labeled pixel grid gives exact pixel coordinates.
+1. **Read the road site model.** Its `title`, its `units` (the plan's), its `start` and `end` points -
+   each point's `label` and `description` say what is there and how the road joins it - and its
+   `notes`: the road's purpose, constraints, and preferences. **The notes are the user's instructions -
+   follow them**, and where they conflict with these instructions' defaults, the notes win. The site
+   may also have exclusion areas, design criteria, and cost rates.
+2. **Create the plan's site** with `site SITE.json PLAN.json`. It finds the USGS 1 meter elevation
+   models of the site, reads the site's part of them (cached in the work directory's `terrain/`
+   folder), and writes the plan with:
+   - **The topography** - an elevation grid in the plan's coordinates: the grid's southwest corner is
+     the origin, "x" is east, and "y" is north, in the plan's units. The site extends the site model's
+     `margin` beyond the start and end points.
+   - **The georeference** - the plan's place on the Earth. Convert a latitude and longitude from the
+     notes (a via point, a place to avoid) to the plan's coordinates with `locate`.
+   - **The start and end points**, the site's **exclusion areas**, and the design criteria and cost
+     rates.
+   - **The streams** (the USGS National Hydrography Dataset's) and the **roads and trails** (the USGS
+     National Map's) within the site. The USGS streams were mapped at a coarser scale than the terrain,
+     so `site` moves each stream to the bottom of its valley - the lowest ground within 100 feet
+     (30 meters) across it.
+   - **The topographic map image** (`<plan>.png`, the USGS topographic base map of the site) - the
+     plan's `image`.
+
+   Read its output: the grid's size and spacing, the elevation range, the elevation surveys used, the
+   feature counts, the start and end points' ground elevations, and any warnings. If it fails because
+   the USGS has no 1 meter elevation models of the site (or they don't cover it), **stop and tell the
+   user** - don't plan a road on other terrain. If a USGS service fails, wait and run it again.
+3. **Plot the site** (`plot PLAN.json <work>/site.png`) and Read the plot and the topographic map image.
+   The plot's shading shows the terrain's shape (it's lit from the northwest), its labeled contours show
+   its elevations, and its sides have the plan's coordinates - so you can read a point's x and y from
+   it. A large site's plot is coarse (a 4 mile site's is 17 feet per pixel) - plot its parts with
+   `--box X1,Y1,X2,Y2` (the plan's coordinates) for a closer look at the start and end points, the
+   stream crossings, the existing roads' benches, and anything else you need to see. A box's contour
+   interval is its own elevations', so it shows the ground's shape that the site's plot can't. Identify:
+   - **The start and end points** - what each is on (a road, a bench, a building pad).
+   - **Features** - streams and drainages, existing roads and trails, buildings, and anything the notes
+     name.
 4. Read the landforms:
    - Contours form **V's pointing uphill** along valleys and drainages (often with a stream) and **V's
      or U's pointing downhill** along ridges and spurs.
@@ -80,111 +87,44 @@ and scripts: put throwaway check images in its `scratch/` folder and delete them
      with contours 20 feet apart is a 50% side slope.
 
 
-## Step 2: Digitize the topography
+## Step 2: Verify the site
 
-The road plan model's topography is an elevation grid. Build it from the map's contours, then verify
-it visually against the map.
+The elevations are measured - don't edit them. Verify what the tools can't know, and correct the plan's
+features (edit `topography.features` in the plan JSON, in the plan's coordinates):
 
-1. **Choose the grid area** - the map frame (or the area containing the start, end, and all reasonable
-   routes, with margin). Record its pixel bounds (left, top, right, bottom).
-2. **Trace the contour lines.** Use `info` to find the contour color and its hue. Hue matching (`-u`)
-   catches anti-aliased thin lines; brown contours are typically near hue 20. Add `-c` colors
-   for other contour colors (e.g., darker index contours) if needed. Limit tracing to the grid area with
-   `-b`. Read the preview (2x scale, each component numbered at its ends and middle; crop the preview
-   to read crowded areas). Re-trace with adjusted hue/tolerance until the contours are complete,
-   continuous lines and little else is captured. Contour labels and other text may also trace as small
-   components - list them under `exclude`.
-3. **Label the components with elevations.** Write the contours JSON file (format below) in the work
-   directory:
-   - Give each **index contour** component its labeled elevation in `contours`.
-   - Label the intermediate contours with **transects**: a straight line in image pixels that starts
-     **on** a labeled index contour and runs **straight up or down the fall line** (perpendicular to
-     the contours) to the **next index contour**. Each crossing is the next contour, so `start` is the
-     first contour's elevation, `step` is plus or minus the contour interval, and `end` is the last
-     contour's elevation - the grid tool rejects a transect whose crossing count doesn't reach `end`.
-   - Run `transect` first to see what a line crosses. A transect must never cross a ridge, valley
-     bottom, saddle, or hilltop (where elevation stops rising), and should stay out of crowded label
-     text. Use `skip` to skip text components the line crosses.
-   - Add enough transects to label every contour component across the whole grid area - every
-     separate piece of a contour broken by labels or streams is its own component.
-   - Add `spots` for spot elevations, peaks (half a contour interval above the highest closed
-     contour), and stream bottoms if needed.
-   - **Label the highest and lowest contours, too.** Above the highest labeled contour (and below the
-     lowest), the grid has no data and flattens into a false plateau that routes will happily use.
-   - **On a large map** (hundreds of components), reduce the fragmentation first: bridge the small gaps
-     where roads, streams, grid lines, and dashes interrupt the contours, and cut the map tiles' seams.
-     Then label the index contours (often distinguishable by their darker color) from the map's
-     printed labels, and generate the intermediate transects with a script - fall-line lines between
-     labeled contours whose crossing counts match the elevation difference - keeping a contour's label
-     only when several independent transects agree on it.
-4. **Add the features** (pixel coordinates): `stream` polylines along every stream and drainage line,
-   `rock` polygons around rock outcrops and cliffs, and `exclusion` polygons around buildings, wetlands,
-   and anything the road must avoid (property lines, setbacks). Add the `start` and `end` points.
-5. **Build the grid** with `grid CONTOURS.json PLAN.json -p PREVIEW.png`. The default spacing gives
-   about 120 cells on the long side; use `spacing` for a coarser or finer grid (roughly 1/100 to 1/150
-   of the site width). Fix every labeling problem the tool reports and re-run.
-6. **Verify.** Read the preview: the grid's contours (thin brown) must lie on the map's contours (faded
-   background) everywhere, the start and end markers must sit on the map's labeled points, and the
-   streams must follow the map's streams. Spurious bumps, pits, or shifted lines mean a mislabeled
-   component - fix it with `transect` and `contours`, and rebuild. Check the reported start and end
-   ground elevations against the map. On a large map, the whole-map preview is too small to show
-   errors - check the grid's contours over the map region by region, at full resolution. Also check:
-   - The grid's elevation range matches the map's lowest and highest contours (a flat top or bottom
-     means unlabeled contours there).
-   - Along each stream, the grid's ground falls steadily downstream. A sudden step usually means
-     contours hidden under map labels or mislabeled. Fix it from the visible contours (spot
-     elevations along the stream bed), and re-check the result - a valley narrower than about four
-     grid cells can't be represented by the grid at all. If a feature can't be fixed, say so in the
-     plan's limitations and in the descriptions of the options it affects.
+1. **The start and end points.** Each must be where its label and description say - on the road it
+   joins, at the building site - and on ground a road can reach (not in a stream bed or on a cliff).
+   The points are the user's: if one looks misplaced, don't move it - say so in your report and in the
+   plan's limitations.
+2. **The streams.** `site` moved each stream to the bottom of its valley, but only within 100 feet
+   (30 meters) of the USGS's line - a stream that was mapped farther from its valley is still off it.
+   On the plot, each stream must lie along the bottom of its valley (the contours' V's). Where a stream
+   is off its valley's bottom by more than a road width near any place a road might cross it, correct
+   its points to follow the valley's bottom. Add a `stream` for every unmapped draw that carries water
+   in a storm (a valley of contour V's that drains more than a few acres) and that a road might cross -
+   it needs a culvert there.
+3. **The roads.** The `road` features are existing roads and trails, for reference - a road option
+   that joins one follows it (Step 5). The terrain's shading shows road benches the USGS roads may
+   lack; add a `road` feature for one you'll use.
+4. **The exclusion areas.** The site's exclusion areas are in the plan. Add `exclusion` polygons for
+   everything else the notes or the map say the road must avoid - buildings, wetlands, a neighbor's
+   land, setbacks - and `rock` polygons around rock outcrops and cliffs (the terrain's shading shows
+   cliffs as abrupt, rough bands; the topographic map may label them).
+5. **The site's extent.** Every reasonable route must fit in the grid, with room for switchbacks. If one
+   doesn't, set the site model's `margin` (the distance the site extends beyond the start and end
+   points, in the plan's units) and run `site` again - it keeps the plan's options and other features.
+   A finer or coarser grid is the site model's `spacing`.
 
-   **Do not proceed until the grid matches the map.**
-
-### Contours JSON format
-
-```json
-{
-    "title": "Smith Driveway",
-    "description": ["Optional plan description Markdown lines"],
-    "units": "feet",
-    "image": "../smith.png",
-    "scale": {"pixels": 412, "distance": 500},
-    "bounds": [40, 60, 1180, 900],
-    "spacing": 10,
-    "contourInterval": 10,
-    "traced": "traced.json",
-    "exclude": [57, 61],
-    "contours": [
-        {"component": 3, "elevation": 550},
-        {"component": 12, "elevation": 600},
-        {"elevation": 640, "points": [[512, 300], [530, 296], [560, 301]]}
-    ],
-    "transects": [
-        {"line": [452, 511, 452, 330], "start": 550, "step": 10, "end": 600, "skip": [44]}
-    ],
-    "spots": [{"elevation": 623, "point": [701, 245]}],
-    "start": {"point": [150, 820], "label": "County Road"},
-    "end": {"point": [905, 120], "label": "House site"},
-    "features": [
-        {"type": "stream", "name": "Mill Creek", "points": [[600, 900], [640, 500], [700, 60]]},
-        {"type": "rock", "name": "Outcrop", "points": [[220, 300], [300, 290], [310, 360], [230, 370]]},
-        {"type": "exclusion", "name": "House", "points": [[860, 80], [960, 80], [960, 130], [860, 130]]}
-    ]
-}
-```
-
-- Paths (`image`, `traced`) are relative to the contours JSON file. All coordinates are image pixels.
-- `scale` - the scale bar's length in pixels and in map units (`"feet"` or `"meters"`).
-- `bounds` - the grid area's pixel bounds [left, top, right, bottom]; its bottom-left corner is the
-  plan's origin, with "x" east and "y" north.
-- `contours` entries either name a traced `component` or give an explicit pixel polyline (`points`)
-  for contours you trace by hand.
+Plot the site again after correcting its features, and Read the plot. **Do not proceed until the
+plan's points and features match the terrain.**
 
 
 ## Step 3: Set the design criteria
 
-Determine the road's purpose from the map and your initial prompt (assume a **single-lane gravel
-residential driveway / rural access road with fire apparatus access** unless told otherwise), and set
-the plan's `criteria` (see `make doc`):
+Determine the road's purpose from the site's notes and your initial prompt (assume a **single-lane
+gravel residential driveway / rural access road with fire apparatus access** unless told otherwise),
+and set the plan's `criteria` (see `doc plan`) - the site model's criteria, if it has them, are already
+the plan's:
 
 | Criterion | Driveway / fire access | Rural access road | Forest / ranch road |
 | --- | --- | --- | --- |
@@ -248,8 +188,8 @@ and editing alignments.
 
 - Cross streams and drainages near-perpendicular, at narrow points, with a **culvert** at every
   crossing (18 in / 0.45 m minimum; 24-36 in / 0.6-0.9 m for real streams; set at the natural stream
-  grade). The route tool places culverts at mapped stream crossings and profile sag points; add
-  culverts where the road crosses unmapped draws (contour V's).
+  grade). The route tool places culverts at the plan's stream crossings and profile sag points; add
+  culverts where the road crosses draws that aren't streams in the plan (contour V's).
 - Use a **bridge** instead where a crossing needs a very deep fill (more than ~25 ft / 8 m) or a long
   culvert. Bridges cost about $250 per square foot of deck, so compare: `route`/`profile` with
   `--bridge-fill DEPTH` replaces deep crossing fills with bridges.
@@ -271,8 +211,8 @@ and editing alignments.
 
 ## Step 5: Generate road options
 
-1. **Study the corridors.** On the verified grid plot (`plot PLAN.json OUT.png -c CONTOURS.json`),
-   identify every reasonable corridor from the start to the end:
+1. **Study the corridors.** On the verified site plot (`plot PLAN.json OUT.png`), identify every
+   reasonable corridor from the start to the end:
    - The direct line, and its average grade (elevation difference / distance). If that grade is above
      the maximum, the road must be longer - by switchbacks or by a contouring route.
    - Contour-following routes on moderate side slopes, around each side of hills and valleys.
@@ -321,23 +261,27 @@ and editing alignments.
 3. **Reduce cost.** Read the cost breakdown: if earthwork, walls, or borrow dominate, move the
    alignment to gentler side slopes, adjust the via points, or try another corridor. If surfacing and
    drainage dominate, a shorter route may win. Iterate until no change reduces the cost score without
-   creating warnings. A deep cut or fill on gentle ground - or along an existing road - usually means
-   bad topography rather than bad engineering: check the grid there against the map before redesigning.
-4. Plot the options (`plot`) and Read the plot to sanity-check the geometry against the map.
+   creating warnings. A deep cut or fill along an existing road usually means the alignment is off the
+   road's bench rather than bad engineering: check the alignment there against the plot's shading
+   before redesigning.
+4. Plot the options (`plot`, and `plot --box` at their junctions, switchbacks, and crossings) and Read
+   the plots to sanity-check the geometry against the terrain.
 
 
 ## Step 7: Finalize the road plan model
 
 1. Keep **one to four distinct, viable options**, best (lowest cost score) first. Drop options that
    are both more expensive and no better in any other way, and options with unresolvable warnings.
-2. Give the plan a `description` (Markdown lines): the site, the map source, scale, contour interval,
-   the design criteria and why, the digitizing method, assumptions (road type, surface, rotated
-   north, ...), and limitations (contour accuracy, unmapped features, turnaround not modeled). Don't
-   write `~` for "about" in descriptions - the viewer's Markdown renders `~...~` as strikethrough.
+2. Give the plan a `description` (Markdown lines): the site, the road's purpose (the site's notes), the
+   design criteria and why, the features you corrected or added, assumptions (road type, surface, ...),
+   and limitations (misplaced points, unmapped features, turnaround not modeled). The plan's elevation
+   surveys are its topography's `sources` - the viewer reports them. Don't write `~` for "about" in
+   descriptions - the viewer's Markdown renders `~...~` as strikethrough.
 3. Give each option a `description`: its corridor, its key engineering features (switchbacks, walls,
    bridges, crossings), its trade-offs versus the other options, and anything a reviewer should
    verify in the field.
-4. Make sure the `image` path is relative to the plan JSON file, so the viewer can show the source map.
+4. Keep the plan's `image` (the topographic map image, beside the plan JSON file) and its
+   `georeference` - the viewer shows the map and the start and end points' latitudes and longitudes.
 5. Run `make evaluate FILE=<plan>.json` one last time - the model must validate.
 
 
@@ -362,10 +306,9 @@ before making any changes.
 
 1. **Read the current plan.** Read the plan's `description` and each option's `description`, run
    `make evaluate FILE=<plan>.json` to record the current length, maximum grade, earthwork, warnings,
-   and cost score of every option, and plot it (`plot`). Look in the work directory (start with its
-   `README.md` and `scripts/`, if the planning session wrote them): the contours JSON
-   (`contours.json`) and the traced components let you re-digitize the topography without starting
-   over.
+   and cost score of every option, and plot it (`plot`). Read the road site model (`<plan>.site.json`,
+   beside the plan) and look in the work directory (start with its `README.md` and `scripts/`, if the
+   planning session wrote them).
 2. **Save a copy** of the plan JSON in the work directory before editing it, named with today's date
    (`<plan>.<YYYY-MM-DD>.json`), so the update can be compared against or reverted.
 3. **List the feedback items** and classify each one. Restate them to the user, with how you will
@@ -374,20 +317,21 @@ before making any changes.
    - **Design criteria** - a different maximum grade (fire code 10%), minimum radius, road width,
      surface, or slopes: update `criteria` and each option's `section`.
    - **Site features** - new or corrected exclusion areas (setbacks, easements, wetland buffers,
-     property lines, tree protection zones), streams, or rock: add them to the contours JSON
-     `features` (image pixels) and rebuild the grid, or, when there's no work directory, edit the
-     plan's `topography.features` directly (plan coordinates).
-   - **Topography** - corrected contours, spot elevations, or survey data: correct the contours JSON
-     and rebuild the grid with `grid` (Step 2), and verify the preview. `grid` replaces the
-     topography, title, start, and end, and keeps the options and criteria - so every option's
-     profile is now stale.
+     property lines, tree protection zones), streams, or rock: edit the plan's `topography.features`
+     (plan coordinates - `locate` converts latitudes and longitudes).
+   - **The site** - a moved start or end point, a larger site, or a finer grid: edit the road site
+     model and run `site` again (Step 1), and verify the site (Step 2). `site` replaces the topography,
+     title, start, end, streams, roads, and the site's exclusion areas, and keeps the options and the
+     plan's other features - so every option's profile is now stale. If a start or end point moved,
+     the plan's coordinates change: `site` stops, and the options must be engineered again in a new
+     plan.
    - **Required structures** - a culvert size, a bridge instead of a fill, a turnaround or turnout
      location: edit the option's `structures`, or re-run `profile` with the matching options.
    - **Option changes** - a different corridor, an alignment adjustment, or dropping or adding an
      option: use `route`, edit the `alignment` and run `profile`, or remove the option.
    - **Cost rates** - local unit prices or a contractor's quote: set the plan's `costRates`.
 4. **Re-engineer the affected options.** Re-run `route` or `profile` for every option whose criteria,
-   features, topography, or alignment changed (after a grid rebuild, re-run `profile` for every
+   features, topography, or alignment changed (after running `site` again, re-run `profile` for every
    option). Keep the option names unless the corridor changed. If an option can no longer meet the
    criteria, re-engineer it (Steps 5 and 6) rather than leaving it with warnings, or explain why it
    should be dropped.

@@ -60,7 +60,8 @@ node bin/roadie.js doc                               # the road plan model docum
 `--detail` adds each option's station table. The command exits with status 1 if the plan can't be loaded or is invalid.
 
 `tools/render.js` renders a plan's report (with SVG 3D views), the 3D explorer, or the model documentation as HTML from
-the command line, and `tools/bench.js` times a page in headless Chrome.
+the command line, `tools/bench.js` times a page in headless Chrome, and `tools/serve.js` serves the application to
+this computer's browser (`make run`).
 
 
 ## Performance

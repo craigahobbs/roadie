@@ -24,6 +24,9 @@ export const roadieTypes = parseSchemaMarkdown([
     '    # The unit of all lengths and elevations',
     '    Units units',
     '',
+    '    # The plan\'s place on the Earth',
+    '    optional Georeference georeference',
+    '',
     '    # The site topography',
     '    Topography topography',
     '',
@@ -67,6 +70,40 @@ export const roadieTypes = parseSchemaMarkdown([
     '    # The site\'s topographic features',
     '    optional Feature[] features',
     '',
+    '    # The elevation grid\'s data sources, in order of precedence',
+    '    optional ElevationSource[] sources',
+    '',
+    '',
+    '# A road plan\'s georeference - its coordinate system\'s place on the Earth. The plan\'s coordinates are a',
+    '# transverse Mercator map projection, with a scale factor of 1, centered on a latitude and longitude - so',
+    '# "x" is the distance east and "y" is the distance north, in the plan\'s units.',
+    'struct Georeference',
+    '',
+    '    # The projection center\'s latitude, in decimal degrees',
+    '    float(>= -90, <= 90) latitude',
+    '',
+    '    # The projection center\'s longitude, in decimal degrees',
+    '    float(>= -180, <= 180) longitude',
+    '',
+    '    # The projection center\'s east coordinate',
+    '    float x',
+    '',
+    '    # The projection center\'s north coordinate',
+    '    float y',
+    '',
+    '',
+    '# An elevation data source',
+    'struct ElevationSource',
+    '',
+    '    # The source\'s name',
+    '    string(len > 0) name',
+    '',
+    '    # The source\'s publication date',
+    '    optional string(len > 0) date',
+    '',
+    '    # The source\'s URL',
+    '    optional string(len > 0) url',
+    '',
     '',
     '# A row of grid elevations, west to east',
     'typedef float[len > 1] ElevationRow',
@@ -91,7 +128,7 @@ export const roadieTypes = parseSchemaMarkdown([
     '    # The feature type',
     '    FeatureType type',
     '',
-    '    # The feature\'s polyline (stream) or polygon (rock, exclusion) points',
+    '    # The feature\'s polyline (stream, road) or polygon (rock, exclusion) points',
     '    Point[len > 1] points',
     '',
     '    # The feature name',
@@ -109,6 +146,9 @@ export const roadieTypes = parseSchemaMarkdown([
     '',
     '    # An area polygon the road must avoid (building, wetland, property line, etc.)',
     '    exclusion',
+    '',
+    '    # An existing road or trail polyline - it\'s drawn, for reference',
+    '    road',
     '',
     '',
     '# The road design criteria',
@@ -308,7 +348,7 @@ export const roadieTypes = parseSchemaMarkdown([
 
 
 // The default cost rates, in nominal US dollars per metric unit
-const defaultRates = {
+export const defaultRates = {
     'clearing': 2,
     'excavation': 20,
     'rockExcavation': 100,
@@ -339,7 +379,7 @@ const metersPerFoot = 0.3048
 
 
 // Get the meters per plan unit
-function unitScale(plan) {
+export function unitScale(plan) {
     return plan.units === 'feet' ? metersPerFoot : 1;
 }
 
@@ -501,7 +541,7 @@ const polygonBands = 32;
 
 // Create a polygon index for repeated point-in-polygon tests - the polygon's edges, as flat [x1, y1, x2, y2, ...]
 // arrays, in the horizontal bands they span
-function polygonIndex(points) {
+export function polygonIndex(points) {
     let minY = points[0].y;
     let maxY = minY;
     for (const point of points) {
@@ -533,7 +573,7 @@ function polygonIndex(points) {
 
 // Determine if a point is inside an indexed polygon (polygonIndex) by the even-odd rule - only the edges in the
 // point's band can cross its horizontal ray
-function pointInPolygon(x, y, index) {
+export function pointInPolygon(x, y, index) {
     const {minY} = index;
     if (y < minY || y >= index.maxY) {
         return false;
@@ -598,7 +638,7 @@ export function outsideBox(box, xMin, xMax, yMin, yMax) {
 
 
 // Compute the positive and negative areas of a linearly-varying depth over a length
-function linearAreas(v1, v2, length) {
+export function linearAreas(v1, v2, length) {
     if (v1 >= 0 && v2 >= 0) {
         return [(v1 + v2) * 0.5 * length, 0];
     } else if (v1 <= 0 && v2 <= 0) {

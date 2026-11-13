@@ -1,8 +1,8 @@
 // planView.js - the plan view and profile view drawings
 
 import {
-    cellContours, colors, contourInterval, contourLevel, labelX, minRoadPx, niceStep, rgb, roadColor, samplePoints, svgOpen,
-    svgPolygon, svgPolyline, svgStyle, svgText
+    cellContours, colors, contourInterval, contourLevel, labelX, minRoadPx, niceStep, rgb, roadColor, roadFeatureColor, samplePoints,
+    svgOpen, svgPolygon, svgPolyline, svgStyle, svgText
 } from './draw.js';
 import {centerlineAt, planCriteria, sampleAt} from './model.js';
 import {fixedTrim, station as formatStation, number, px, unitLabel} from './format.js';
@@ -75,6 +75,9 @@ export function planView(plan, topo, analyses, ixOption, width, outlines) {
         }
         if (type === 'stream') {
             elements.push(svgPolyline(coords, '#2a6fdb', 2.5));
+        } else if (type === 'road') {
+            elements.push(svgPolyline(coords, 'white', 3.5));
+            elements.push(svgPolyline(coords, roadFeatureColor, 1.5));
         } else if (type === 'rock') {
             elements.push(svgPolygon(coords, 'rgba(110,110,110,0.35)', '#555555', 1));
         } else {
