@@ -187,10 +187,6 @@ function viewCaption(globals, units, reportView, ixView, viewCount) {
     }
     caption = `${caption}, looking ${direction} (${fixed(azimuth, 0)}°) from ${fixed(viewArgs.tilt, 0)}° above the horizon. ` +
         `The road runs ${reportView.leftToRight ? 'left to right' : 'right to left'} from its start to its end`;
-    if (reportView.hidden > 0) {
-        const following = ixView === 0 && viewCount > 1 ? ', shown in the views that follow' : '';
-        caption = `${caption} - the terrain hides parts of the road${following}`;
-    }
     return `${caption}. ${argsLink(globals, 'Explore this view', {...viewArgs, 'explore': true})}`;
 }
 
