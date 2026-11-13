@@ -21,6 +21,10 @@ export const colors = {
 export const roadColor = '#d6246e';
 
 
+// The color of an existing road feature's line
+export const roadFeatureColor = '#6e675f';
+
+
 // The minimum drawn road width, in pixels - narrower roads are also drawn as a highlighted centerline
 export const minRoadPx = 4;
 

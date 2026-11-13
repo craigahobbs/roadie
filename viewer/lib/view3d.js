@@ -1,8 +1,8 @@
 // view3d.js - the 3D views: projection, finished grade, terrain, road, and the report's 3D view choices
 
 import {
-    cellContours, colors, contourInterval, contourLevel, labelX, minRoadPx, niceStep, quadBrightness, rgb, roadColor, samplePoints,
-    svgOpen, svgPolygon, svgPolyline, svgText, terrainFill
+    cellContours, colors, contourInterval, contourLevel, labelX, minRoadPx, niceStep, quadBrightness, rgb, roadColor, roadFeatureColor,
+    samplePoints, svgOpen, svgPolygon, svgPolyline, svgText, terrainFill
 } from './draw.js';
 import {centerlineAt, elevation, gradient, outsideBox, sampleAt, unitLength} from './model.js';
 import {fixed, station as formatStation, px, round} from './format.js';
@@ -789,10 +789,13 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
     for (const feature of topo.features) {
         const {type} = feature;
         let {points} = feature;
-        if (type !== 'stream') {
+        // A stream or a road is a line - a rock or an exclusion area is a dashed outline
+        const line = type === 'stream' || type === 'road';
+        if (!line) {
             points = [...points, points[0]];
         }
-        const stroke = type === 'stream' ? '#2a6fdb' : (type === 'rock' ? '#555555' : 'rgba(208,49,45,0.55)');
+        const stroke = featureStrokes[type];
+        const strokeWidth = featureWidths[type];
         for (let ixPoint = 1; ixPoint < points.length; ixPoint++) {
             const prev = points[ixPoint - 1];
             const point = points[ixPoint];
@@ -826,7 +829,7 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
                         if (Math.max(pxa, pxb) >= 0 && Math.min(pxa, pxb) <= width && Math.max(pya, pyb) >= 0 &&
                             Math.min(pya, pyb) <= viewHeight) {
                             items.push((pointA[2] + pointB[2]) / 2 - cellSize * 0.5, polyline([pxa, pya, pxb, pyb], stroke,
-                                type === 'stream' ? 2.5 : 1, type === 'stream' ? null : '4 3'));
+                                strokeWidth, line ? null : '4 3'));
                         }
                     }
                 }
@@ -1008,6 +1011,11 @@ function compass(view, cx, cy) {
 //
 // Report 3D views
 //
+
+
+// The topographic features' line colors and widths, by feature type
+const featureStrokes = {'stream': '#2a6fdb', 'road': roadFeatureColor, 'rock': '#555555', 'exclusion': 'rgba(208,49,45,0.55)'};
+const featureWidths = {'stream': 2.5, 'road': 1.5, 'rock': 1, 'exclusion': 1};
 
 
 // The report 3D views' vertical exaggeration

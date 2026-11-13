@@ -93,11 +93,11 @@ An elevation data source
 
 A topographic feature
 
-| Name   | Type                             | Attributes                 | Description                                                         |
-|--------|----------------------------------|----------------------------|---------------------------------------------------------------------|
-| type   | [FeatureType](#enum-featuretype) |                            | The feature type                                                    |
-| points | [Point](#struct-point) []        | len(array) > 1             | The feature's polyline (stream) or polygon (rock, exclusion) points |
-| name   | string                           | optional<br>len(value) > 0 | The feature name                                                    |
+| Name   | Type                             | Attributes                 | Description                                                               |
+|--------|----------------------------------|----------------------------|---------------------------------------------------------------------------|
+| type   | [FeatureType](#enum-featuretype) |                            | The feature type                                                          |
+| points | [Point](#struct-point) []        | len(array) > 1             | The feature's polyline (stream, road) or polygon (rock, exclusion) points |
+| name   | string                           | optional<br>len(value) > 0 | The feature name                                                          |
 
 ### enum FeatureType
 
@@ -108,6 +108,7 @@ A topographic feature type
 | stream    | A stream, drainage, or water course polyline - road crossings need a culvert or bridge |
 | rock      | A rock outcrop polygon - excavation within it is rock excavation                       |
 | exclusion | An area polygon the road must avoid (building, wetland, property line, etc.)           |
+| road      | An existing road or trail polyline - it's drawn, for reference                         |
 
 ### struct Georeference
 

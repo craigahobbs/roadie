@@ -198,6 +198,30 @@ test('planView, features, structures, and the other options', () => {
 });
 
 
+test('planView, a road feature', () => {
+    // An existing road or trail is a cased line, with its name
+    const planValue = simplePlan();
+    planValue.topography.features = [
+        {'type': 'road', 'name': 'Mill Rd', 'points': [{'x': 0, 'y': 10}, {'x': 20, 'y': 30}, {'x': 40, 'y': 30}]},
+        {'type': 'road', 'points': [{'x': 10, 'y': 0}, {'x': 10, 'y': 40}]}
+    ];
+    const {planElements} = drawings(planValue, 0, 420);
+    const lineAttr2 = 'fill="none" stroke="white" stroke-width="3.5"';
+    assert.deepEqual(planElements.slice(2, 7), [
+        `<polyline points="10,310 210,110 410,110" ${lineAttr2} ${lineAttr}/>`,
+        `<polyline points="10,310 210,110 410,110" fill="none" stroke="#6e675f" stroke-width="1.5" ${lineAttr}/>`,
+        `<text x="210" y="176.7" font-size="11" ${textAttr} fill="#444" ${textStroke}>Mill Rd</text>`,
+        `<polyline points="110,410 110,10" ${lineAttr2} ${lineAttr}/>`,
+        `<polyline points="110,410 110,10" fill="none" stroke="#6e675f" stroke-width="1.5" ${lineAttr}/>`
+    ]);
+
+    // A road has no effect on the plan's analysis
+    const {plan} = validatePlan(planValue);
+    const topo = planTopo(plan);
+    assert.deepEqual(analyzeOption(plan, 0, topo), analyzeOption(validatePlan(simplePlan()).plan, 0, topo));
+});
+
+
 test('planView, a bridge and an existing road', () => {
     const {planDrawing, planElements} = drawings(fixturePlan(), 1, 976);
     assert.equal(planDrawing.scale, 2.39);
