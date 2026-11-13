@@ -4,6 +4,7 @@
 import {analyzeOption, planCriteria, elevation as planElevation, planTopo, roadieTypes, sampleAt, validatePlan} from './model.js';
 import {costTable, structuresTable} from './tables.js';
 import {displayQuantity, fixed, fixedTrim, station as formatStation, number, unitLabel} from './format.js';
+import {latLongText, planLatLong} from './geo.js';
 import {markdownTable} from './markdown.js';
 import {niceStep} from './draw.js';
 import {schemaDocMarkdown} from './schemaDoc.js';
@@ -69,8 +70,15 @@ function evaluate(file, detail, readFile) {
     for (const endpoint of ['start', 'end']) {
         const point = plan[endpoint];
         const ground = planElevation(topo, point.x, point.y);
+        const latLong = planLatLong(plan, point.x, point.y);
         lines.push(`- ${endpoint} (${fixed(point.x, 1)}, ${fixed(point.y, 1)}): ground elevation ` +
-            `${ground !== null ? fixed(ground, 1) : 'outside the topography'}`);
+            `${ground !== null ? fixed(ground, 1) : 'outside the topography'}` +
+            `${latLong !== null ? ` - latitude and longitude ${latLongText(latLong)}` : ''}`);
+    }
+    const sources = plan.topography.sources ?? [];
+    if (sources.length > 0) {
+        const names = sources.map((source) => source.name + ('date' in source ? ` (${source.date})` : ''));
+        lines.push(`- Topography sources: ${names.join(', ')}`);
     }
     lines.push(
         `- Design criteria: maximum grade ${fixedTrim(criteria.maxGrade, 1)}%, minimum radius ` +

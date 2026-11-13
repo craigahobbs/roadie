@@ -348,6 +348,35 @@ test('buildReport, canvas 3D views', () => {
 });
 
 
+test('buildReport, the site', () => {
+    // A plan with a georeference has its start and end points' latitudes and longitudes
+    const planValue = fixturePlan();
+    planValue.georeference = {'latitude': 44, 'longitude': -115, 'x': 200, 'y': 150};
+    delete planValue.end.label;
+    const site = (html) => html.split('\n').filter((line) => line.startsWith('<p><strong>Site:') || line.startsWith('<p><strong>Topo'));
+    assert.deepEqual(site(report(planValue).html), [
+        '<p><strong>Site:</strong> Road (43.99967, -115.00068) to End (44.00027, -114.99932).</p>'
+    ]);
+
+    // Its topography's sources
+    planValue.topography.sources = [{'name': 'USGS 1 Meter <A>', 'date': '2022-02-10'}, {'name': 'Survey & Co'}];
+    assert.deepEqual(site(report(planValue).html), [
+        '<p><strong>Site:</strong> Road (43.99967, -115.00068) to End (44.00027, -114.99932). ' +
+            '<strong>Topography:</strong> USGS 1 Meter &lt;A&gt; (2022-02-10), Survey &amp; Co.</p>'
+    ]);
+    // The points' default labels
+    planValue.start = {'x': 20, 'y': 30};
+    assert.ok(site(report(planValue).html)[0].startsWith('<p><strong>Site:</strong> Start (43.99967, -115.00068) to End (44.00027, '));
+    delete planValue.georeference;
+    assert.deepEqual(site(report(planValue).html), [
+        '<p><strong>Topography:</strong> USGS 1 Meter &lt;A&gt; (2022-02-10), Survey &amp; Co.</p>'
+    ]);
+
+    // A plan with neither has no site paragraph
+    assert.deepEqual(site(report(fixturePlan()).html), []);
+});
+
+
 test('buildReport, the 3D view captions', () => {
     // A road running west, down the slope, is viewed looking upslope - so it runs right to left
     const west = fixturePlan([{'name': 'West', 'section': {'width': 12}, 'alignment': [{'x': 380, 'y': 250}, {'x': 20, 'y': 30}]}]);

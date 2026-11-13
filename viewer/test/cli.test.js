@@ -118,6 +118,22 @@ test('cliMain evaluate, warnings, walls, and a bridge', () => {
 });
 
 
+// A plan with a georeference and elevation sources
+test('cliMain evaluate, a georeferenced plan', () => {
+    const plan = fixturePlan();
+    plan.georeference = {'latitude': 44, 'longitude': -115, 'x': 200, 'y': 150};
+    plan.topography.sources = [{'name': 'USGS 1 Meter A', 'date': '2022-02-10'}, {'name': 'Survey'}];
+    const {code, output} = run(['evaluate', 'fixture.json'], {'fixture.json': JSON.stringify(plan)});
+    assert.equal(code, 0);
+    assert.deepEqual(output.split('\n').slice(4, 8), [
+        '- start (20.0, 30.0): ground elevation 503.6 - latitude and longitude 43.99967, -115.00068',
+        '- end (380.0, 250.0): ground elevation 533.4 - latitude and longitude 44.00027, -114.99932',
+        '- Topography sources: USGS 1 Meter A (2022-02-10), Survey',
+        '- Design criteria: maximum grade 12%, minimum radius 50 ft, maximum wall height 20 ft'
+    ]);
+});
+
+
 // The complex plan has every warning and structure - samples outside the topography and slopes that don't daylight
 test('cliMain evaluate, the complex plan with detail', () => {
     assert.deepEqual(

@@ -88,6 +88,22 @@ test('validatePlan', () => {
     noLength.options[0].alignment[2].x = 21;
     assert.ok('plan' in validatePlan(noLength));
 
+    // A georeference and elevation sources
+    const georeferenced = fixturePlan();
+    georeferenced.georeference = {'latitude': 44, 'longitude': -115, 'x': 200, 'y': 150};
+    georeferenced.topography.sources = [
+        {'name': 'USGS 1 Meter'}, {'name': 'Survey', 'date': '2022-02-10', 'url': 'https://example.com/a.tif'}
+    ];
+    assert.deepEqual(validatePlan(georeferenced), {'plan': georeferenced});
+    georeferenced.georeference.latitude = 91;
+    assert.deepEqual(
+        validatePlan(georeferenced),
+        {'error': 'Invalid value 91 (type "number") for member "georeference.latitude", expected type "float" [<= 90]'}
+    );
+    georeferenced.georeference.latitude = 44;
+    delete georeferenced.topography.sources[0].name;
+    assert.deepEqual(validatePlan(georeferenced), {'error': 'Required member "topography.sources.0.name" missing'});
+
     const shortRow = fixturePlan();
     shortRow.topography.elevations = [[1, 2]];
     assert.equal(validatePlan(shortRow).error,

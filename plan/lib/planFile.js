@@ -2,7 +2,9 @@
 
 
 // The road plan model's members, in schema order
-const planMembers = ['title', 'description', 'image', 'units', 'topography', 'start', 'end', 'criteria', 'costRates', 'options'];
+const planMembers = [
+    'title', 'description', 'image', 'units', 'georeference', 'topography', 'start', 'end', 'criteria', 'costRates', 'options'
+];
 
 
 // Order a road plan model's members - the model's members in schema order, then any others

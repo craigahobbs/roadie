@@ -3,18 +3,19 @@
 A road grading plan model. A plan contains the site topography, the road start and end points, and
 one or more road plan options. All lengths and elevations are in the plan's units.
 
-| Name        | Type                                     | Attributes                 | Description                                                          |
-|-------------|------------------------------------------|----------------------------|----------------------------------------------------------------------|
-| title       | string                                   | len(value) > 0             | The plan title                                                       |
-| description | string []                                | optional                   | The plan description Markdown text lines                             |
-| image       | string                                   | optional<br>len(value) > 0 | The source topographic map image URL, relative to the plan JSON file |
-| units       | [Units](#enum-units)                     |                            | The unit of all lengths and elevations                               |
-| topography  | [Topography](#struct-topography)         |                            | The site topography                                                  |
-| start       | [Point](#struct-point)                   |                            | The road start point                                                 |
-| end         | [Point](#struct-point)                   |                            | The road end point                                                   |
-| criteria    | [DesignCriteria](#struct-designcriteria) | optional                   | The road design criteria                                             |
-| costRates   | [CostRates](#struct-costrates)           | optional                   | The cost rate overrides                                              |
-| options     | [RoadOption](#struct-roadoption) []      | len(array) > 0             | The road plan options                                                |
+| Name         | Type                                     | Attributes                 | Description                                                          |
+|--------------|------------------------------------------|----------------------------|----------------------------------------------------------------------|
+| title        | string                                   | len(value) > 0             | The plan title                                                       |
+| description  | string []                                | optional                   | The plan description Markdown text lines                             |
+| image        | string                                   | optional<br>len(value) > 0 | The source topographic map image URL, relative to the plan JSON file |
+| units        | [Units](#enum-units)                     |                            | The unit of all lengths and elevations                               |
+| georeference | [Georeference](#struct-georeference)     | optional                   | The plan's place on the Earth                                        |
+| topography   | [Topography](#struct-topography)         |                            | The site topography                                                  |
+| start        | [Point](#struct-point)                   |                            | The road start point                                                 |
+| end          | [Point](#struct-point)                   |                            | The road end point                                                   |
+| criteria     | [DesignCriteria](#struct-designcriteria) | optional                   | The road design criteria                                             |
+| costRates    | [CostRates](#struct-costrates)           | optional                   | The cost rate overrides                                              |
+| options      | [RoadOption](#struct-roadoption) []      | len(array) > 0             | The road plan options                                                |
 
 ---
 
@@ -78,6 +79,16 @@ A row of grid elevations, west to east
 |----------|----------------|
 | float [] | len(array) > 1 |
 
+### struct ElevationSource
+
+An elevation data source
+
+| Name | Type   | Attributes                 | Description                   |
+|------|--------|----------------------------|-------------------------------|
+| name | string | len(value) > 0             | The source's name             |
+| date | string | optional<br>len(value) > 0 | The source's publication date |
+| url  | string | optional<br>len(value) > 0 | The source's URL              |
+
 ### struct Feature
 
 A topographic feature
@@ -97,6 +108,19 @@ A topographic feature type
 | stream    | A stream, drainage, or water course polyline - road crossings need a culvert or bridge |
 | rock      | A rock outcrop polygon - excavation within it is rock excavation                       |
 | exclusion | An area polygon the road must avoid (building, wetland, property line, etc.)           |
+
+### struct Georeference
+
+A road plan's georeference - its coordinate system's place on the Earth. The plan's coordinates are a
+transverse Mercator map projection, with a scale factor of 1, centered on a latitude and longitude - so
+"x" is the distance east and "y" is the distance north, in the plan's units.
+
+| Name      | Type  | Attributes                    | Description                                           |
+|-----------|-------|-------------------------------|-------------------------------------------------------|
+| latitude  | float | value >= -90<br>value <= 90   | The projection center's latitude, in decimal degrees  |
+| longitude | float | value >= -180<br>value <= 180 | The projection center's longitude, in decimal degrees |
+| x         | float |                               | The projection center's east coordinate               |
+| y         | float |                               | The projection center's north coordinate              |
 
 ### struct Point
 
@@ -183,12 +207,13 @@ A road surface type
 A site topography elevation grid. The grid's southwest corner is the origin of the plan's
 coordinate system - "x" increases to the east and "y" increases to the north.
 
-| Name            | Type                                     | Attributes            | Description                                                                                                                                                                                                                             |
-|-----------------|------------------------------------------|-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| spacing         | float                                    | value > 0             | The distance between adjacent grid points                                                                                                                                                                                               |
-| elevations      | [ElevationRow](#typedef-elevationrow) [] | len(array) > 1        | The elevation grid rows, ordered north to south (top to bottom of the map). Each row's elevations are ordered west to east. The elevation at row "r" and column "c" is located at x = c * spacing and y = (rowCount - 1 - r) * spacing. |
-| contourInterval | float                                    | optional<br>value > 0 | The contour interval for display (default is computed from the elevation range)                                                                                                                                                         |
-| features        | [Feature](#struct-feature) []            | optional              | The site's topographic features                                                                                                                                                                                                         |
+| Name            | Type                                          | Attributes            | Description                                                                                                                                                                                                                             |
+|-----------------|-----------------------------------------------|-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| spacing         | float                                         | value > 0             | The distance between adjacent grid points                                                                                                                                                                                               |
+| elevations      | [ElevationRow](#typedef-elevationrow) []      | len(array) > 1        | The elevation grid rows, ordered north to south (top to bottom of the map). Each row's elevations are ordered west to east. The elevation at row "r" and column "c" is located at x = c * spacing and y = (rowCount - 1 - r) * spacing. |
+| contourInterval | float                                         | optional<br>value > 0 | The contour interval for display (default is computed from the elevation range)                                                                                                                                                         |
+| features        | [Feature](#struct-feature) []                 | optional              | The site's topographic features                                                                                                                                                                                                         |
+| sources         | [ElevationSource](#struct-elevationsource) [] | optional              | The elevation grid's data sources, in order of precedence                                                                                                                                                                               |
 
 ### enum Units
 

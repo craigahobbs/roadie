@@ -7,10 +7,11 @@ test('orderPlan', () => {
     // The model's members are in schema order, then any others in their order
     const plan = orderPlan({
         'options': [], 'end': {'x': 1, 'y': 1}, 'extra': 1, 'topography': {}, 'units': 'feet', 'title': 'Plan', 'other': 2,
-        'start': {'x': 0, 'y': 0}, 'costRates': {}, 'criteria': {}, 'image': 'plan.png', 'description': []
+        'start': {'x': 0, 'y': 0}, 'costRates': {}, 'criteria': {}, 'image': 'plan.png', 'description': [], 'georeference': {}
     });
     assert.deepEqual(Object.keys(plan), [
-        'title', 'description', 'image', 'units', 'topography', 'start', 'end', 'criteria', 'costRates', 'options', 'extra', 'other'
+        'title', 'description', 'image', 'units', 'georeference', 'topography', 'start', 'end', 'criteria', 'costRates', 'options',
+        'extra', 'other'
     ]);
     assert.deepEqual(plan.end, {'x': 1, 'y': 1});
 

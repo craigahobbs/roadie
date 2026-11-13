@@ -2,6 +2,7 @@
 
 import {costTable, structuresTable} from './tables.js';
 import {displayQuantity, encodeUrl, escapeHtml, fixed, station as formatStation, headerId, number, unitLabel} from './format.js';
+import {latLongText, planLatLong} from './geo.js';
 import {planView, profileView} from './planView.js';
 import {svgOpen, svgStyle} from './draw.js';
 import {argsLink} from './args.js';
@@ -61,6 +62,25 @@ export function buildReport(data, globals, args, width, canvasViews = false) {
     html.push(heading(1, plan.title));
     if ('description' in plan) {
         html.push(markdownHtml(plan.description));
+    }
+
+    // The site - the start and end points' latitudes and longitudes, and the topography's sources
+    const site = [];
+    if ('georeference' in plan) {
+        site.push(`<strong>Site:</strong> ${['start', 'end'].map((name) => {
+            const point = plan[name];
+            const label = point.label ?? (name === 'start' ? 'Start' : 'End');
+            return `${escapeHtml(label)} (${latLongText(planLatLong(plan, point.x, point.y))})`;
+        }).join(' to ')}.`);
+    }
+    const sources = plan.topography.sources ?? [];
+    if (sources.length > 0) {
+        site.push(`<strong>Topography:</strong> ${sources.map((source) => (
+            escapeHtml(source.name) + ('date' in source ? ` (${escapeHtml(source.date)})` : '')
+        )).join(', ')}.`);
+    }
+    if (site.length > 0) {
+        html.push(`<p>${site.join(' ')}</p>`);
     }
 
     // Options comparison
