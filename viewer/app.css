@@ -1,0 +1,210 @@
+/* The Roadie viewer stylesheet - the MarkdownUp document style (https://github.com/craigahobbs/bare-script, MIT License) */
+
+
+:root {
+    color-scheme: light dark;
+    --roadie-color-foreground: light-dark(rgb(34, 34, 34), rgb(220, 220, 220));
+    --roadie-color-link: light-dark(rgb(0, 80, 144), rgb(0, 130, 220));
+    --roadie-color-background: light-dark(rgb(250, 250, 250), rgb(20, 20, 20));
+    --roadie-color-background-pre: light-dark(rgb(239, 243, 244), rgb(32, 35, 39));
+    --roadie-color-background-code: light-dark(rgb(230, 230, 230), rgb(80, 80, 80));
+    --roadie-color-border: light-dark(rgb(192, 192, 192), rgb(80, 80, 80));
+    --roadie-color-drop: light-dark(rgb(0, 80, 144), rgb(0, 130, 220));
+    --roadie-font-size: 12pt;
+    --roadie-line-height: 1.3em;
+}
+
+
+@media print {
+    :root {
+        color-scheme: light !important;
+        --roadie-color-foreground: rgb(0, 0, 0);
+        --roadie-color-background: rgb(255, 255, 255);
+        --roadie-color-background-pre: rgb(255, 255, 255);
+        --roadie-color-background-code: rgb(255, 255, 255);
+    }
+    blockquote, img, pre, table {
+        break-inside: avoid;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        break-after: avoid;
+    }
+    .roadie-open {
+        display: none;
+    }
+}
+
+
+html, body, div, span, h1, h2, h3, h4, h5, h6, p, hr, blockquote, pre, code, a, ol, ul, li, table, tr, th, td {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-size: 1em;
+    line-height: var(--roadie-line-height);
+}
+html {
+    font-family: system-ui, Arial, sans-serif;
+    font-size: var(--roadie-font-size);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+body {
+    background-color: var(--roadie-color-background);
+    color: var(--roadie-color-foreground);
+    margin: 1.5em;
+}
+h1, h2, h3, h4, h5, h6 {
+    font-weight: bold;
+}
+h1 {
+    font-size: 2rem;
+    margin-top: 0.8em;
+}
+h2 {
+    font-size: 1.7rem;
+    margin-top: 0.7em;
+}
+h3 {
+    font-size: 1.4rem;
+    margin-top: 0.7em;
+}
+h4 {
+    font-size: 1.2rem;
+    margin-top: 0.6em;
+}
+h5 {
+    font-size: 1.1rem;
+    margin-top: 0.6em;
+}
+h6 {
+    margin-top: 0.6em;
+}
+p {
+    margin-top: 0.6em;
+}
+hr {
+    margin: 1.6em 0;
+    border-top: 1px solid var(--roadie-color-border);
+}
+blockquote {
+    margin-top: 0.6em;
+    padding-left: 1em;
+    border-left: 0.25em solid var(--roadie-color-border);
+}
+pre {
+    background-color: var(--roadie-color-background-pre);
+    font-family: monospace;
+    font-size: 0.9rem;
+    line-height: 1.3em;
+    margin-top: 0.6em;
+    padding: 0.5em;
+    border: 1px solid var(--roadie-color-border);
+    border-radius: 4px;
+    overflow-x: auto;
+}
+pre > code {
+    background-color: var(--roadie-color-background-pre);
+    font-size: 0.9rem;
+    padding: 0;
+    overflow-wrap: normal;
+}
+code {
+    background-color: var(--roadie-color-background-code);
+    font-family: monospace;
+    font-size: 0.9em;
+    padding: 0 0.4em;
+    border-radius: 4px;
+    overflow-wrap: break-word;
+}
+a {
+    color: var(--roadie-color-link);
+    text-decoration: none;
+}
+a:hover {
+    text-decoration: underline;
+}
+ul, ol {
+    list-style-position: outside;
+    margin-top: 0.6em;
+    margin-left: 2em;
+}
+ul {
+    list-style-type: disc;
+}
+li {
+    margin-top: 0.4em;
+}
+table {
+    margin-top: 0.6em;
+    margin-left: 0.4em;
+}
+th {
+    font-weight: bold;
+    text-align: left;
+    vertical-align: bottom;
+    padding-top: 0.2em;
+    padding-right: 0.8em;
+}
+th:last-child {
+    padding-right: 0;
+}
+td {
+    text-align: left;
+    vertical-align: top;
+    padding-top: 0.2em;
+    padding-right: 0.8em;
+}
+td:last-child {
+    padding-right: 0;
+}
+:where(h1, h2, h3, h4, h5, h6, blockquote, hr, li, ol, p, pre, table, ul):first-child {
+    margin-top: 0;
+}
+
+
+/* The 3D explorer fills the window */
+body.roadie-explore {
+    overflow: hidden;
+}
+
+
+/* The home page's open button and the drop target highlight */
+.roadie-button {
+    display: inline-block;
+    cursor: pointer;
+    padding: 0.4em 1em;
+    border: 1px solid var(--roadie-color-border);
+    border-radius: 4px;
+    background-color: var(--roadie-color-background-pre);
+    font-weight: bold;
+}
+.roadie-button:hover {
+    border-color: var(--roadie-color-link);
+}
+body.roadie-drop {
+    outline: 3px dashed var(--roadie-color-drop);
+    outline-offset: -6px;
+}
+.roadie-loading {
+    color: var(--roadie-color-border);
+}
+
+
+/* The 3D explorer's canvas and report link */
+.roadie-explorer {
+    position: relative;
+}
+.roadie-explorer canvas {
+    background: #f4f1ea;
+}
+.roadie-explorer-back {
+    position: absolute;
+    left: 13px;
+    top: 11px;
+    font: bold 14px sans-serif;
+    color: #1f4e8c;
+    text-shadow: -1px -1px 0 white, 1px -1px 0 white, -1px 1px 0 white, 1px 1px 0 white, 0 0 3px white;
+}
+.roadie-open {
+    margin-top: 0.6em;
+}
