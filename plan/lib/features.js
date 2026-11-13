@@ -151,3 +151,83 @@ export function exclusionFeatures(layout, site) {
         })
     }));
 }
+
+
+// The distance, in meters, that a stream is moved within to its valley's bottom, and the height, in meters, of the
+// valley's bottom - a stream is moved to the nearest ground within that height of the lowest
+const snapDistance = 30;
+const snapHeight = 0.15;
+
+
+// Move stream features to their valleys' bottoms. The USGS streams were mapped at a coarser scale than the terrain, so
+// a stream's line is often tens of feet from the bottom of its valley - where a road's culvert belongs. Each point
+// along a stream is moved, across the stream, to the lowest ground within the snap distance - the nearest of the
+// ground that low. A point isn't moved if that ground is at the snap distance: the ground is still falling there, so
+// it isn't a valley's bottom. "elevation" is a function of a plan point (x, y) that returns the ground elevation
+// there, or null outside the topography. Returns the moved streams and the "median" distance their points were
+// moved, in plan units.
+export function snapStreams(layout, streams, elevation) {
+    const {scale, spacing} = layout;
+    const width = (layout.nCols - 1) * spacing;
+    const height = (layout.nRows - 1) * spacing;
+    const reach = snapDistance / scale;
+    const tolerance = snapHeight / scale;
+    const step = Math.max(2 * spacing, 3 / scale);
+    const distances = [];
+    const snapped = [];
+    for (const stream of streams) {
+        // The stream's points, a step apart
+        const points = [];
+        for (let ix = 1; ix < stream.points.length; ix++) {
+            const point1 = stream.points[ix - 1];
+            const point2 = stream.points[ix];
+            const count = Math.max(1, Math.round(Math.hypot(point2.x - point1.x, point2.y - point1.y) / step));
+            for (let ixStep = ix === 1 ? 0 : 1; ixStep <= count; ixStep++) {
+                points.push([point1.x + (point2.x - point1.x) * ixStep / count, point1.y + (point2.y - point1.y) * ixStep / count]);
+            }
+        }
+
+        // Each point's offset across the stream (to the left of its direction) to the lowest ground
+        const offsets = points.map(([x, y], ix) => {
+            const [prevX, prevY] = points[Math.max(0, ix - 1)];
+            const [nextX, nextY] = points[Math.min(points.length - 1, ix + 1)];
+            const length = Math.hypot(nextX - prevX, nextY - prevY);
+            const acrossX = -(nextY - prevY) / length;
+            const acrossY = (nextX - prevX) / length;
+            // The ground across the stream, nearest first - and its lowest
+            const grounds = [[0, elevation(x, y) ?? Infinity]];
+            for (let across = spacing / 2; across <= reach; across += spacing / 2) {
+                for (const side of [across, -across]) {
+                    grounds.push([side, elevation(x + acrossX * side, y + acrossY * side) ?? Infinity]);
+                }
+            }
+            const lowest = grounds.reduce((low, ground) => (ground[1] < low[1] ? ground : low));
+
+            // The nearest ground that's about that low - unless the lowest ground is at the snap distance
+            const offset = Math.abs(lowest[0]) > reach - spacing / 2 ? 0 : grounds.find(([, ground]) => ground <= lowest[1] + tolerance)[0];
+            return [offset, acrossX, acrossY];
+        });
+
+        // The offsets along the stream are smoothed, so the stream doesn't zigzag - each is the median of the five about
+        // it, then the mean of it (twice) and the offsets either side of it. Then the points are moved.
+        const medians = offsets.map((unused, ix) => {
+            const nearby = offsets.slice(Math.max(0, ix - 2), ix + 3).map(([offset]) => offset);
+            return nearby.sort((offset1, offset2) => offset1 - offset2)[Math.floor(nearby.length / 2)];
+        });
+        const moved = points.map(([x, y], ix) => {
+            const offset = (medians[Math.max(0, ix - 1)] + 2 * medians[ix] + medians[Math.min(medians.length - 1, ix + 1)]) / 4;
+            distances.push(Math.abs(offset));
+            return [x + offsets[ix][1] * offset, y + offsets[ix][2] * offset];
+        });
+
+        // The moved stream's parts within the grid
+        for (const part of clipLine(moved, width, height)) {
+            const simple = simplifyLine(part, simplifyDistance / scale);
+            if (simple.length > 1) {
+                snapped.push({...stream, 'points': simple.map(([x, y]) => ({'x': round(x, 1), 'y': round(y, 1)}))});
+            }
+        }
+    }
+    distances.sort((distance1, distance2) => distance1 - distance2);
+    return {'streams': snapped, 'median': distances.length > 0 ? distances[Math.floor(distances.length / 2)] : 0};
+}

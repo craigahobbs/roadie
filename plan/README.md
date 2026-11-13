@@ -24,7 +24,8 @@ ground elevations), reads the site's part of them (it's cached in the plan's wor
 `<plan>.work/terrain/`), and grids them in the plan's coordinates - a transverse Mercator projection centered on
 the site. The newest survey's elevations are used, and an older survey's where the newer have none. The site's
 features are the USGS National Map's streams, roads, and trails, and the site's exclusion areas, and its
-topographic map image (`<plan>.png`) is the National Map's.
+topographic map image (`<plan>.png`) is the National Map's. The streams were mapped at a coarser scale than the
+terrain, so each is moved to the bottom of its valley - the lowest ground within 30 meters across it.
 
 `plot` draws a plan for the planning session to study: its terrain, shaded (lit from the northwest) with contours,
 its features, each option's line with its stations and structures, and the plan's coordinates along its sides.

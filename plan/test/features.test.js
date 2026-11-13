@@ -1,4 +1,4 @@
-import {exclusionFeatures, lineFeatures} from '../lib/features.js';
+import {exclusionFeatures, lineFeatures, snapStreams} from '../lib/features.js';
 import {layoutLatLong, siteLayout} from '../lib/terrain.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -150,4 +150,91 @@ test('exclusionFeatures', () => {
 
     // A site without exclusion areas
     assert.deepEqual(exclusionFeatures(layout, testSite()), []);
+});
+
+
+// A valley's ground - the valley's bottom is along x = 100, its sides rise 20%, and it falls 1% to the south. There's
+// no ground outside the layout's grid.
+function valley(x, y) {
+    return x < 0 || y < 0 || x > 340 || y > 264 ? null : 100 + 0.2 * Math.abs(x - 100) + 0.01 * y;
+}
+
+
+// Create a stream feature of plan points
+function stream(name, ...points) {
+    return {'type': 'stream', ...(name !== null ? {name} : {}), 'points': points.map(([x, y]) => ({x, y}))};
+}
+
+
+test('snapStreams', () => {
+    // A stream 20 to 25 meters up the valley's side is moved to the valley's bottom - within a half of the grid's
+    // spacing (2 meters) of it
+    const {streams, median} = snapStreams(layout, [stream('Mill Creek', [125, 250], [125, 150], [120, 20])], valley);
+    assert.deepEqual(streams, [
+        stream('Mill Creek', [101, 250], [101, 150.5], [99.8, 118.4], [100.8, 94], [99.9, 69.6], [101, 45.1], [100, 20.8])
+    ]);
+    assert.equal(median, 24);
+
+    // Streams either side of the valley's bottom - the second has no name
+    assert.deepEqual(snapStreams(layout, [stream('Mill Creek', [128, 10], [128, 60]), stream(null, [72, 60], [72, 10])], valley), {
+        'streams': [stream('Mill Creek', [100, 10], [100, 60]), stream(null, [100, 60], [100, 10])], 'median': 28
+    });
+
+    // No streams
+    assert.deepEqual(snapStreams(layout, [], valley), {'streams': [], 'median': 0});
+});
+
+
+test('snapStreams, a stream that is not moved', () => {
+    // A stream at the valley's bottom, or within 0.15 meters of its height - the valley's bottom is 20 meters wide
+    assert.deepEqual(snapStreams(layout, [stream(null, [100, 20], [100, 250])], valley), {
+        'streams': [stream(null, [100, 20], [100, 250])], 'median': 0
+    });
+    const wide = (x) => 100 + 0.2 * Math.max(0, Math.abs(x - 100) - 10);
+    assert.deepEqual(snapStreams(layout, [stream(null, [104, 10], [104, 60])], wide).streams, [stream(null, [104, 10], [104, 60])]);
+    assert.deepEqual(snapStreams(layout, [stream(null, [114, 10], [114, 60])], wide).streams, [stream(null, [110, 10], [110, 60])]);
+
+    // A stream on level ground
+    assert.deepEqual(snapStreams(layout, [stream(null, [200, 20], [200, 250])], () => 100).streams, [stream(null, [200, 20], [200, 250])]);
+
+    // A stream farther than 30 meters from its valley's bottom - the lowest ground within 30 meters isn't a valley's
+    // bottom (it's still falling), so the stream isn't moved. Nor is a stream that crosses the valley.
+    assert.deepEqual(snapStreams(layout, [stream(null, [300, 20], [300, 250])], valley), {
+        'streams': [stream(null, [300, 20], [300, 250])], 'median': 0
+    });
+    assert.deepEqual(snapStreams(layout, [stream(null, [50, 100], [150, 100])], valley).streams, [stream(null, [50, 100], [150, 100])]);
+
+    // A stream at the grid's edge, where the ground falls to it
+    assert.deepEqual(snapStreams(layout, [stream(null, [5, 0], [5, 30])], (x) => (x < 0 ? null : 100 - x)).streams, [
+        stream(null, [5, 0], [5, 30])
+    ]);
+});
+
+
+test('snapStreams, the grid\'s edge and a plan in feet', () => {
+    // A valley's bottom beyond the grid's edge - the stream is moved to the edge, the lowest ground there is
+    const beyond = (x) => (x > 340 ? null : 100 + 0.2 * Math.abs(x - 350));
+    assert.deepEqual(snapStreams(layout, [stream(null, [330, 10], [330, 60])], beyond), {
+        'streams': [stream(null, [340, 10], [340, 60])], 'median': 10
+    });
+
+    // A stream outside the grid, where there's no ground - it's moved to the valley's bottom, within the grid
+    const inside = (x) => (x < 0 ? null : 100 + 0.2 * Math.abs(x - 8));
+    assert.deepEqual(snapStreams(layout, [stream(null, [-6, 10], [-6, 60])], inside), {
+        'streams': [stream(null, [8, 10], [8, 60])], 'median': 14
+    });
+
+    // A valley whose bottom leaves the grid - its bottom is to the west of the grid for its southern half
+    const west = (x, y) => (x < 0 ? null : 100 + 0.2 * Math.abs(x - (y < 100 ? -20 : 20)));
+    assert.deepEqual(snapStreams(layout, [stream(null, [10, 200], [10, 20])], west).streams, [
+        stream(null, [20, 200], [20, 113.9], [15, 106.1], [5, 98.3], [0, 90.4], [0, 20])
+    ]);
+
+    // A plan in feet - 30 meters is 98 feet: a stream 90 feet from its valley's bottom is moved, and one 110 feet from
+    // it isn't
+    const feet = siteLayout(testSite({'units': 'feet', 'margin': 60, 'spacing': 10}));
+    const valleyFeet = (x) => 100 + 0.2 * Math.abs(x - 100);
+    assert.deepEqual(snapStreams(feet, [stream(null, [190, 100], [190, 400]), stream(null, [210, 100], [210, 400])], valleyFeet), {
+        'streams': [stream(null, [100, 100], [100, 400]), stream(null, [210, 100], [210, 400])], 'median': 90
+    });
 });

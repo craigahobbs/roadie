@@ -58,7 +58,9 @@ and scripts: put throwaway check images in its `scratch/` folder and delete them
    - **The start and end points**, the site's **exclusion areas**, and the design criteria and cost
      rates.
    - **The streams** (the USGS National Hydrography Dataset's) and the **roads and trails** (the USGS
-     National Map's) within the site.
+     National Map's) within the site. The USGS streams were mapped at a coarser scale than the terrain,
+     so `site` moves each stream to the bottom of its valley - the lowest ground within 100 feet
+     (30 meters) across it.
    - **The topographic map image** (`<plan>.png`, the USGS topographic base map of the site) - the
      plan's `image`.
 
@@ -91,12 +93,13 @@ features (edit `topography.features` in the plan JSON, in the plan's coordinates
    joins, at the building site - and on ground a road can reach (not in a stream bed or on a cliff).
    The points are the user's: if one looks misplaced, don't move it - say so in your report and in the
    plan's limitations.
-2. **The streams.** The USGS stream lines were mapped at a coarser scale than the terrain, so a line
-   can be tens of feet from its valley's bottom. On the plot, each stream must lie along the bottom of
-   its valley (the contours' V's). Where a stream is off its valley's bottom by more than a road width
-   near any place a road might cross it, correct its points to follow the valley's bottom. Add a
-   `stream` for every unmapped draw that carries water in a storm (a valley of contour V's that drains
-   more than a few acres) and that a road might cross - it needs a culvert there.
+2. **The streams.** `site` moved each stream to the bottom of its valley, but only within 100 feet
+   (30 meters) of the USGS's line - a stream that was mapped farther from its valley is still off it.
+   On the plot, each stream must lie along the bottom of its valley (the contours' V's). Where a stream
+   is off its valley's bottom by more than a road width near any place a road might cross it, correct
+   its points to follow the valley's bottom. Add a `stream` for every unmapped draw that carries water
+   in a storm (a valley of contour V's that drains more than a few acres) and that a road might cross -
+   it needs a culvert there.
 3. **The roads.** The `road` features are existing roads and trails, for reference - a road option
    that joins one follows it (Step 5). The terrain's shading shows road benches the USGS roads may
    lack; add a `road` feature for one you'll use.

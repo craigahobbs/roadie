@@ -232,7 +232,10 @@ test('site, the features', async () => {
         'roads': [testLine({'name': 'Ridge Rd'}, [lonLat(0, 250), lonLat(350, 250)])]
     })});
     assert.equal(io.code, 0);
-    assert.equal(io.output.join('').split('\n')[3], 'Features: 1 stream, 1 road, 1 exclusion area');
+    assert.deepEqual(io.output.join('').split('\n').slice(3, 5), [
+        'Features: 1 stream, 1 road, 1 exclusion area',
+        'Streams: moved to the lowest ground within 30 meters across them - a median of 0.0 meters'
+    ]);
     assert.deepEqual(JSON.parse(io.files['plans/road.json']).topography.features, [
         {
             'type': 'stream',

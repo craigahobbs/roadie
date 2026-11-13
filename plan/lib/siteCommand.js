@@ -3,7 +3,7 @@
 // (the USGS National Map's streams, roads, and trails, and the site's exclusion areas), and its topographic map image
 
 import {elevationModels, roadLines, streamLines, topoMapImageUrl} from './usgs.js';
-import {exclusionFeatures, lineFeatures} from './features.js';
+import {exclusionFeatures, lineFeatures, snapStreams} from './features.js';
 import {layoutBox, layoutGeoreference, layoutLatLong, readTile, round, siteLayout, siteTerrain} from './terrain.js';
 import {orderPlan, planText} from './planFile.js';
 import {elevation as planElevation, planTopo} from '../../viewer/lib/model.js';
@@ -135,6 +135,11 @@ export async function siteCommand(args, io) {
         ]);
     }
 
+    // The streams are moved to the bottoms of the terrain's valleys
+    const streamTopo = planTopo({'topography': {spacing, elevations}});
+    const snapped = snapStreams(layout, streams, (x, y) => planElevation(streamTopo, x, y));
+    ({streams} = snapped);
+
     // The features - the site's streams, roads, and exclusion areas, and the plan's other features
     const exclusions = exclusionFeatures(layout, site);
     const exclusionNames = new Set(exclusions.map(({name}) => name));
@@ -189,6 +194,10 @@ export async function siteCommand(args, io) {
     lines.push(
         `Features: ${featureCount(streams, 'stream')}, ${featureCount(roads, 'road')}, ${featureCount(exclusions, 'exclusion area')}`
     );
+    if (streams.length > 0) {
+        lines.push(`Streams: moved to the lowest ground within ${Math.round(30 / layout.scale)} ${units} across them - ` +
+            `a median of ${snapped.median.toFixed(1)} ${units}`);
+    }
     if (image !== null) {
         lines.push(`Topographic map image: ${imagePath}`);
     }
