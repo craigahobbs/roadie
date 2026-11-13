@@ -1,6 +1,6 @@
 # Roadie
 
-Roadie engineers low-volume roads from a topographic map and views the resulting road plan models in
+Roadie engineers low-volume roads on USGS lidar terrain and views the resulting road plan models in
 a printable report with 3D views. See [README.md](README.md) for the user-facing overview.
 
 The project is two subprojects, and the top-level makefile delegates to them:
@@ -9,22 +9,25 @@ The project is two subprojects, and the top-level makefile delegates to them:
   the web application (report, plan and profile views, 3D views, and 3D explorer), the road plan model (its Schema
   Markdown schema, validation, earthwork, and cost analysis), and the command line behind `make evaluate` and
   `make doc`. See [viewer/CLAUDE.md](viewer/CLAUDE.md).
-- **The planning tools** (`plan/`) and the planning instructions, [plan/PLAN.md](plan/PLAN.md). The tools are being
-  converted from Python to JavaScript ([javascript-build](https://github.com/craigahobbs/javascript-build#readme)), and
-  from digitizing a topographic map image to USGS lidar terrain: the new tools are `plan/bin/plan.js` (`plan/lib/`),
-  and until they're complete the Python tools (`plan/legacy/plan_tools.py`,
-  [python-build](https://github.com/craigahobbs/python-build#readme)) plan the roads. **Planning a road**
-  (`make plan`, `make update`) follows PLAN.md - when asked to plan or update a road, follow PLAN.md exactly. The
-  planning session runs in `plan/legacy/`.
+- **The planning tools** (`plan/`, JavaScript, [javascript-build](https://github.com/craigahobbs/javascript-build#readme)) -
+  `plan/bin/plan.js` (`plan/lib/`) and the planning instructions, [plan/PLAN.md](plan/PLAN.md). A road is planned
+  from a road site model (`<plan>.site.json` - the road's start and end points, as latitudes and longitudes, and its
+  planning notes): the tools build the site from the USGS 3D Elevation Program's 1 meter lidar terrain, and engineer
+  its road options. **Planning a road** (`make plan`, `make update`) follows PLAN.md - when asked to plan or update
+  a road, follow PLAN.md exactly. The planning session runs in `plan/`. See [plan/README.md](plan/README.md).
+- **The Python planning tools** (`plan/legacy/`, [python-build](https://github.com/craigahobbs/python-build#readme))
+  that the JavaScript tools replace - they digitized a topographic map image. They're kept, for comparison, until the
+  JavaScript tools are validated on a real site; then they're removed.
 
 `example/` is a small synthetic plan. `index.html` renders this project's README on its web site.
 
 ## Commands
 
 ```sh
-make commit                       # the pre-commit gate: both subprojects' tests and lint (the viewer at 100% coverage)
+make commit                       # the pre-commit gate: the subprojects' tests and lint (at 100% coverage)
 make test [TEST=name]             # the viewer's unit tests (TEST runs one) and the planning tools' unit tests
-make lint                         # ESLint (viewer) and pylint (planning tools)
+make lint                         # ESLint (the viewer and the planning tools)
+make plan FILE=<plan>.site.json   # plan a road (a Claude Code session)
 make evaluate FILE=<plan.json> [DETAIL=1]   # a plan's analysis and cost from the command line
 make doc                          # the road plan model documentation
 make run FILE=<plan.json>         # view a plan in the browser
@@ -42,9 +45,13 @@ Run `make` in `viewer/`, `plan/`, or `plan/legacy/` for a subproject's own targe
   (or a paragraph) explaining what changed and why.
 - The road plan model stays defined, validated, and documented with Schema Markdown (see viewer/CLAUDE.md), and the
   viewer validates every plan it loads.
-- The planning tools use the viewer's model (`plan/lib/` imports `viewer/lib/`). The Python tools mirror parts of it
-  (`DEFAULT_RATES` and the cross sections in `plan/legacy/plan_tools.py`) - keep them in sync with
-  `viewer/lib/model.js` until they're removed.
+- The planning tools use the viewer's model (`plan/lib/` imports `viewer/lib/` - its schema, cost rates, topography,
+  and drawing code). Their route search and profile design have their own cross sections (`plan/lib/design.js`, a
+  retaining wall where a slope doesn't daylight) - keep them consistent with `viewer/lib/model.js`'s.
+- The planning tools' tests never use the network - the USGS services and elevation models are faked
+  (`plan/test/terrainHelpers.js`). To check the tools against the real services, plan a site in the scratchpad
+  (`node plan/bin/plan.js site <site.json> <plan.json>`, then `route` and `plot`).
+- The road site model is defined and validated with Schema Markdown, like the road plan model (`plan/lib/site.js`).
 - Keep the README's viewer section and key table in sync with the viewer's controls.
 - `FILE` and `OUTPUT` paths are relative to the directory `make` runs in - the top-level makefile makes them absolute
   before delegating.

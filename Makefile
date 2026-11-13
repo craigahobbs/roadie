@@ -1,8 +1,8 @@
 # Roadie's top-level makefile - it delegates to the project's two subprojects:
 #
 #   viewer/  The Roadie viewer - a JavaScript web application (javascript-build)
-#   plan/    The planning tools and instructions - JavaScript (javascript-build). The planning tools are being
-#            converted from Python - until they're complete, the Python tools (plan/legacy/, python-build) plan the roads.
+#   plan/    The planning tools and instructions - JavaScript (javascript-build). The Python tools they replace
+#            (plan/legacy/, python-build) are kept until the JavaScript tools are validated on a real site.
 
 .DEFAULT_GOAL := help
 
@@ -16,7 +16,7 @@ SUBMAKE = @$(MAKE) --no-print-directory -C $(1) $(2)$(if $(FILE), FILE="$(abspat
 help:
 	@echo "usage: make [clean|commit|doc|evaluate|gh-pages|lint|plan|run|site|superclean|test|update]"
 	@echo ""
-	@echo "  make plan FILE=<plan.png> [OUTPUT=<plan.json>]  Engineer road plan options from a topo map image (Claude Code)"
+	@echo "  make plan FILE=<plan>.site.json [OUTPUT=<plan.json>]  Engineer road plan options for a road site (Claude Code)"
 	@echo "  make update FILE=<plan.json>               Update a road plan model with review feedback (Claude Code)"
 	@echo "    (plan and update accept MODEL=<model> [default: opus] and EFFORT=<effort> [default: high],"
 	@echo "     OLLAMA=1 to launch Claude Code with an Ollama model - MODEL then names the Ollama model,"
@@ -44,17 +44,25 @@ run:
 	$(call SUBMAKE,viewer,$@)
 
 
-# Engineer road plan options from a topographic map image, and update an existing road plan model with review
-# feedback (Claude Code or Grok) - see plan/legacy/Makefile and plan/PLAN.md
+# Engineer road plan options for a road site (a road site model - the road's start and end points and its planning
+# notes), and update an existing road plan model with review feedback (Claude Code or Grok) - see plan/Makefile and
+# plan/PLAN.md
 .PHONY: plan update
 plan update:
-	$(call SUBMAKE,plan/legacy,$@)
+	$(call SUBMAKE,plan,$@)
 
 
-# Print a road plan model's analysis and cost (DETAIL=1 adds the station table), and the road plan model documentation
-.PHONY: evaluate doc
-evaluate doc:
-	$(call SUBMAKE,plan/legacy,$@)
+# Print a road plan model's analysis and cost (DETAIL=1 adds the station table)
+.PHONY: evaluate
+evaluate:
+	$(call SUBMAKE,plan,$@)
+
+
+# Print the road plan model documentation
+.PHONY: doc
+doc:
+	@$(MAKE) -s --no-print-directory -C viewer build/npm.build
+	@node viewer/bin/roadie.js doc
 
 
 # Stage the project's web site - the documentation at its root (index.html renders README.md), the planning
