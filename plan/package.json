@@ -8,6 +8,7 @@
         "test": "node --test test/"
     },
     "dependencies": {
+        "geotiff": "~3.0",
         "schema-markdown": "~1.3"
     },
     "devDependencies": {
