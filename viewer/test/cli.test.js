@@ -99,7 +99,7 @@ test('cliMain evaluate, warnings, walls, and a bridge', () => {
     assert.notEqual(ixBridge, -1);
     assert.equal(lines[ixBridge + 1], '| Existing road |      | 3+00 to 4+00 |      | Upgrade 100 ft |');
 
-    // The station tables - fills and cuts, walls, rock, a bridge, and an existing road
+    // The station tables - fills and cuts, walls, rock, a bridge, and an existing road (its grade is the ground)
     const ixStations = lines.indexOf('### Stations');
     assert.deepEqual(lines.slice(ixStations + 2, ixStations + 5), [
         '| Station | X     | Y     | Ground | Grade | Cut/Fill | Side Slope | Left     | Right     | Notes |',
@@ -111,7 +111,7 @@ test('cliMain evaluate, warnings, walls, and a bridge', () => {
         '| 2+80    | 268.4 | 146.8 | 532.8  | 531.4 | C 1.4    | 9%         | wall 2.0 | wall 0.8  | rock  |',
         '| 4+40    | 380.0 | 250.0 | 533.4  | 533.4 | C 0.0    | 19%        | cut 1.4  | fill 2.4  |       |',
         '| 1+79    | 195.4 | 60.0  | 500.7  | 511.6 | F 10.9   | 12%        |          |           | bridge              |',
-        '| 3+01    | 288.4 | 116.1 | 533.2  | 521.8 | C 11.3   | 3%         |          |           | existing road, rock |'
+        '| 3+01    | 288.4 | 116.1 | 533.2  | 533.2 | C 0.0    | 3%         |          |           | existing road, rock |'
     ]) {
         assert.ok(lines.includes(line), line);
     }

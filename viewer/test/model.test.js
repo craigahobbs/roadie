@@ -721,6 +721,28 @@ test('analyzeOption, existing road', () => {
 });
 
 
+// An existing road is on the ground between its alignment points, too - here, over a 2 foot rise at 30 feet east
+test('analyzeOption, existing road between alignment points', () => {
+    const plan = planExistingRoad();
+    for (const row of plan.topography.elevations) {
+        row[3] = 111;
+    }
+    plan.options[0].alignment = [{'x': 0, 'y': 20}, {'x': 20, 'y': 20}, {'x': 40, 'y': 20}];
+    const analysis = analyze(plan);
+    assert.deepEqual(analysis.alignment.map(({station, z}) => [station, z]), [[0, 100], [20, 106], [40, 112]]);
+    assert.deepEqual(
+        analysis.samples.map((sample) => [sample.existing, round(sample.ground, 3), round(sample.z, 3), sample.cut, sample.fill]),
+        [
+            [false, 100, 100, 0, 0], [false, 101, 101, 0, 0], [false, 102, 102, 0, 0], [false, 103, 103, 0, 0],
+            [false, 104, 104, 0, 0], [false, 105, 105, 0, 0], [true, 106, 106, 0, 0], [true, 107.667, 107.667, 0, 0],
+            [true, 109.333, 109.333, 0, 0], [true, 111, 111, 0, 0], [true, 111.333, 111.333, 0, 0], [true, 111.667, 111.667, 0, 0],
+            [true, 112, 112, 0, 0]
+        ]
+    );
+    assert.deepEqual(analysis.grades.map(({grade, existing}) => [grade, existing]), [[30, false], [30, true]]);
+});
+
+
 // An existing road's curves aren't checked
 test('analyzeOption, existing road curves', () => {
     const plan = planExistingRoad();

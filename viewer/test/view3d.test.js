@@ -480,15 +480,26 @@ test('view3DParts, a bridge and an existing road', () => {
     assert.deepEqual(counts.labels, ['4+00', '2+00']);
     assert.deepEqual(counts.lines, {'#2a6fdb 2.5': 60, '#555555 1': 48, 'rgba(208,49,45,0.55) 1': 32});
 
-    // The existing road's intervals
+    // The existing road's intervals - the road is on the ground, whatever its alignment's elevations
     const titles = elements.filter((element) => element.includes('<title>')).map(
         (element) => element.slice(element.indexOf('<title>') + 7, element.indexOf('</title>'))
     );
     const existing = titles.filter((title) => title.includes(' (existing road): '));
     assert.equal(existing.length, 29);
-    assert.ok(existing.includes('3+97 (existing road): grade 528.7, ground 535.5, cut 6.8'));
+    assert.ok(existing.includes('3+97 (existing road): grade 535.5, ground 535.5, cut 0.0'));
+    assert.ok(existing.every((title) => title.endsWith(', cut 0.0')));
     assert.ok(titles.includes('4+64: grade 533.4, ground 533.4, cut 0.0'));
-    assert.equal(elements.filter((element) => element.includes('fill="rgb(102,100,95)"')).length, 29);
+
+    // Their surface is the existing road's gray, shaded by the ground it follows
+    const existingFills = {};
+    for (const element of elements.filter((item) => item.includes(' (existing road): '))) {
+        const [, fill] = element.match(/fill="([^"]*)"/);
+        existingFills[fill] = (existingFills[fill] ?? 0) + 1;
+    }
+    assert.deepEqual(existingFills, {
+        'rgb(104,102,97)': 7, 'rgb(104,102,96)': 5, 'rgb(103,102,96)': 5, 'rgb(103,101,95)': 1, 'rgb(102,100,95)': 5,
+        'rgb(101,99,94)': 5, 'rgb(100,98,92)': 1
+    });
 });
 
 
@@ -705,21 +716,21 @@ test('reportViews, the viewpoints', () => {
 
 test('reportViews, the road segment views', () => {
     // A long, narrow road has at most six road segment views. Each looks across its segment from the overview's side - a
-    // steeper view where the ridge hides the road
+    // steeper view where the terrain hides the road
     const planValue = fixturePlan();
     planValue.options[1].section.width = 0.2;
     let views = planReportViews(planValue, 1);
     assert.deepEqual(viewpoints(views), [
-        [328.6, 70, 0, 464, true],
+        [328.6, 55, 0, 464, true],
         [347, 40, 0, 77, true],
         [350.4, 40, 77, 155, true],
         [0, 40, 155, 232, true],
         [305.4, 70, 232, 309, true],
-        [304.4, 70, 309, 386, true],
+        [304.4, 40, 309, 386, true],
         [304.4, 40, 386, 464, true]
     ]);
     assert.deepEqual(views.map(({view}) => [view.zoom, view.height]), [
-        [1, 679], [6.379, 732], [6.635, 732], [6.379, 732], [7.952, 732], [8.248, 732], [6.379, 732]
+        [1, 666], [6.379, 732], [6.635, 732], [6.379, 732], [7.952, 732], [6.669, 732], [6.379, 732]
     ]);
 
     // A wider road has fewer, longer segments

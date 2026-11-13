@@ -765,11 +765,12 @@ function optionSamples(plan, topo, option, alignment) {
         const fraction = segmentLength > 0 ? Math.max(0, Math.min(1, (stationValue - p1.station) / segmentLength)) : 0;
         const x = p1.x + (p2.x - p1.x) * fraction;
         const y = p1.y + (p2.y - p1.y) * fraction;
-        const z = p1.z + (p2.z - p1.z) * fraction;
+        let z = p1.z + (p2.z - p1.z) * fraction;
         const dx = segmentLength > 0 ? (p2.x - p1.x) / segmentLength : 1;
         const dy = segmentLength > 0 ? (p2.y - p1.y) / segmentLength : 0;
 
-        // Ground elevation and cross slope (outside the grid, the ground is at grade)
+        // Ground elevation and cross slope (outside the grid, the ground is at grade) - an existing road is on the ground
+        const existing = existingAt(existingRoads, stationValue);
         let ground = elevation(topo, x, y);
         const outside = ground === null;
         let slope = 0;
@@ -778,6 +779,7 @@ function optionSamples(plan, topo, option, alignment) {
         } else {
             const grad = gradient(topo, x, y);
             slope = -dy * grad[0] + dx * grad[1];
+            z = existing ? ground : z;
         }
 
         // Rock?
@@ -791,7 +793,6 @@ function optionSamples(plan, topo, option, alignment) {
 
         // Compute the cross section - a bridge or an existing road has no earthwork
         const bridge = bridges.length > 0 && structureAt(bridges, 'bridge', stationValue, null) !== null;
-        const existing = existingAt(existingRoads, stationValue);
         let section2;
         if (bridge || existing) {
             section2 = crossSection(0, 0, halfWidth, cutSlope, fillSlope, false, false);
