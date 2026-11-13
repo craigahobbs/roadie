@@ -158,7 +158,7 @@ export async function siteCommand(args, io) {
         ...shifted.topography,
         spacing,
         elevations,
-        'contourInterval': contourInterval(maxZ - minZ, units),
+        'contourInterval': rangeContourInterval(maxZ - minZ, units),
         'sources': terrain.surveys.map(({name, date, url}) => ({
             'name': `USGS 3D Elevation Program 1 meter elevation model ${name}`, ...(date !== '' ? {date} : {}), url
         })),
@@ -224,7 +224,7 @@ const contourIntervals = {'feet': [1, 2, 5, 10, 20, 40, 100, 200], 'meters': [0.
 
 
 // Choose a topography's contour interval for its elevation range - about 40 contours, at most
-function contourInterval(range, units) {
+export function rangeContourInterval(range, units) {
     const intervals = contourIntervals[units];
     return intervals.find((interval) => range / interval <= 40) ?? intervals.at(-1);
 }

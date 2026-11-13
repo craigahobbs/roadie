@@ -235,6 +235,73 @@ test('planPlot, the options', () => {
 });
 
 
+test('planPlot, a box of the plan', () => {
+    // The box is 200 x 100 feet of the fixture plan - the plot is 4 pixels per foot
+    const {plan} = validatePlan(fixturePlan());
+    const {svg, width, height} = planPlot(plan, planTopo(plan), 880, [100, 50, 300, 150]);
+    const elements = svg.slice(svg.indexOf('>') + 1, -'</svg>'.length).replace(/></g, '>\n<').split('\n');
+    assert.deepEqual([width, height], [880, 468]);
+
+    // The terrain is the box's grid points - 21 columns and 11 rows
+    assert.ok(elements[1].startsWith('<image x="64" y="34" width="800" height="400" '));
+    const shade = shadeImage(elements[1]);
+    assert.deepEqual([shade.width, shade.height], [21, 11]);
+
+    // The contour interval is the box's elevations' - the plan's is 5 feet
+    assert.ok(elements.at(-5).endsWith('>Fixture Plan - contours every 1 feet, coordinates in feet</text>'));
+
+    // The features and options are drawn beyond the box, where the plot's margins cover them - a feature without a
+    // point in the box has no name, and the start and end points aren't in the box
+    assert.ok(elements.includes(`<polyline points="464,634 464,-566" fill="none" stroke="#2a6fdb" stroke-width="2" ${lineAttr}/>`));
+    assert.ok(elements.includes(
+        `<polyline points="-256,514 464,74 864,34 1184,-366" fill="none" stroke="#d6246e" stroke-width="2.5" ${lineAttr}/>`
+    ));
+    assert.ok(!svg.includes('>Test Creek<') && !svg.includes('>Barn<') && !svg.includes('>Road<') && !svg.includes('>End<'));
+    assert.equal(countOf(svg, 'r="6"'), 0);
+    const ixCover = elements.indexOf('<path d="M0 0H880V468H0ZM64 34V434H864V34Z" fill="white"/>');
+    assert.equal(elements[ixCover + 1], '<rect x="64" y="34" width="800" height="400" fill="none" stroke="#333333"/>');
+
+    // The plan's coordinates
+    assert.deepEqual(texts(elements.slice(ixCover + 2, -5)), [
+        '100', '120', '140', '160', '180', '200', '220', '240', '260', '280', '300', '60', '80', '100', '120', '140'
+    ]);
+    assert.deepEqual(texts(elements.slice(-5)), [
+        'Fixture Plan - contours every 1 feet, coordinates in feet', '0: Direct', '1: Bridge - East'
+    ]);
+});
+
+
+test('planPlot, a box beyond the plan', () => {
+    // The box is limited to the plan's grid - 100 x 200 feet - and its plot is no taller than its width
+    const planValue = fixturePlan();
+    planValue.topography.features = [
+        {
+            'type': 'stream',
+            'name': 'Creek',
+            'points': [{'x': 0, 'y': 200}, {'x': 320, 'y': 200}, {'x': 350, 'y': 220}, {'x': 390, 'y': 260}]
+        },
+        {'type': 'exclusion', 'name': 'Lot', 'points': [{'x': 280, 'y': 120}, {'x': 360, 'y': 120}, {'x': 360, 'y': 160}]}
+    ];
+    const {plan} = validatePlan(planValue);
+    const {svg, width, height} = planPlot(plan, planTopo(plan), 880, [300, 100, 500, 400]);
+    const elements = svg.slice(svg.indexOf('>') + 1, -'</svg>'.length).replace(/></g, '>\n<').split('\n');
+    assert.deepEqual([width, height], [880, 880]);
+    assert.equal(elements[0], '<rect x="64" y="34" width="406" height="812" fill="#f4f1ea"/>');
+    const shade = shadeImage(elements[1]);
+    assert.deepEqual([shade.width, shade.height], [11, 21]);
+
+    // A line's name is at the middle of its points in the box, and an area's is at its first point in it - the end
+    // point is in the box
+    assert.deepEqual(elements.filter((element) => element.includes('>Creek<') || element.includes('>Lot<')), [
+        `<text x="267" y="352.8" font-size="11" ${textAttr} fill="#2a6fdb" ${textStroke}>Creek</text>`,
+        `<text x="307.6" y="758.8" font-size="11" ${textAttr} fill="#d0312d" ${textStroke}>Lot</text>`
+    ]);
+    assert.equal(countOf(svg, 'r="6"'), 1);
+    assert.ok(svg.includes('>End<') && !svg.includes('>Road<'));
+    assert.ok(elements.includes('<path d="M0 0H880V880H0ZM64 34V846H470V34Z" fill="white"/>'));
+});
+
+
 test('plot', async () => {
     const plan = fixturePlan();
     const io = testIo({'files': {'road.json': JSON.stringify(plan)}});
@@ -255,6 +322,26 @@ test('plot', async () => {
     assert.deepEqual(plotCommand(['site.json', 'site.png'], io), {'code': 0, 'lines': ['Wrote site.png (1400 x 1058 pixels)']});
     assert.ok(!svgs[1].includes('>0: '));
     assert.equal(countOf(svgs[1], '<circle'), 2);
+
+    // A box of the plan
+    assert.deepEqual(plotCommand(['--box', '100,50,300,150', 'road.json', 'box.png'], io), {
+        'code': 0,
+        'lines': ['Wrote box.png (1400 x 728 pixels)']
+    });
+    assert.equal(svgs[2], planPlot(validatePlan(plan).plan, planTopo(plan), 1400, [100, 50, 300, 150]).svg);
+    assert.equal(svgs.length, 3);
+});
+
+
+test('plot, a box that is not a part of the plan', () => {
+    const io = testIo({'files': {'road.json': JSON.stringify(fixturePlan())}});
+    for (const box of ['300,50,100,150', '100,150,300,50', '100,50,100,150', '400,0,500,100', '0,300,100,400']) {
+        assert.deepEqual(plotCommand(['road.json', 'box.png', '--box', box], io), {
+            'code': 1,
+            'lines': [`error: The box "${box}" is not a part of the plan's topography (400 x 300 feet)`]
+        });
+    }
+    assert.deepEqual(io.written, []);
 });
 
 
@@ -278,12 +365,21 @@ test('plot, a plan that cannot be loaded or is invalid', async () => {
 
 test('plot, usage', async () => {
     const usage = `\
-usage: plan plot <plan.json> <plot.png>
+usage: plan plot <plan.json> <plot.png> [--box X1,Y1,X2,Y2]
 
   Plot a road plan model - its terrain (shaded, with contours), features, and options, with the plan's
   coordinates along its sides
+
+options:
+  --box X1,Y1,X2,Y2    plot a part of the plan - the box from (X1, Y1) to (X2, Y2), in the plan's coordinates -
+                       for a closer look, with the contour interval of its elevations
 `;
-    for (const args of [[], ['road.json'], ['road.json', 'plot.png', 'extra'], ['--width', 'plot.png']]) {
+    const invalid = [
+        [], ['road.json'], ['road.json', 'plot.png', 'extra'], ['--width', 'plot.png'], ['road.json', 'plot.png', '--box'],
+        ['road.json', 'plot.png', '--box', '1,2,3'], ['road.json', 'plot.png', '--box', '1,2,3,x'],
+        ['--box', '-1,2,3,4', 'road.json', 'plot.png']
+    ];
+    for (const args of invalid) {
         const io = testIo();
         assert.deepEqual([await cliMain(['plot', ...args], io), io.output.join('')], [1, usage]);
     }

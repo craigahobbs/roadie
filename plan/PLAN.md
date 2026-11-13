@@ -22,7 +22,7 @@ with review feedback, follow [Updating a plan](#updating-a-plan) instead.
 | Command | Purpose |
 | --- | --- |
 | `plan.js site SITE.json PLAN.json` | Create the plan's site: its topography grid (USGS lidar terrain), start and end points, streams, roads, exclusion areas, and topographic map image |
-| `plan.js plot PLAN.json OUT.png` | Plot the plan's terrain (shaded, with contours), features, and options, with the plan's coordinates along its sides |
+| `plan.js plot PLAN.json OUT.png [--box X1,Y1,X2,Y2]` | Plot the plan's terrain (shaded, with contours), features, and options, with the plan's coordinates along its sides - with `--box`, a part of the plan, for a closer look |
 | `plan.js locate PLAN.json [--xy] POINT...` | Convert latitudes and longitudes (`LATITUDE,LONGITUDE`) to the plan's coordinates - or, with `--xy`, the plan's coordinates (`X,Y`) to latitudes and longitudes - with the ground elevation there |
 | `plan.js route PLAN.json -n NAME [-v X,Y]... [options]` | Engineer an option: least-cost alignment search, profile design, and structures |
 | `plan.js profile PLAN.json -n NAME [options]` | Re-design an existing option's profile and structures (after you edit its alignment) |
@@ -71,7 +71,10 @@ and scripts: put throwaway check images in its `scratch/` folder and delete them
 3. **Plot the site** (`plot PLAN.json <work>/site.png`) and Read the plot and the topographic map image.
    The plot's shading shows the terrain's shape (it's lit from the northwest), its labeled contours show
    its elevations, and its sides have the plan's coordinates - so you can read a point's x and y from
-   it. Identify:
+   it. A large site's plot is coarse (a 4 mile site's is 17 feet per pixel) - plot its parts with
+   `--box X1,Y1,X2,Y2` (the plan's coordinates) for a closer look at the start and end points, the
+   stream crossings, the existing roads' benches, and anything else you need to see. A box's contour
+   interval is its own elevations', so it shows the ground's shape that the site's plot can't. Identify:
    - **The start and end points** - what each is on (a road, a bench, a building pad).
    - **Features** - streams and drainages, existing roads and trails, buildings, and anything the notes
      name.
@@ -261,7 +264,8 @@ and editing alignments.
    creating warnings. A deep cut or fill along an existing road usually means the alignment is off the
    road's bench rather than bad engineering: check the alignment there against the plot's shading
    before redesigning.
-4. Plot the options (`plot`) and Read the plot to sanity-check the geometry against the terrain.
+4. Plot the options (`plot`, and `plot --box` at their junctions, switchbacks, and crossings) and Read
+   the plots to sanity-check the geometry against the terrain.
 
 
 ## Step 7: Finalize the road plan model

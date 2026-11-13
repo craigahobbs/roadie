@@ -164,7 +164,8 @@ model. It uses these tools:
     National Map's), and its exclusion areas. A site the USGS has no 1 meter elevation models of
     can't be planned.
   - `plot` plots the plan - its shaded terrain, contours, features, and options - for the session to
-    study, and `locate` converts latitudes and longitudes to the plan's coordinates.
+    study (all of it, or a part of it for a closer look), and `locate` converts latitudes and
+    longitudes to the plan's coordinates.
   - `route` and `profile` engineer a road option. `route` finds the least-cost horizontal alignment
     with a lattice search (radius-constrained turns, grade, side slope, stream crossing, rock, and
     exclusion costs), designs the vertical profile by dynamic programming (minimum earthwork within

@@ -29,6 +29,7 @@ terrain, so each is moved to the bottom of its valley - the lowest ground within
 
 `plot` draws a plan for the planning session to study: its terrain, shaded (lit from the northwest) with contours,
 its features, each option's line with its stations and structures, and the plan's coordinates along its sides.
+`--box X1,Y1,X2,Y2` plots a part of the plan, for a closer look - with the contour interval of its elevations.
 
 `route` searches for the least-cost horizontal alignment on a lattice with heading states (so its turns have the
 minimum radius), designs the vertical profile by dynamic programming (the minimum earthwork cost within the grade

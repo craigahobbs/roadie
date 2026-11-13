@@ -6,6 +6,7 @@ import {escapeHtml, px} from '../../viewer/lib/format.js';
 import {Buffer} from 'node:buffer';
 import {grayPng} from './png.js';
 import {planTopo} from '../../viewer/lib/model.js';
+import {rangeContourInterval} from './siteCommand.js';
 import {readPlan} from './planFile.js';
 
 
@@ -28,36 +29,62 @@ const featureColors = {'stream': '#2a6fdb', 'road': '#6e675f', 'rock': '#555555'
 const cellPixels = 1.5;
 
 
-// Create a road plan model's plot - "topo" is the plan's topography grid object (the viewer's planTopo) and "width"
-// is the plot's width, in pixels. Returns the plot's SVG markup, and its "width" and "height".
-export function planPlot(plan, topo, width = 1400) {
+// Create a road plan model's plot - "topo" is the plan's topography grid object (the viewer's planTopo), "width" is
+// the plot's width, in pixels, and "box" is the part of the plan to plot ([x1, y1, x2, y2], in the plan's coordinates) -
+// or null, for all of it. A box's plot is a closer look: its contour interval is its own elevations', and it's no
+// taller than it's wide. Returns the plot's SVG markup, and its "width" and "height".
+export function planPlot(plan, topo, width = 1400, box = null) {
     const {units} = plan;
     const {spacing, nCols, nRows} = topo;
-    const scale = (width - marginLeft - marginRight) / topo.width;
-    const plotWidth = topo.width * scale;
-    const plotHeight = topo.height * scale;
+
+    // The plot's part of the plan - "north" is its north side's distance from the grid's
+    const [west, south, east, top] = box === null ? [0, 0, topo.width, topo.height] :
+        [Math.max(0, box[0]), Math.max(0, box[1]), Math.min(topo.width, box[2]), Math.min(topo.height, box[3])];
+    const north = topo.height - top;
+    const scale = Math.min(
+        (width - marginLeft - marginRight) / (east - west),
+        box === null ? Infinity : (width - marginTop - marginBottom) / (top - south)
+    );
+    const plotWidth = (east - west) * scale;
+    const plotHeight = (top - south) * scale;
     const height = Math.round(plotHeight + marginTop + marginBottom);
-    const planX = (x) => marginLeft + x * scale;
-    const planY = (y) => marginTop + (topo.height - y) * scale;
+    const planX = (x) => marginLeft + (x - west) * scale;
+    const planY = (y) => marginTop + (top - y) * scale;
+    const isInside = ({x, y}) => x >= west && x <= east && y >= south && y <= top;
     const elements = [];
 
     // The terrain's cells - a fine grid's cells are drawn "step" grid cells together. The last cells are to the
-    // grid's edge.
+    // grid's edge (or the box's).
     const step = Math.max(1, Math.floor(cellPixels / (spacing * scale)));
-    const cols = gridSteps(nCols, step);
-    const rows = gridSteps(nRows, step);
+    const cols = gridSteps(Math.floor(west / spacing), Math.min(nCols - 1, Math.ceil(east / spacing)), step);
+    const rows = gridSteps(Math.floor(north / spacing), Math.min(nRows - 1, Math.ceil((topo.height - south) / spacing)), step);
+    const cellX = (ixCol) => marginLeft + (cols[ixCol] * spacing - west) * scale;
+    const cellY = (ixRow) => marginTop + (rows[ixRow] * spacing - north) * scale;
 
     // The shaded terrain - lit from the northwest
     const shade = terrainShade(topo, cols, rows);
     const image = Buffer.from(grayPng(cols.length, rows.length, shade)).toString('base64');
+    const imageWidth = cellX(cols.length - 1) - cellX(0);
+    const imageHeight = cellY(rows.length - 1) - cellY(0);
     elements.push(
         `<rect x="${marginLeft}" y="${marginTop}" width="${px(plotWidth)}" height="${px(plotHeight)}" fill="#f4f1ea"/>`,
-        `<image x="${marginLeft}" y="${marginTop}" width="${px(plotWidth)}" height="${px(plotHeight)}" preserveAspectRatio="none" ` +
+        `<image x="${px(cellX(0))}" y="${px(cellY(0))}" width="${px(imageWidth)}" height="${px(imageHeight)}" preserveAspectRatio="none" ` +
             `opacity="0.55" href="data:image/png;base64,${image}"/>`
     );
 
-    // The contours - the index contours are labeled
-    const interval = contourInterval(plan, topo);
+    // The contours - the index contours are labeled. A box's contour interval is its elevations'.
+    let interval = contourInterval(plan, topo);
+    if (box !== null) {
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (const row of rows) {
+            for (const col of cols) {
+                minZ = Math.min(minZ, topo.rows[row][col]);
+                maxZ = Math.max(maxZ, topo.rows[row][col]);
+            }
+        }
+        interval = rangeContourInterval(maxZ - minZ, units);
+    }
     const segments = new Float64Array(8);
     const minorPath = [];
     const indexPath = [];
@@ -65,7 +92,7 @@ export function planPlot(plan, topo, width = 1400) {
     for (let ixRow = 0; ixRow < rows.length - 1; ixRow++) {
         const rowTop = topo.rows[rows[ixRow]];
         const rowBottom = topo.rows[rows[ixRow + 1]];
-        const yTop = marginTop + rows[ixRow] * spacing * scale;
+        const yTop = cellY(ixRow);
         const cellHeight = (rows[ixRow + 1] - rows[ixRow]) * spacing * scale;
         for (let ixCol = 0; ixCol < cols.length - 1; ixCol++) {
             const zNW = rowTop[cols[ixCol]];
@@ -73,7 +100,7 @@ export function planPlot(plan, topo, width = 1400) {
             const zSE = rowBottom[cols[ixCol + 1]];
             const zSW = rowBottom[cols[ixCol]];
             const zMax = Math.max(zNW, zNE, zSE, zSW);
-            const xLeft = marginLeft + cols[ixCol] * spacing * scale;
+            const xLeft = cellX(ixCol);
             const cellWidth = (cols[ixCol + 1] - cols[ixCol]) * spacing * scale;
             for (let ixLevel = Math.ceil(Math.min(zNW, zNE, zSE, zSW) / interval); ; ixLevel++) {
                 const level = contourLevel(ixLevel, interval);
@@ -118,9 +145,15 @@ export function planPlot(plan, topo, width = 1400) {
             coords.push(planX(point.x), planY(point.y));
         }
         elements.push(svgPolyline(coords, featureColors[type], type === 'stream' ? 2 : 1.2, line ? null : '5 3'));
-        if ('name' in feature) {
-            // A line's name is at its middle point, and an area's is at its first
-            const ixName = line ? Math.floor(points.length / 2) * 2 : 0;
+        const ixInside = [];
+        for (let ix = 0; ix < points.length; ix++) {
+            if (isInside(points[ix])) {
+                ixInside.push(ix);
+            }
+        }
+        if ('name' in feature && ixInside.length > 0) {
+            // A line's name is at its middle point within the plot, and an area's is at its first
+            const ixName = ixInside[line ? Math.floor(ixInside.length / 2) : 0] * 2;
             const [x, y] = [coords[ixName], coords[ixName + 1]];
             elements.push(svgText(feature.name, x, y - 6, type === 'road' ? 9 : 11, 'middle', featureColors[type], false));
         }
@@ -189,28 +222,38 @@ export function planPlot(plan, topo, width = 1400) {
 
     // The start and end points
     for (const [point, defaultLabel, color] of [[plan.start, 'Start', '#1a8f3c'], [plan.end, 'End', '#c0392b']]) {
-        const x = planX(point.x);
-        const y = planY(point.y);
+        if (isInside(point)) {
+            const x = planX(point.x);
+            const y = planY(point.y);
+            elements.push(
+                `<circle cx="${px(x)}" cy="${px(y)}" r="6" fill="${color}" stroke="white" stroke-width="2"/>`,
+                svgText(point.label ?? defaultLabel, x + 9, y - 9, 13, 'start', color, true)
+            );
+        }
+    }
+
+    // A box's plot ends at its frame - the plan beyond it is covered by the plot's margins (the plot's renderer fails
+    // on a clipped group with an image)
+    const right = marginLeft + plotWidth;
+    const bottom = marginTop + plotHeight;
+    if (box !== null) {
         elements.push(
-            `<circle cx="${px(x)}" cy="${px(y)}" r="6" fill="${color}" stroke="white" stroke-width="2"/>`,
-            svgText(point.label ?? defaultLabel, x + 9, y - 9, 13, 'start', color, true)
+            `<path d="M0 0H${width}V${height}H0ZM${marginLeft} ${marginTop}V${px(bottom)}H${px(right)}V${marginTop}Z" fill="white"/>`
         );
     }
 
     // The frame and the plan's coordinates
-    const right = marginLeft + plotWidth;
-    const bottom = marginTop + plotHeight;
     elements.push(
         `<rect x="${marginLeft}" y="${marginTop}" width="${px(plotWidth)}" height="${px(plotHeight)}" fill="none" stroke="#333333"/>`
     );
-    const tick = niceStep(Math.max(topo.width, topo.height), 10);
-    for (let x = 0; x <= topo.width + 1e-9; x += tick) {
+    const tick = niceStep(Math.max(east - west, top - south), 10);
+    for (let x = Math.ceil(west / tick) * tick; x <= east + 1e-9; x += tick) {
         elements.push(
             svgPolyline([planX(x), bottom, planX(x), bottom + 5], '#333333', 1),
             svgText(`${Math.round(x)}`, planX(x), bottom + 15, 11, 'middle', '#333333', false)
         );
     }
-    for (let y = 0; y <= topo.height + 1e-9; y += tick) {
+    for (let y = Math.ceil(south / tick) * tick; y <= top + 1e-9; y += tick) {
         elements.push(
             svgPolyline([marginLeft - 5, planY(y), marginLeft, planY(y)], '#333333', 1),
             svgText(`${Math.round(y)}`, marginLeft - 8, planY(y), 11, 'end', '#333333', false)
@@ -247,13 +290,13 @@ const structureMarkers = {
 };
 
 
-// Get a grid dimension's indexes at a step - the last index is the dimension's last
-function gridSteps(count, step) {
+// Get a grid dimension's indexes at a step, from its first index to its last - the last index is the dimension's last
+function gridSteps(first, last, step) {
     const indexes = [];
-    for (let index = 0; index < count - 1; index += step) {
+    for (let index = first; index < last; index += step) {
         indexes.push(index);
     }
-    indexes.push(count - 1);
+    indexes.push(last);
     return indexes;
 }
 
@@ -292,20 +335,41 @@ function terrainShade(topo, cols, rows) {
 
 // The "plot" command's usage text lines
 export const plotUsage = [
-    'usage: plan plot <plan.json> <plot.png>',
+    'usage: plan plot <plan.json> <plot.png> [--box X1,Y1,X2,Y2]',
     '',
     '  Plot a road plan model - its terrain (shaded, with contours), features, and options, with the plan\'s',
-    '  coordinates along its sides'
+    '  coordinates along its sides',
+    '',
+    'options:',
+    '  --box X1,Y1,X2,Y2    plot a part of the plan - the box from (X1, Y1) to (X2, Y2), in the plan\'s coordinates -',
+    '                       for a closer look, with the contour interval of its elevations'
 ];
+
+
+// A box argument - four numbers
+const rBox = /^\d+(\.\d+)?(,\d+(\.\d+)?){3}$/;
 
 
 // The "plot" command - "io" is the tools' input and output functions. Returns the command's exit code and its
 // output text lines, or null if its arguments are invalid.
 export function plotCommand(args, io) {
-    if (args.length !== 2 || args.some((arg) => arg.startsWith('-'))) {
+    const paths = [];
+    let box = null;
+    for (let ixArg = 0; ixArg < args.length; ixArg++) {
+        const arg = args[ixArg];
+        if (arg === '--box' && rBox.test(args[ixArg + 1] ?? '')) {
+            box = args[ixArg + 1].split(',').map(Number);
+            ixArg += 1;
+        } else if (arg.startsWith('-')) {
+            return null;
+        } else {
+            paths.push(arg);
+        }
+    }
+    if (paths.length !== 2) {
         return null;
     }
-    const [planPath, plotPath] = args;
+    const [planPath, plotPath] = paths;
 
     // Read the road plan model - a plan without options yet (a site) is plotted, too
     const {plan, error} = readPlan(io, planPath);
@@ -313,8 +377,19 @@ export function plotCommand(args, io) {
         return {'code': 1, 'lines': error};
     }
 
+    // The box has a size, and it's within the plan's topography
+    const topo = planTopo(plan);
+    if (box !== null) {
+        const [x1, y1, x2, y2] = box;
+        if (x1 >= x2 || y1 >= y2 || x1 >= topo.width || y1 >= topo.height) {
+            return {'code': 1, 'lines': [
+                `error: The box "${box.join(',')}" is not a part of the plan's topography (${topo.width} x ${topo.height} ${plan.units})`
+            ]};
+        }
+    }
+
     // Plot the plan
-    const {svg, width, height} = planPlot(plan, planTopo(plan));
+    const {svg, width, height} = planPlot(plan, topo, 1400, box);
     io.writeBytes(plotPath, io.renderPng(svg));
     return {'code': 0, 'lines': [`Wrote ${plotPath} (${width} x ${height} pixels)`]};
 }
