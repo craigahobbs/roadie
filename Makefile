@@ -56,17 +56,21 @@ evaluate doc:
 
 
 # Stage the project's web site - the documentation at its root (index.html renders README.md), the planning
-# instructions, the example plan, and the viewer application (and its README) in viewer/
+# instructions, the example plan, and the viewer application (and its README) in viewer/. The site's READMEs link to
+# the other Markdown documents as rendered Markdown ("#url=plan/PLAN.md&<header ID>"), not to the Markdown files.
+SITE_LINKS := sed -E 's/\]\(([^):\#]*\.md)\#([^)]*)\)/](\#url=\1\&\2)/g; s/\]\(([^):\#]*\.md)\)/](\#url=\1)/g'
+
 .PHONY: site
 site:
 	$(call SUBMAKE,viewer,app)
 	rm -rf build/gh-pages/
 	mkdir -p build/gh-pages/example/ build/gh-pages/plan/
-	cp README.md index.html build/gh-pages/
+	cp index.html build/gh-pages/
+	$(SITE_LINKS) README.md > build/gh-pages/README.md
 	cp example/example.json example/example.png example/screenshot.png build/gh-pages/example/
 	cp plan/PLAN.md build/gh-pages/plan/
 	cp -R viewer/build/app build/gh-pages/viewer
-	cp viewer/README.md build/gh-pages/viewer/
+	$(SITE_LINKS) viewer/README.md > build/gh-pages/viewer/README.md
 
 
 # Update the project's gh-pages branch checkout (../roadie.gh-pages) with the web site - commit and push it to publish.

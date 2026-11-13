@@ -16,8 +16,8 @@ make run FILE=<plan.json>    # view a plan in the browser
 make check PLANS="..."       # the canvas 3D drawings (explorer and report) match the SVG drawing exactly
 ```
 
-Plans for `check`: `../example/example.json`, and the real plans kept outside the repository -
-`~/tmp/roadie-tests/test*.json` and `~/tmp/roadie-tyler-*/boise-stitched-usgs-topo-layout2.json`.
+Plans for `check`: `../example/example.json`, and the real plans, which are kept outside the repository (ask where, if
+you don't know).
 
 ## Conventions
 
