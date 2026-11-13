@@ -20,7 +20,7 @@ const minorContourPx = 6;
 // The 3D terrain limits - the maximum number of terrain cells per side of a view ("sideCells"), and the smooth terrain's
 // maximum number of interpolated grid points ("points"), minimum elevation grid cell size to smooth, in pixels
 // ("facetPx"), minimum smooth cell size, in pixels ("cellPx"), and maximum number of cells per elevation grid cell side
-// ("count"). These are the MarkdownUp viewer's limits.
+// ("count"). These are the SVG drawing's limits (the command line's reports).
 const smoothLimits = {'sideCells': 240, 'points': 40000, 'facetPx': 0, 'cellPx': 12, 'count': 4};
 
 
@@ -636,7 +636,7 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
 
     // The minor contours are drawn only where they're far enough apart to read - where a terrain grid cell is at least
     // minorContourPx pixels. A smooth view's cells don't space the contours any farther apart, so its grid cells count
-    // (the MarkdownUp viewer measures the smooth cells, which are never under minorContourPx at its smooth limits).
+    // (the smooth cells are never under minorContourPx at the SVG drawing's smooth limits).
     const drawMinor = step * spacing * scale >= minorContourPx;
 
     // The grid columns of the cell corners

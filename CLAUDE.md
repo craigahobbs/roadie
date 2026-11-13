@@ -3,70 +3,68 @@
 Roadie engineers low-volume roads from a topographic map and views the resulting road plan models in
 a printable report with 3D views. See [README.md](README.md) for the user-facing overview.
 
-- **Planning a road** (`make plan`, `make update`) follows [plan/PLAN.md](plan/PLAN.md) - when asked to plan
-  or update a road, follow PLAN.md exactly. The planning tools are `plan/plan_tools.py` (Python, built with
-  python-build - `make -C plan commit` runs their tests and pylint). The planning session runs in `plan/`.
-- **The viewer** is a [MarkdownUp](https://github.com/craigahobbs/markdown-up) application written
-  in BareScript: `roadie.md` / `roadie.bare` (report, 3D views, 3D explorer, plan and profile
-  views), `roadieModel.bare` (model schema, validation, earthwork, and cost analysis), and
-  `roadieCLI.bare` (its command line). Use the `bare-script` skill when writing BareScript.
-- **The JavaScript viewer** (`viewer/`, see [viewer/CLAUDE.md](viewer/CLAUDE.md)) is a rewrite of the MarkdownUp viewer
-  that is replacing it - its report must stay identical to the MarkdownUp viewer's (`make -C viewer parity`). Its
-  command line (`viewer/bin/roadie.js`) is what `make evaluate` and `make doc` run.
-- `SPEC.md` is the original viewer specification; `example/` is a small synthetic plan.
+The project is two subprojects, and the top-level makefile delegates to them:
+
+- **The viewer** (`viewer/`, JavaScript, [javascript-build](https://github.com/craigahobbs/javascript-build#readme)) -
+  the web application (report, plan and profile views, 3D views, and 3D explorer), the road plan model (its Schema
+  Markdown schema, validation, earthwork, and cost analysis), and the command line behind `make evaluate` and
+  `make doc`. See [viewer/CLAUDE.md](viewer/CLAUDE.md).
+- **The planning tools** (`plan/`, Python, [python-build](https://github.com/craigahobbs/python-build#readme)) -
+  `plan/plan_tools.py` and the planning instructions, [plan/PLAN.md](plan/PLAN.md). **Planning a road** (`make plan`,
+  `make update`) follows PLAN.md - when asked to plan or update a road, follow PLAN.md exactly. The planning session
+  runs in `plan/`.
+
+`example/` is a small synthetic plan. `index.html` renders this project's README on its web site.
 
 ## Commands
 
 ```sh
-make commit                       # the pre-commit gate: BareScript tests, planning tools tests, and lint
-make test [TEST=testName]         # BareScript tests (debug mode, 100% coverage required)
-make test-tools                   # planning tools tests and lint (make -C plan commit)
-make lint                         # BareScript static analysis
+make commit                       # the pre-commit gate: both subprojects' tests and lint (the viewer at 100% coverage)
+make test [TEST=name]             # the viewer's unit tests (TEST runs one) and the planning tools' unit tests
+make lint                         # ESLint (viewer) and pylint (planning tools)
 make evaluate FILE=<plan.json> [DETAIL=1]   # a plan's analysis and cost from the command line
+make doc                          # the road plan model documentation
 make run FILE=<plan.json>         # view a plan in the browser
+make site                         # stage the web site (build/gh-pages/): README, example, and viewer/
 ```
+
+Run `make` in `viewer/` or `plan/` for a subproject's own targets (e.g. `make -C viewer test TEST=name`,
+`make -C viewer check`, `make -C plan lint`).
 
 ## Conventions
 
-- Run `make commit` before committing; it must pass with 100% coverage and lint clean. A clean test
-  run prints no `failed with error` lines - each is an invalid builtin argument to fix.
+- Run `make commit` before committing; it must pass - the viewer with 100% coverage and both lint clean.
 - Commit directly on `main`. Commit messages: a short imperative subject, then a body of bullets
   (or a paragraph) explaining what changed and why.
-- New viewer code needs tests in `test/testRoadie.bare` (page renders assert the full mock call log;
-  `testRoadieReportViewsLog` builds a report's expected plan/profile/3D views log). Prefer behavior
-  assertions over counting on coverage.
+- The road plan model stays defined, validated, and documented with Schema Markdown (see viewer/CLAUDE.md), and the
+  viewer validates every plan it loads.
+- The planning tools mirror parts of the viewer's model (`DEFAULT_RATES` and the cross sections in
+  `plan/plan_tools.py`) - keep them in sync with `viewer/lib/model.js`.
 - Keep the README's viewer section and key table in sync with the viewer's controls.
-- Road plan files and their work directories (`*.work/`, git-ignored) usually live outside the repo.
+- `FILE` and `OUTPUT` paths are relative to the directory `make` runs in - the top-level makefile makes them absolute
+  before delegating.
+- Road plan files and their work directories (`*.work/`, git-ignored) usually live outside the repo - they're user
+  data, so don't add them to the repo or the web site.
 
 ## Checking the viewer visually
 
-Render a page to HTML with the `bare` CLI and screenshot it with headless Chrome:
+Stage and serve the application with a plan's directory, and screenshot it with headless Chrome:
 
 ```sh
-printf "include '../roadie.bare'\n\nroadieMain()\n" > build/driver.bare
-build/venv/bin/bare -l build/driver.bare -v vFile "'../example/example.json'" > build/report.html
+make -C viewer app
+mkdir -p build/check && cp -R viewer/build/app/. build/check/ && ln -sfn "$PWD/example" build/check/plan
+python3 -m http.server 8931 --bind 127.0.0.1 --directory build/check &
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
-    --screenshot=build/report.png --window-size=1100,3000 file://$PWD/build/report.html
+    --virtual-time-budget=15000 --screenshot=build/report.png --window-size=1100,3000 \
+    "http://127.0.0.1:8931/#var.vFile='plan%2Fexample.json'"
 ```
 
-`vFile` is relative to the driver's directory; add `-v vExplore true` for the 3D explorer. The `bare
--l` HTML has no charset, so `°` shows as `Â°` in these screenshots only. For the real page, serve it
-with `build/venv/bin/markdown-up -n -p <port> <dir>` (as `make run` does) and screenshot the URL with
-`--virtual-time-budget=15000`.
+Add `&var.vExplore=true` to the URL for the 3D explorer, or use `#var.vDoc=true` for the model documentation. To
+render a page without a browser, `node viewer/tools/render.js <plan.json> [--explore | --doc]` writes its HTML (with
+SVG 3D views).
 
 ## Performance work
 
-- The browser runs the JavaScript BareScript runtime, but `build/venv/bin/bare` is the Python
-  package's C runtime (`runtime_c`) - their costs differ (JavaScript is slower per expression node
-  and faster at `numberToFixed`). Measure viewer changes on both: install the JavaScript CLI with
-  `npm install --prefix build/js bare-script` and run `build/js/node_modules/.bin/bare -m ...`.
-- Optimizations must leave the output byte-identical - compare the rendered report and explorer
-  HTML, `make evaluate`, and `make doc` (and for the planning tools, their written plans and images)
-  against a baseline, then time the change against the baseline in the same session.
-
-## MarkdownUp gotchas
-
-- Text with `~...~` renders as strikethrough - plan and option descriptions should say "about".
-- MarkdownUp never removes a page's `documentSetKeyDown` handler when the app navigates. The 3D
-  explorer guards its key handler with a page token in session storage (`roadieNewPageToken`).
-- Event handlers can't prevent the browser's default key actions.
+- Optimizations must leave the output byte-identical - for the viewer, see viewer/CLAUDE.md; for the planning tools,
+  compare their written plans and images against a baseline, then time the change against the baseline in the same
+  session.

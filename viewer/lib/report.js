@@ -47,7 +47,7 @@ function table(fields, rows) {
 // Build the report page for a road plan option - returns the page title, its HTML, and its 3D views. With "canvasViews",
 // the 3D views are empty canvas elements (with a "data-view" attribute of the view index) - draw each with its view's
 // render function, which takes the canvas terrain limits (smoothLimitsCanvas, with a point limit) and returns the
-// drawing (view3DParts). Otherwise, they're SVG drawings with the MarkdownUp viewer's terrain limits.
+// drawing (view3DParts). Otherwise, they're SVG drawings with the SVG terrain limits (smoothLimits).
 export function buildReport(data, globals, args, width, canvasViews = false) {
     const {plan, topo} = data;
     const {units, options} = plan;

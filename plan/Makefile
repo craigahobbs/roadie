@@ -30,7 +30,7 @@ clean:
 
 
 help:
-	@echo "            [doc|evaluate|plan|update]"
+	@echo "            [doc|evaluate|plan|run|update]"
 	@echo ""
 	@echo "  make plan FILE=<plan.png> [OUTPUT=<plan.json>]  Engineer road plan options from a topo map image (Claude Code)"
 	@echo "  make update FILE=<plan.json>               Update a road plan model with review feedback (Claude Code)"
@@ -39,6 +39,7 @@ help:
 	@echo "     and GROK=1 to launch the Grok CLI instead - MODEL then names the Grok model)"
 	@echo "  make evaluate FILE=<plan.json> [DETAIL=1]  Print a road plan model's analysis and cost"
 	@echo "  make doc                                   Print the road plan model documentation"
+	@echo "  make run [FILE=<plan.json>]                View a road plan model in the browser (the Roadie viewer)"
 
 
 # Run the planning tools unit tests

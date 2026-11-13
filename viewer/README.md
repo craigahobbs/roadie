@@ -1,51 +1,83 @@
 # Roadie Viewer
 
-The Roadie Viewer is a web application that views Roadie road plan models - the plan's options, plan view, profile, 3D
-views, cost breakdown, design warnings, and structures, and a full-window 3D explorer. It's plain JavaScript modules
-(`index.html`, `app.css`, and `lib/`), served as they are - there's no bundler.
+The Roadie viewer is a web application that views Roadie road plan models - the plan's options, plan view, profile, 3D
+views, cost breakdown, design warnings, and structures, and a full-window 3D explorer. It also holds the road plan
+model itself (its schema, validation, and the earthwork and cost analysis) and the command line behind the project's
+`make evaluate` and `make doc`. See the project's [README](../README.md) for what the viewer shows, how to view a
+plan, and the 3D explorer's keys.
 
-It's a JavaScript rewrite of the Roadie project's MarkdownUp viewer (`../roadie.bare` and `../roadieModel.bare`). Its report
-is identical to that viewer's - see [Checking parity](#checking-parity) - except its 3D views, which are drawn on
-canvases, from the full elevation grid, and smoothed automatically where their cells are large enough for their facets
-to show. Its URLs are compatible (`#var.vFile='plan.json'&var.vOption=1`; the MarkdownUp viewer's "smooth" argument is
-ignored).
+The viewer is plain JavaScript modules (`index.html`, `app.css`, and `lib/`), served as they are - there's no bundler.
+It replaced the project's original viewer, a MarkdownUp application written in BareScript, for performance: its report
+was verified identical to that viewer's on real plans before the original was removed, and its URLs are compatible
+(`#var.vFile='plan.json'&var.vOption=1`).
 
 
-## Viewing a road plan
+## Development
 
-- **Open a local plan** - select or drop the plan's JSON file (and its source map image, to show it in the report). Local
-  files stay on your computer - they're kept in the browser's IndexedDB, so the plan's URL works after a reload, and
-  the home page lists the recent plans.
-- **View a plan URL** - `index.html#url=plans/site.json` (or `index.html#var.vFile='plans/site.json'`). The plan's map
-  image is relative to the plan's URL. Plans hosted elsewhere must allow cross-origin requests (CORS).
+The viewer is built with [javascript-build](https://github.com/craigahobbs/javascript-build#readme):
 
-The 3D explorer's keys:
+```sh
+make run [FILE=<plan.json>]   # stage the application, then view a road plan in the browser
+make commit                   # the pre-commit gate: test, lint, doc, cover, and app
+make test [TEST=name]         # the unit tests (node --test)
+make lint                     # ESLint
+make cover                    # the unit tests, with 100% coverage required
+make app                      # stage the application (build/app/)
+make check PLANS="<plan.json> ..."      # check the canvas 3D drawings against the SVG drawing
+```
 
-| Keys | Action |
+The source is ES modules in `lib/`, loaded by `index.html`:
+
+| Module | Contents |
 | --- | --- |
-| Arrows or W A S D | Move left, right, forward, and back |
-| + / - | Zoom in and out |
-| Q / E or Shift+Left / Right | Rotate |
-| Shift+Up / Down | Tilt - view more from above or from the side |
-| R / F or Page Up / Down | Raise and lower the view |
-| [ / ] | Less and more vertical exaggeration |
-| T, N, 0 | Top view, face north, and reset |
-| H | Show or hide the keyboard help |
-| Esc | Back to the report |
+| `app.js` | The application - routing on the URL hash, plan loading (URLs and local files), the pages |
+| `model.js` | The road plan model - its schema and validation, and the earthwork, structure, and cost analysis |
+| `report.js`, `tables.js`, `planView.js`, `view3d.js` | The report, its cost and structures tables, the plan and profile views, and the 3D views |
+| `explore.js`, `canvas.js` | The 3D explorer and its canvas drawing |
+| `doc.js`, `schemaDoc.js` | The model documentation page, generated from the model's schema |
+| `args.js`, `format.js`, `draw.js`, `markdown.js`, `planData.js`, `smoothing.js` | URL arguments, formatting, drawing helpers, Markdown, a loaded plan's cached analyses and drawings, and the 3D drawings' time budget |
+| `cli.js` | The command line (`bin/roadie.js`) - not part of the web application |
+
+The road plan model is defined with [Schema Markdown](https://craigahobbs.github.io/schema-markdown-js/language/) (in
+`model.js`) and validated with the [schema-markdown](https://github.com/craigahobbs/schema-markdown-js#readme) package -
+the viewer validates every plan it loads. The package is the viewer's only dependency: the application serves its
+modules next to its own (`schema-markdown/lib/`), and the page's import map resolves them.
+
+The unit tests (`test/`) run the application in [jsdom](https://github.com/jsdom/jsdom#readme) with a fake clock,
+IndexedDB, `fetch`, and canvas context (`test/appHelpers.js`). `make check` verifies that the canvas 3D drawings - the
+explorer's and the report's - are the SVG drawing's, operation for operation, for whole plans.
+
+
+### The command line
+
+`bin/roadie.js` prints a plan's analysis and cost, and the model's documentation, as Markdown text:
+
+```sh
+node bin/roadie.js evaluate <plan.json> [--detail]   # each option's earthwork, cost, design warnings, and structures
+node bin/roadie.js doc                               # the road plan model documentation
+```
+
+`--detail` adds each option's station table. The command exits with status 1 if the plan can't be loaded or is invalid.
+
+`tools/render.js` renders a plan's report (with SVG 3D views), the 3D explorer, or the model documentation as HTML from
+the command line, and `tools/bench.js` times a page in headless Chrome.
 
 
 ## Performance
 
-Measured in headless Chrome on an Apple Silicon Mac (`tools/bench.js`), from navigation until every drawing is painted,
-against the MarkdownUp viewer served by `markdown-up`:
+The viewer was measured against the original MarkdownUp viewer (served by `markdown-up`) when it replaced it, in
+headless Chrome on an Apple Silicon Mac (`tools/bench.js`), from navigation until every drawing is painted:
 
-| Plan | MarkdownUp viewer | Roadie Viewer |
+| Plan | MarkdownUp viewer | Roadie viewer |
 | --- | --- | --- |
 | Example (1,200 ft site, 3 options) | 377 ms | 74 ms |
 | test1 (2 options) | 910 ms | 201 ms |
 | tyler-2 (4 mile road, 13 MB of SVG) | 2,468 ms (first content: 2,396 ms) | 418 ms (first content: 126 ms) |
 | 3D explorer key press, example | 110 ms | 27 ms |
 | 3D explorer key press, tyler-2 | 375 ms | 40 ms |
+
+Those measurements were of the viewer bundled into a single file. Serving its modules as they are loads within about
+5% of the bundle (the page preloads every module).
 
 Where the time goes:
 
@@ -69,63 +101,5 @@ Where the time goes:
   500 ms; each report 3D view, 250 ms. The explorer's detail changes only when a frame is well over or under its
   budget, so it doesn't flicker as the view moves. The elevation grid is drawn whole whenever its visible cells fit
   the budget, and grid cells drawn 8 pixels or larger - where their facets show - are smoothed (interpolated) into
-  cells as small as 3 pixels, up to 8 x 8 per grid cell. (The command line's SVG report keeps the MarkdownUp viewer's
-  terrain: at most 240 cells per side, and no smoothing.)
-
-
-## Development
-
-The viewer is built with [javascript-build](https://github.com/craigahobbs/javascript-build#readme):
-
-```sh
-make run [FILE=<plan.json>]   # stage the application, then view a road plan in the browser
-make commit                   # the pre-commit gate: test, lint, doc, cover, and app
-make test [TEST=name]         # the unit tests (node --test)
-make lint                     # ESLint
-make cover                    # the unit tests, with 100% coverage required
-make app                      # stage the application (build/app/)
-make check PLANS="<plan.json> ..."      # check the canvas 3D drawings against the SVG drawing
-make parity PLANS="<plan.json> ..."     # check the output against the MarkdownUp viewer's
-```
-
-The source is ES modules in `lib/`, loaded by `index.html`:
-
-| Module | Contents |
-| --- | --- |
-| `app.js` | The application - routing on the URL hash, plan loading (URLs and local files), the pages |
-| `model.js` | The road plan model - its schema and validation, and the earthwork, structure, and cost analysis |
-| `report.js`, `tables.js`, `planView.js`, `view3d.js` | The report, its cost and structures tables, the plan and profile views, and the 3D views |
-| `explore.js`, `canvas.js` | The 3D explorer and its canvas drawing |
-| `doc.js`, `schemaDoc.js` | The model documentation page, generated from the model's schema |
-| `args.js`, `format.js`, `draw.js`, `markdown.js` | URL arguments, formatting, drawing helpers, and Markdown |
-| `cli.js` | The command line (`bin/roadie.js`) - not part of the web application |
-
-The road plan model is defined with [Schema Markdown](https://craigahobbs.github.io/schema-markdown-js/language/) (in
-`model.js`) and validated with the [schema-markdown](https://github.com/craigahobbs/schema-markdown-js#readme) package -
-the viewer validates every plan it loads. The package is the viewer's only dependency: the application serves its
-modules next to its own (`schema-markdown/lib/`), and the page's import map resolves them.
-
-
-### The command line
-
-`bin/roadie.js` prints a plan's analysis and cost, and the model's documentation, as Markdown text:
-
-```sh
-node bin/roadie.js evaluate <plan.json> [--detail]   # each option's earthwork, cost, design warnings, and structures
-node bin/roadie.js doc                               # the road plan model documentation
-```
-
-`--detail` adds each option's station table. The command exits with status 1 if the plan can't be loaded or is invalid.
-
-
-### Checking parity
-
-`make parity` renders each plan's report (each option) and the model documentation with the MarkdownUp viewer - using
-the BareScript JavaScript runtime, the browser's runtime - and with this viewer's command line (`tools/render.js`, whose
-3D views are SVG, with the MarkdownUp viewer's terrain), and compares them element by element (`tools/parity.js`). The
-check removes the MarkdownUp viewer's "Terrain" (faceted or smooth) links, and allows for one of its bugs: its options
-table escapes non-selected option names twice, so a name like "Saddle - North" shows as "Saddle \- North". The canvas
-3D drawings - the explorer's and the report's - are checked against the SVG drawing by `make check`.
-
-When the MarkdownUp viewer changes, port the change to the matching function here (the functions and comments follow
-`roadie.bare` and `roadieModel.bare`), then run `make parity`.
+  cells as small as 3 pixels, up to 8 x 8 per grid cell. (The command line's SVG report has fixed terrain limits: at
+  most 240 cells per side, and no smoothing.)

@@ -1,6 +1,6 @@
 // format.js - number, station, text, and URL formatting
 //
-// The number formatting matches the Roadie viewer's exactly, so the viewer's drawings are identical.
+// The number formatting is toFixed's exactly (px's fast path, too) - the drawings' tests depend on it.
 
 
 // Round a number to a number of decimal digits (half away from zero rounds up, like Math.round)

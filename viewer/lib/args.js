@@ -1,7 +1,7 @@
 // args.js - the viewer's URL hash arguments
 //
-// The URL hash is compatible with the MarkdownUp Roadie viewer's - "#var.vFile='plan.json'&var.vOption=1" - so links
-// work in both.
+// The URL hash's "var" arguments are the original MarkdownUp Roadie viewer's - "#var.vFile='plan.json'&var.vOption=1" -
+// so links to it still work.
 
 import {encodeComponent, escapeHtml} from './format.js';
 

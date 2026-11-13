@@ -25,7 +25,7 @@ import sys
 import numpy as np
 
 
-# The default cost rates, in nominal US dollars per metric unit - keep in sync with roadieModel.bare
+# The default cost rates, in nominal US dollars per metric unit - keep in sync with ../viewer/lib/model.js
 DEFAULT_RATES = {
     'clearing': 2,
     'excavation': 20,
@@ -599,7 +599,7 @@ def segments_intersect(p1, p2, q1, q2):
 
 
 #
-# Cross sections (vectorized mirror of roadieModel.bare's roadieCrossSection)
+# Cross sections (vectorized mirror of ../viewer/lib/model.js's crossSection)
 #
 
 def linear_areas(v1, v2, length):

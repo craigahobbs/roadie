@@ -10,11 +10,14 @@ topographic map image, and views the resulting road grading plans in 3D.
 - **`make update FILE=<plan.json>`** launches a Claude Code session that
   updates an existing road plan model with review feedback (from the city or county, a surveyor, or
   the owner, for example).
-- **`make run FILE=<plan.json>`** opens the road plan model in the Roadie viewer, a
-  [MarkdownUp](https://github.com/craigahobbs/markdown-up) application written in
-  [BareScript](https://github.com/craigahobbs/bare-script).
+- **`make run FILE=<plan.json>`** opens the road plan model in the Roadie viewer, a JavaScript web
+  application.
 
 ![The Roadie viewer](example/screenshot.png)
+
+Roadie has two parts: the **viewer** ([viewer/](viewer/), JavaScript) and the **planning tools and
+instructions** (`plan/`, Python). It requires `make`, Python 3, and Node.js 22 or later - and
+[Claude Code](https://claude.com/claude-code) to plan and update roads.
 
 
 ## The viewer
@@ -42,11 +45,10 @@ and cost score, then shows:
   exclusion areas, and ends that miss the start/end points or don't tie in to the ground
 - **Structures** and the **source map** image
 
-The "Terrain" links above the 3D views draw the terrain "Faceted" (the default - the plan's elevation
-grid) or "Smooth" (where a view is zoomed in past the grid, each grid cell is divided into smaller
-cells interpolated between the grid points, clamped to each grid cell's corner elevations). Smooth
-terrain looks smoother up close but is no more accurate, and it makes the report slower and larger.
-The explorer's links start with the report's terrain drawing.
+The 3D views are drawn from the plan's full elevation grid, as detailed as the computer can draw
+quickly. Where a view is zoomed in far enough for the grid's cells to show, the terrain is smoothed -
+each grid cell is divided into smaller cells interpolated between the grid points, clamped to each
+grid cell's corner elevations. Smooth terrain looks smoother up close but is no more accurate.
 
 On large sites, where the road is too narrow to see at a view's scale, the selected option's road is
 also drawn as a highlighted centerline.
@@ -61,12 +63,29 @@ The report's "Explore" links open the full-window **3D explorer**, controlled wi
 | Shift+Up / Down | Tilt - view more from above or from the side |
 | R / F or Page Up / Down | Raise and lower the view |
 | [ / ] | Less and more vertical exaggeration |
-| G | Smooth or faceted terrain |
 | T, N, 0 | Top view, face north, and reset |
 | H | Show or hide the keyboard help |
 | Esc | Back to the report |
 
-`make run` with no `FILE` opens the viewer's home page, which links to the example plan.
+
+### Viewing a road plan
+
+`make run FILE=<plan.json>` serves the viewer and the plan's directory locally, and opens the plan in
+the browser. `make run` with no `FILE` opens the viewer's home page.
+
+The viewer is also a web site (see [Publishing](#publishing)) that views plans without installing
+anything:
+
+- **Open a local plan** - on the viewer's home page, select or drop the plan's JSON file (and its
+  source map image, to show it in the report). Local files stay on your computer - they're kept in
+  the browser's storage, so the plan's URL works after a reload, and the home page lists the recent
+  plans.
+- **View a plan URL** - `viewer/#url=<plan.json URL>` (the URL is relative to the viewer). The plan's
+  map image is relative to the plan's URL. Plans hosted on another site must allow cross-origin
+  requests (CORS).
+
+The viewer validates every plan it loads against the [road plan model](#the-road-plan-model), and
+reports the first problem it finds.
 
 
 ## The cost score
@@ -102,7 +121,7 @@ scale bar and contour interval. The Claude Code session follows [PLAN.md](plan/P
 digitizing the topography, design criteria, road engineering principles, generating and refining
 options, and finalizing the model. It uses these tools:
 
-- [plan/plan_tools.py](plan/plan_tools.py) - image inspection (`info`, `crop`), contour tracing
+- `plan/plan_tools.py` - image inspection (`info`, `crop`), contour tracing
   (`trace`, `transect`), the topography grid (`grid`), plotting (`plot`), and road engineering
   (`route`, `profile`). `route` finds the least-cost horizontal alignment with a lattice search
   (radius-constrained turns, grade, side slope, stream crossing, rock, and exclusion costs), designs
@@ -168,13 +187,16 @@ A road plan model is a JSON file containing the site topography (an elevation gr
 outcrops, and exclusion areas), the start and end points, design criteria, cost rate overrides, and
 one or more road plan options. Each option has a road cross section, a centerline alignment (x, y,
 and grade elevation), and structures (retaining walls, bridges, culverts, turnouts, and the existing roads
-it follows). Run
-`make doc` for the model documentation (also linked from the viewer).
+it follows).
+
+The model is defined with [Schema Markdown](https://craigahobbs.github.io/schema-markdown-js/language/)
+(in `viewer/lib/model.js`), and the viewer and `make evaluate` validate every plan against it. Run
+`make doc` for the model documentation (also linked from the viewer's report).
 
 
 ## The example
 
-The [example](example/) is a synthetic hillside site. Its topography was digitized from
+The [example](example/example.json) is a synthetic hillside site. Its topography was digitized from
 [example.png](example/example.png) with the planning tools, and its options were engineered with
 `route`:
 
@@ -182,22 +204,39 @@ The [example](example/) is a synthetic hillside site. Its topography was digitiz
 make run FILE=example/example.json
 ```
 
+On the project's web site, [view the example](viewer/#url=../example/example.json).
+
 
 ## Development
 
 ```
-make commit       # run the BareScript tests (100% coverage), the planning tools tests, and lint
-make test         # run the BareScript tests (TEST=testName runs one test)
-make test-tools   # run the planning tools tests and lint (plan/)
-make clean        # remove the build directory
+make commit       # the pre-commit gate: the viewer's and the planning tools' tests and lint
+make test         # run the viewer's and the planning tools' unit tests (TEST=name runs one viewer test)
+make lint         # run ESLint on the viewer and pylint on the planning tools
+make site         # stage the project's web site (build/gh-pages/)
+make clean        # remove the build directories
 ```
 
-| File | Purpose |
+The top-level makefile delegates to the project's two subprojects - run `make` in either for its own
+targets:
+
+| Directory | Contents |
 | --- | --- |
-| [roadie.md](roadie.md), [roadie.bare](roadie.bare) | The viewer application and its 3D, plan, and profile drawings |
-| [roadieModel.bare](roadieModel.bare) | The road plan model schema, validation, earthwork, and cost analysis |
-| [roadieCLI.bare](roadieCLI.bare) | The command-line evaluator (`make evaluate`, `make doc`) |
-| [PLAN.md](plan/PLAN.md) | The road planning instructions for Claude Code |
-| [CLAUDE.md](CLAUDE.md) | The repository guide for Claude Code |
-| [plan/plan_tools.py](plan/plan_tools.py) | The planning tools |
-| [test/](test/) | The BareScript unit tests |
+| [viewer/](viewer/) | The Roadie viewer - the web application, the road plan model (its schema, validation, earthwork, and cost analysis), and the command line behind `make evaluate` and `make doc`. JavaScript, built with [javascript-build](https://github.com/craigahobbs/javascript-build#readme) - see its [README](viewer/README.md). |
+| `plan/` | The planning tools (`plan_tools.py`) and the road planning instructions for Claude Code ([PLAN.md](plan/PLAN.md)). Python, built with [python-build](https://github.com/craigahobbs/python-build#readme). |
+| `example/` | The example plan |
+
+`CLAUDE.md` is the repository guide for Claude Code.
+
+
+### Publishing
+
+`make site` stages the project's web site in `build/gh-pages/`: this README at its root (rendered by
+`index.html`, a [MarkdownUp](https://github.com/craigahobbs/markdown-up#readme) page), the planning
+instructions, the example plan, and the viewer in `viewer/`. `make gh-pages` runs the pre-commit gate, stages the site, and
+updates a checkout of the repository's `gh-pages` branch in `../roadie.gh-pages` - commit and push it
+there to publish (GitHub Pages serves the branch).
+
+The published viewer is the viewer's complete source - including the earthwork and cost model - and
+the site is public. Road plans and map images are user data: don't add them to the site unless
+they're meant to be public.

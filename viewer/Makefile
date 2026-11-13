@@ -28,9 +28,8 @@ include Makefile.base
 # The local web server port
 PORT ?= 8080
 
-# The Roadie project directory and road plans for the canvas and parity checks
-ROADIE ?= ..
-PLANS ?= $(ROADIE)/example/example.json
+# The road plans for the canvas check
+PLANS ?= ../example/example.json
 
 
 clean:
@@ -38,12 +37,11 @@ clean:
 
 
 help:
-	@echo '            [app|check|parity|run]'
+	@echo '            [app|check|run]'
 	@echo ''
 	@echo '  make run [FILE=<plan.json>]    View a road plan in the browser'
 	@echo '  make app                       Stage the application (build/app/)'
 	@echo '  make check [PLANS="..."]       Check the canvas 3D drawings against the SVG drawing'
-	@echo "  make parity [PLANS=\"...\"]      Check the output against the MarkdownUp Roadie viewer's"
 
 
 # Stage the application - the page, its stylesheet, its source modules, and the schema-markdown package's (the page's
@@ -80,11 +78,3 @@ endif
 check:
 	node tools/checkCanvas.js $(PLANS)
 
-
-# Check the viewer's output against the MarkdownUp Roadie viewer's - rendered with the Roadie project's JavaScript bare
-# CLI (npm install --prefix build/js bare-script, in the Roadie project)
-.PHONY: parity
-parity:
-	@test -x "$(ROADIE)/build/js/node_modules/.bin/bare" || \
-		(echo 'error: run "npm install --prefix build/js bare-script" in $(ROADIE)' && exit 1)
-	node tools/parity.js $(ROADIE) $(PLANS)
