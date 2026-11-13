@@ -1,6 +1,9 @@
 # The planning tools' dependencies, and pylint
 TESTS_REQUIRE := numpy scipy pillow matplotlib pylint
 
+# Python 3.14 - pylint's parallel jobs (-j 0) use dill, which doesn't support Python 3.15 yet
+PYTHON_IMAGE := python:3.14
+
 
 # Download python-build
 PYTHON_BUILD_DIR ?= ../../python-build
