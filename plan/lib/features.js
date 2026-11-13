@@ -140,16 +140,61 @@ function simplifyLine(points, tolerance) {
 }
 
 
-// Create a site's exclusion area features - an area without a name is named for its place in the site's areas
+// Create a site's exclusion area features - an area without a name is named for its place in the site's areas. The
+// areas are clipped to the layout's grid, and an area outside it isn't a feature.
 export function exclusionFeatures(layout, site) {
-    return (site.exclusions ?? []).map((area, ixArea) => ({
-        'type': 'exclusion',
-        'name': area.name ?? `Exclusion ${ixArea + 1}`,
-        'points': area.points.map(({latitude, longitude}) => {
-            const [x, y] = layoutPoint(layout, latitude, longitude);
-            return {'x': round(x, 1), 'y': round(y, 1)};
-        })
-    }));
+    const width = (layout.nCols - 1) * layout.spacing;
+    const height = (layout.nRows - 1) * layout.spacing;
+    const features = [];
+    for (const [ixArea, area] of (site.exclusions ?? []).entries()) {
+        const polygon = clipPolygon(area.points.map(({latitude, longitude}) => layoutPoint(layout, latitude, longitude)), width, height);
+        if (polygonArea(polygon) > 0) {
+            features.push({
+                'type': 'exclusion',
+                'name': area.name ?? `Exclusion ${ixArea + 1}`,
+                'points': polygon.map(([x, y]) => ({'x': round(x, 1) + 0, 'y': round(y, 1) + 0}))
+            });
+        }
+    }
+    return features;
+}
+
+
+// Compute a polygon's area
+function polygonArea(polygon) {
+    let area = 0;
+    for (let ix = 0; ix < polygon.length; ix++) {
+        const [x1, y1] = polygon[ix];
+        const [x2, y2] = polygon[(ix + 1) % polygon.length];
+        area += x1 * y2 - x2 * y1;
+    }
+    return Math.abs(area) / 2;
+}
+
+
+// Clip a polygon ([x, y] point arrays) to the box from the origin to (width, height) - a side of the box at a time
+// (Sutherland-Hodgman)
+function clipPolygon(polygon, width, height) {
+    let points = polygon;
+    for (const [ixAxis, limit, sign] of [[0, 0, 1], [0, width, -1], [1, 0, 1], [1, height, -1]]) {
+        // A point is inside the side if it's on the box's side of it
+        const inside = (point) => sign * (point[ixAxis] - limit) >= 0;
+        const clipped = [];
+        for (let ix = 0; ix < points.length; ix++) {
+            const point = points[ix];
+            const prev = points[(ix + points.length - 1) % points.length];
+            if (inside(point) !== inside(prev)) {
+                // The polygon's side crosses the box's side
+                const fraction = (limit - prev[ixAxis]) / (point[ixAxis] - prev[ixAxis]);
+                clipped.push([prev[0] + (point[0] - prev[0]) * fraction, prev[1] + (point[1] - prev[1]) * fraction]);
+            }
+            if (inside(point)) {
+                clipped.push(point);
+            }
+        }
+        points = clipped;
+    }
+    return points;
 }
 
 

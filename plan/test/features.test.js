@@ -137,19 +137,50 @@ test('exclusionFeatures', () => {
         })
     });
     const site = testSite({
-        'exclusions': [area('Barn', [10, 10], [20, 10], [20, 20]), area(null, [30, 10], [40, 10], [40, 20.04], [-5, 300])]
+        'exclusions': [area('Barn', [10, 10], [20, 10], [20, 20]), area(null, [30, 10], [40, 10], [40, 20.04], [5, 200])]
     });
     assert.deepEqual(exclusionFeatures(layout, site), [
         {'type': 'exclusion', 'name': 'Barn', 'points': [{'x': 10, 'y': 10}, {'x': 20, 'y': 10}, {'x': 20, 'y': 20}]},
         {
             'type': 'exclusion',
             'name': 'Exclusion 2',
-            'points': [{'x': 30, 'y': 10}, {'x': 40, 'y': 10}, {'x': 40, 'y': 20}, {'x': -5, 'y': 300}]
+            'points': [{'x': 30, 'y': 10}, {'x': 40, 'y': 10}, {'x': 40, 'y': 20}, {'x': 5, 'y': 200}]
         }
     ]);
 
     // A site without exclusion areas
     assert.deepEqual(exclusionFeatures(layout, testSite()), []);
+});
+
+
+test('exclusionFeatures, the areas are clipped to the site', () => {
+    // The grid is 340 x 264 meters
+    const area = (name, ...points) => ({
+        name,
+        'points': points.map(([x, y]) => {
+            const [latitude, longitude] = layoutLatLong(layout, x, y);
+            return {latitude, longitude};
+        })
+    });
+    const features = exclusionFeatures(layout, testSite({'exclusions': [
+        // An area over the grid's northeast corner, and one over all of the grid
+        area('Corner', [300, 200], [400, 200], [400, 300], [300, 300]),
+        area('All', [-100, -100], [500, -100], [500, 400], [-100, 400]),
+
+        // The land north of a line across the grid, and a triangle over its west side
+        area('North', [-1000, 100], [1000, 200], [1000, 2000], [-1000, 2000]),
+        area('West', [-50, 100], [50, 50], [50, 150]),
+
+        // Areas outside the grid - beside it, and with a point on its side - aren't features
+        area('Outside', [400, 100], [500, 100], [500, 200]),
+        area('Beside', [340, 100], [500, 50], [500, 150])
+    ]}));
+    assert.deepEqual(features.map(({type, name, points}) => [type, name, ...points.map(({x, y}) => [x, y])]), [
+        ['exclusion', 'Corner', [300, 264], [300, 200], [340, 200], [340, 264]],
+        ['exclusion', 'All', [0, 264], [0, 0], [340, 0], [340, 264]],
+        ['exclusion', 'North', [0, 264], [0, 150], [340, 167], [340, 264]],
+        ['exclusion', 'West', [0, 125], [0, 75], [50, 50], [50, 150]]
+    ]);
 });
 
 
