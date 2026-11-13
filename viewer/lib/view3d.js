@@ -4,7 +4,7 @@ import {
     cellContours, colors, contourInterval, contourLevel, labelX, minRoadPx, niceStep, quadBrightness, rgb, roadColor, samplePoints,
     svgOpen, svgPolygon, svgPolyline, svgText, terrainFill
 } from './draw.js';
-import {elevation, gradient, outsideBox, sampleAt, unitLength} from './model.js';
+import {centerlineAt, elevation, gradient, outsideBox, sampleAt, unitLength} from './model.js';
 import {fixed, station as formatStation, px, round} from './format.js';
 import {opCircle, opPolygon, opPolyline, opTerrainCell, opText} from './canvas.js';
 
@@ -619,7 +619,7 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
         const visiblePoints = (visible[1] - visible[0] + 1) * (visible[3] - visible[2] + 1);
         const cellPx = spacing * scale;
         const smoothQuality = cellPx >= limits.facetPx ? Math.min(limits.count, Math.ceil(cellPx / limits.cellPx)) : 1;
-        smooth = Math.min(smoothQuality, Math.floor(Math.sqrt(limits.points / visiblePoints)));
+        smooth = Math.min(smoothQuality, Math.max(1, Math.floor(Math.sqrt(limits.points / visiblePoints))));
         pointLimited = smooth < smoothQuality;
     }
     if (smooth > 1) {
@@ -930,8 +930,7 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
     const {length} = analysis;
     const labelStep = niceStep(width / scale, 5);
     for (let stationValue = labelStep; stationValue < length - labelStep * 0.25; stationValue += labelStep) {
-        const sample = sampleAt(samples, stationValue);
-        const [pxValue, pyValue, depth] = project(view, sample.x, sample.y, sample.z);
+        const [pxValue, pyValue, depth] = project(view, ...centerlineAt(samples, stationValue));
         if (pxValue >= 0 && pxValue <= width && pyValue >= 0 && pyValue <= viewHeight) {
             const labelText = text(formatStation(stationValue, units), pxValue + 6, pyValue - 9, 11, 'start', '#222', false);
             items.push(depth - labelBias, canvas ? [opCircle(pxValue, pyValue, 3, '#222', 'white'), labelText] :

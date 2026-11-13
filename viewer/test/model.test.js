@@ -1,5 +1,6 @@
 import {
-    analyzeOption, culvertDiameter, elevation, gradient, outsideBox, planCriteria, planTopo, sampleAt, unitLength, validatePlan
+    analyzeOption, centerlineAt, culvertDiameter, elevation, gradient, outsideBox, planCriteria, planTopo, sampleAt, unitLength,
+    validatePlan
 } from '../lib/model.js';
 import {planComplex, planExistingRoad, planSimple} from './planFixtures.js';
 import assert from 'node:assert/strict';
@@ -431,6 +432,28 @@ test('analyzeOption, repeated alignment point', () => {
         [[0, 20, 20, 102, 1, 0], [3.333, 20, 23.333, 102.333, 0, 1], [6.667, 20, 26.667, 102.667, 0, 1], [10, 20, 30, 103, 0, 1]]
     );
     assert.deepEqual(analysis.grades, [{'station': 0, 'endStation': 10, 'grade': 10, 'existing': false}]);
+});
+
+
+// The road centerline's point at a station is between the samples either side of the station
+test('centerlineAt', () => {
+    const plan = planSimple();
+    plan.options[0].alignment = [{'x': 0, 'y': 20, 'z': 102}, {'x': 20, 'y': 20, 'z': 104}, {'x': 20, 'y': 40, 'z': 104}];
+    const {samples, length} = analyze(plan);
+    assert.deepEqual([length, samples.length], [40, 13]);
+    const point = (stationValue) => centerlineAt(samples, stationValue).map((value) => Math.round(value * 1000) / 1000);
+    assert.deepEqual(point(0), [0, 20, 102]);
+    assert.deepEqual(point(5), [5, 20, 102.5]);
+    assert.deepEqual(point(7 * 40 / 12), [20, 23.333, 104]);
+    assert.deepEqual(point(35), [20, 35, 104]);
+    assert.deepEqual(point(40), [20, 40, 104]);
+
+    // The nearest sample to station 5 is 1.7 meters from it
+    assert.equal(Math.round(sampleAt(samples, 5).x * 1000) / 1000, 6.667);
+
+    // A station before the start or beyond the end is the start or the end
+    assert.deepEqual(point(-5), [0, 20, 102]);
+    assert.deepEqual(point(45), [20, 40, 104]);
 });
 
 

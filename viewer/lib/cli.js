@@ -134,8 +134,14 @@ function stationTable(units, analysis) {
     const {samples, length} = analysis;
     const step = niceStep(length, 40);
     const rows = [];
+    let prev = null;
     for (let stationValue = 0; stationValue <= length + step * 0.5; stationValue += step) {
+        // On a short road, the stations are closer than the samples - each sample has one row
         const sample = sampleAt(samples, Math.min(stationValue, length));
+        if (sample === prev) {
+            continue;
+        }
+        prev = sample;
         const depth = sample.ground - sample.z;
         rows.push([
             formatStation(sample.station, units),

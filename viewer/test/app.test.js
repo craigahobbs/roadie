@@ -309,11 +309,13 @@ test('a plan that cannot be loaded', async (context) => {
     window.location.hash = `#var.vFile='${encodeURIComponent('<b>&.json')}'`;
     await flush();
     assert.equal(main.innerHTML, errorHtml('<strong>Error:</strong> Could not load the road plan "&lt;b&gt;&amp;.json"'));
-    window.location.hash = `#var.vFile='${encodeURIComponent('line1\\n<b>line2</b>.json')}'`;
+    window.location.hash = `#var.vFile='${encodeURIComponent('line1\\n<b>line2</b>\\n\\n.json')}'`;
     await flush();
-    assert.deepEqual(browser.fetches.at(-1), 'line1\n<b>line2</b>.json');
-    assert.equal(main.querySelector('b'), null);
-    assert.ok(main.querySelector('p').textContent.endsWith('Could not load the road plan "line1\n<b>line2</b>.json"'));
+    assert.deepEqual(browser.fetches.at(-1), 'line1\n<b>line2</b>\n\n.json');
+    assert.equal(
+        main.innerHTML,
+        errorHtml('<strong>Error:</strong> Could not load the road plan "line1\n&lt;b&gt;line2&lt;/b&gt;\n\n.json"')
+    );
 
     // The error page's link is the home page
     window.location.hash = main.querySelector('a').getAttribute('href');
@@ -327,7 +329,11 @@ test('an invalid plan', async (context) => {
     delete untitled.title;
     const browser = fakeBrowser(context, {
         'hash': "#var.vFile='plans/untitled.json'",
-        'files': {'plans/untitled.json': JSON.stringify(untitled), 'plans/empty.json': JSON.stringify(fixturePlan([]))}
+        'files': {
+            'plans/untitled.json': JSON.stringify(untitled),
+            'plans/empty.json': JSON.stringify(fixturePlan([])),
+            'plans/member.json': JSON.stringify({...fixturePlan(), 'one\n\ntwo': 1})
+        }
     });
     const {document, main, window} = browser;
     const app = await startApp(browser);
@@ -347,6 +353,14 @@ test('an invalid plan', async (context) => {
             '<strong>Error:</strong> The road plan "plans/empty.json" is invalid:</p>' +
                 '<p>Invalid value [] (type "object") for member "options", expected type "array" [len &gt; 0]'
         )
+    );
+
+    // All of the validation error is shown
+    window.location.hash = "#var.vFile='plans/member.json'";
+    await flush();
+    assert.equal(
+        main.innerHTML,
+        errorHtml('<strong>Error:</strong> The road plan "plans/member.json" is invalid:</p><p>Unknown member "one\n\ntwo"')
     );
 });
 

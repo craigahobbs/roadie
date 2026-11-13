@@ -348,14 +348,14 @@ test('view3DParts, a top view', () => {
 
 
 test('view3DParts, a zoomed view', () => {
-    // Only the terrain cells (8), road polygons (12 of 36), and station labels within the zoomed view are drawn - the markers
+    // Only the terrain cells (8), road polygons (12 of 36), and station label within the zoomed view are drawn - the markers
     // and the compass are always drawn
     const zoomArgs = {...baseArgs, 'zoom': 4, 'x': 30, 'y': 10};
     const {elements, height} = draw(scene(simplePlan()), zoomArgs);
     assert.equal(height, 300);
-    assert.equal(elements.length, 8 + 12 + 2 + 4 + 1);
+    assert.equal(elements.length, 8 + 12 + 1 + 4 + 1);
     assert.deepEqual(elementCounts(elements.slice(0, -5)), {
-        'cells': 8, 'minor': 8, 'index': 8, 'quads': 12, 'titles': 6, 'lines': {}, 'labels': ['0+030', '0+025']
+        'cells': 8, 'minor': 8, 'index': 8, 'quads': 12, 'titles': 6, 'lines': {}, 'labels': ['0+030']
     });
 
     // The marker poles are the same height on screen as the unzoomed view's
@@ -373,7 +373,7 @@ test('view3DParts, a zoomed view', () => {
     ];
     const streams = scene(planValue);
     assert.deepEqual(elementCounts(draw(streams, zoomArgs).elements.slice(0, -5)), {
-        'cells': 8, 'minor': 8, 'index': 8, 'quads': 12, 'titles': 6, 'lines': {'#2a6fdb 2.5': 4}, 'labels': ['0+030', '0+025']
+        'cells': 8, 'minor': 8, 'index': 8, 'quads': 12, 'titles': 6, 'lines': {'#2a6fdb 2.5': 4}, 'labels': ['0+030']
     });
 
     // The unzoomed view draws both streams - in steps of half a terrain cell
@@ -579,6 +579,11 @@ test('view3DParts, minor contours and smooth terrain', () => {
     const smooth = draw(fixture, smoothArgs, 976, 732, true, {...smoothLimitsCanvas, 'points': 6000});
     assert.deepEqual([faceted.smooth, faceted.step, faceted.pointLimited], [1, 1, false]);
     assert.deepEqual([smooth.smooth, smooth.step, smooth.pointLimited], [2, 1, true]);
+
+    // An SVG view's point limit doesn't set its grid step - a limit under its grid points leaves the grid as it is
+    const limited = draw(fixture, smoothArgs, 976, 732, false, {'sideCells': 240, 'points': 1000, 'facetPx': 0, 'cellPx': 12, 'count': 4});
+    assert.deepEqual([limited.smooth, limited.step, limited.pointLimited], [1, 1, true]);
+    assert.equal(elementCounts(limited.elements.slice(0, -5)).cells, 1200);
 
     // The smooth terrain passes through the grid's points - every faceted cell corner is a smooth cell corner
     const corners = (drawing2) => {

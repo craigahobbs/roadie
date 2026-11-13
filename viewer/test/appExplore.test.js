@@ -286,12 +286,13 @@ test('the 3D explorer page keys', async (context) => {
     ]);
     assert.deepEqual(canvas.calls.findLast(([name]) => name === 'roundRect'), ['roundRect', 8, 660, 380, 26, 4]);
 
-    // Reset the view
+    // Reset the view - the help stays hidden
     assert.equal(keyDown(browser, 'Digit0', '0'), true);
     clock.runFrame();
     assert.equal(paintCount(canvas), 5);
     assert.deepEqual(paintedText(canvas), [
-        '2+00', 'Road', 'End', 'N', ...helpLines, 'Center x 200, y 150, z 533 ft - zoom 1x, rotation 30, tilt 35, exaggeration 1.5x'
+        '2+00', 'Road', 'End', 'N', 'H - keyboard help',
+        'Center x 200, y 150, z 533 ft - zoom 1x, rotation 30, tilt 35, exaggeration 1.5x'
     ]);
 });
 

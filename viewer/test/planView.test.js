@@ -85,11 +85,12 @@ test('planView, a meters plan', () => {
     // The road is wide enough to see, so it has no highlighted centerline
     assert.deepEqual(withAttr(planElements, 'stroke', '#d6246e'), []);
 
-    // The station ticks, 5 meters apart (at the nearest road samples), in meters stations
+    // The station ticks, 5 meters apart, in meters stations - the 15 meter tick is between the road's samples either side
+    // of it (13.3 and 16.7 meters)
     assert.deepEqual(texts(planElements, 'font-size', '10').slice(0, -1), ['0+005', '0+010', '0+015', '0+020', '0+025', '0+030', '0+035']);
     assert.deepEqual(withAttr(planElements, 'r', '2.5').slice(1, 3), [
         '<circle cx="110" cy="210" r="2.5" fill="#222"/>',
-        '<circle cx="176.7" cy="210" r="2.5" fill="#222"/>'
+        '<circle cx="160" cy="210" r="2.5" fill="#222"/>'
     ]);
     assert.equal(
         withAttr(planElements, 'font-size', '10')[1],
@@ -350,7 +351,7 @@ test('profileView, structures', () => {
     assert.deepEqual(texts(profileElements, 'font-size', '11'), ['Station', 'Elevation (ft) — vertical exaggeration 2.2x']);
 
     // The structures, in order - a wall, a culvert (on the ground), a turnout, a wall, the bridge's deck (at the grade), a turnout,
-    // and the culvert beyond the end of the road
+    // and the culvert beyond the end of the road - it's drawn at the end
     const labelAttr = `font-size="10" ${textAttr}`;
     const ixStructures = profileElements.indexOf('<rect x="64" y="272" width="19.7" height="8" fill="#555555"/>');
     assert.deepEqual(profileElements.slice(ixStructures, ixStructures + 13), [
@@ -365,7 +366,7 @@ test('profileView, structures', () => {
         `<text x="253.2" y="173.6" ${labelAttr} fill="#444" ${textStroke} font-weight="bold">Bridge</text>`,
         '<rect x="269" y="272" width="23.7" height="8" fill="#2a8f8f"/>',
         `<text x="280.8" y="264" ${labelAttr} fill="#2a8f8f" ${textStroke} font-weight="bold">Turnout</text>`,
-        '<circle cx="852.5" cy="42.4" r="5" fill="white" stroke="#2a6fdb" stroke-width="2.5"/>',
+        '<circle cx="404" cy="42.4" r="5" fill="white" stroke="#2a6fdb" stroke-width="2.5"/>',
         `<polyline points="64,200.8 142.9,200.8" fill="none" stroke="#1f2d3d" stroke-width="2" ${lineAttr}/>`
     ]);
 

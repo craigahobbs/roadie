@@ -185,7 +185,7 @@ function viewCaption(globals, units, reportView, ixView, viewCount) {
         caption = `<strong>View ${ixView + 1} of ${viewCount}</strong> - stations ${formatStation(reportView.station, units)} to ` +
             `${formatStation(reportView.endStation, units)}`;
     }
-    caption = `${caption}, looking ${direction} (${fixed(azimuth, 0)}°) from ${fixed(viewArgs.tilt, 0)}° above the horizon. ` +
+    caption = `${caption}, looking ${direction} (${Math.round(azimuth) % 360}°) from ${fixed(viewArgs.tilt, 0)}° above the horizon. ` +
         `The road runs ${reportView.leftToRight ? 'left to right' : 'right to left'} from its start to its end`;
     return `${caption}. ${argsLink(globals, 'Explore this view', {...viewArgs, 'explore': true})}`;
 }

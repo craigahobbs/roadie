@@ -362,7 +362,8 @@ test('buildReport, the 3D view captions', () => {
         [90, 'east (90°)'], [112.5, 'east-southeast (113°)'], [135, 'southeast (135°)'], [157.5, 'south-southeast (158°)'],
         [180, 'south (180°)'], [202.5, 'south-southwest (203°)'], [225, 'southwest (225°)'], [247.5, 'west-southwest (248°)'],
         [270, 'west (270°)'], [292.5, 'west-northwest (293°)'], [315, 'northwest (315°)'], [337.5, 'north-northwest (338°)'],
-        [11.2, 'north (11°)'], [11.3, 'north-northeast (11°)'], [348.7, 'north-northwest (349°)'], [348.8, 'north (349°)']
+        [11.2, 'north (11°)'], [11.3, 'north-northeast (11°)'], [348.7, 'north-northwest (349°)'], [348.8, 'north (349°)'],
+        [359.4, 'north (359°)'], [359.6, 'north (0°)']
     ];
     for (const [azimuth, direction] of directions) {
         // A road running across the view direction, on level ground, so the overview looks to the road's left

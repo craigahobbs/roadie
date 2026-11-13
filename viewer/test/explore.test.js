@@ -298,15 +298,16 @@ test('Explorer.keyDown, the other keys', () => {
     explorer.render(800, 600, true);
     const initial = {...explorer.state};
 
-    // Reset the view to the initial view (and show the help) - 0 or Home. The top view's scale fits the site in the view's
-    // height, so it moves 43.7 feet (and is raised 21.8 feet from the ground, at 506 feet)
+    // Reset the view to the initial view - 0 or Home. The help stays as it is (hidden, then shown). The top view's scale
+    // fits the site in the view's height, so it moves 43.7 feet (and is raised 21.8 feet from the ground, at 506 feet)
     const names = Object.keys(initial);
     const changes = [['KeyT'], ['KeyN'], ['KeyD'], ['KeyR'], ['Equal', '+'], ['BracketRight', ']'], ['KeyH']];
+    assert.equal(names[0], 'help');
     assert.deepEqual(
         pressAll(explorer, names, changes).at(-1),
         [false, 0, 90, 1.75, 2.828, 143.7, 50, 527.8]
     );
-    assert.deepEqual(pressAll(explorer, names, [['Digit0', '0']]), [Object.values(initial)]);
+    assert.deepEqual(pressAll(explorer, names, [['Digit0', '0']]), [[false, ...Object.values(initial).slice(1)]]);
     pressAll(explorer, names, changes);
     assert.deepEqual(pressAll(explorer, names, [['Home']]), [Object.values(initial)]);
     assert.deepEqual(explorer.view, projection(explorer.data.topo, {...initial, 'fill': true, 'smooth': true}, 800, 600));

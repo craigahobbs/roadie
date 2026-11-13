@@ -1,11 +1,11 @@
 // planView.js - the plan view and profile view drawings
 
 import {
-    cellContours, colors, contourInterval, contourLevel, labelX, minRoadPx, niceStep, rgb, roadColor, samplePoints, svgOpen, svgPolygon,
-    svgPolyline, svgStyle, svgText
+    cellContours, colors, contourInterval, contourLevel, labelX, minRoadPx, niceStep, rgb, roadColor, samplePoints, svgOpen,
+    svgPolygon, svgPolyline, svgStyle, svgText
 } from './draw.js';
+import {centerlineAt, planCriteria, sampleAt} from './model.js';
 import {fixedTrim, station as formatStation, number, px, unitLabel} from './format.js';
-import {planCriteria, sampleAt} from './model.js';
 import {unproject} from './view3d.js';
 
 
@@ -173,9 +173,9 @@ export function planView(plan, topo, analyses, ixOption, width, outlines) {
     const {length} = analysis;
     const tickStep = niceStep(length, 8);
     for (let stationValue = tickStep; stationValue < length; stationValue += tickStep) {
-        const sample = sampleAt(samples, stationValue);
-        const pxValue = pad + sample.x * scale;
-        const pyValue = pad + (topoHeight - sample.y) * scale;
+        const [x, y] = centerlineAt(samples, stationValue);
+        const pxValue = pad + x * scale;
+        const pyValue = pad + (topoHeight - y) * scale;
         elements.push(`<circle cx="${px(pxValue)}" cy="${px(pyValue)}" r="2.5" fill="#222"/>`);
         elements.push(svgText(formatStation(stationValue, units), pxValue + 6, pyValue - 8, 10, 'start', '#222', false));
     }
@@ -312,9 +312,10 @@ export function profileView(plan, option, analysis, width, height) {
     // Structures - the wall and turnout labels share a row, so a label that would overlap the previous one is omitted
     let labelRight = null;
     for (const structure of option.structures ?? []) {
+        // A structure beyond the end of the road (a design warning) is drawn at the end
         const {type} = structure;
-        const stationValue = structure.station;
-        const endStation = structure.endStation ?? stationValue;
+        const stationValue = Math.min(structure.station, length);
+        const endStation = Math.min(structure.endStation ?? stationValue, length);
         const px1 = left + stationValue * xScale;
         const px2 = left + endStation * xScale;
         if (type === 'bridge') {

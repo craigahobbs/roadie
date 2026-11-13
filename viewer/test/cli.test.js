@@ -135,6 +135,24 @@ test('cliMain evaluate, a meters plan', () => {
 });
 
 
+// A short road's station table has a row for each of its samples - its stations (1 m apart) are closer than its samples
+test('cliMain evaluate, a short road with detail', () => {
+    const {code, output} = run(['evaluate', 'simple.json', '--detail'], {'simple.json': JSON.stringify(planSimple())});
+    assert.equal(code, 0);
+    const lines = output.slice(output.indexOf('### Stations')).split('\n').filter((line) => line.startsWith('| 0+'));
+    const rows = lines.map((line) => line.split('|').slice(1, 6).map((cell) => cell.trim()));
+    assert.deepEqual(rows, [
+        ['0+000', '0.0', '20.0', '102.0', '102.0'], ['0+003', '3.3', '20.0', '102.0', '102.0'],
+        ['0+007', '6.7', '20.0', '102.0', '102.0'], ['0+010', '10.0', '20.0', '102.0', '102.0'],
+        ['0+013', '13.3', '20.0', '102.0', '102.0'], ['0+017', '16.7', '20.0', '102.0', '102.0'],
+        ['0+020', '20.0', '20.0', '102.0', '102.0'], ['0+023', '23.3', '20.0', '102.0', '102.0'],
+        ['0+027', '26.7', '20.0', '102.0', '102.0'], ['0+030', '30.0', '20.0', '102.0', '102.0'],
+        ['0+033', '33.3', '20.0', '102.0', '102.0'], ['0+037', '36.7', '20.0', '102.0', '102.0'],
+        ['0+040', '40.0', '20.0', '102.0', '102.0']
+    ]);
+});
+
+
 test('cliMain evaluate, endpoints outside the topography and no structures', () => {
     const plan = fixturePlan();
     plan.end = {'x': 1000, 'y': 1000};

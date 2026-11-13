@@ -90,6 +90,14 @@ test('markdownHtml paragraphs', () => {
         '<p>text</p>\n<h1 id="head">Head</h1>\n<p>more</p>\n<blockquote><p>quote</p></blockquote>\n<p>more</p>\n' +
         '<ul><li><p>item</p></li></ul>\n<pre><code>code</code></pre>\n<p>more</p>\n<ol><li><p>one</p></li></ol>'
     );
+
+    // Lines may end with a carriage return
+    assert.equal(
+        markdownHtml(['one\r\ntwo\r\n\r\n- item\r\n- *two*\r\n\r\n# Head\r', '---\r', '| A |\r\n|---|\r\n| 1 |\r']),
+        '<p>one\ntwo</p>\n<ul><li><p>item</p></li><li><p><em>two</em></p></li></ul>\n<h1 id="head">Head</h1>\n<hr>\n' +
+        '<table><thead><tr><th style="text-align: left">A</th></tr></thead>' +
+        '<tbody><tr><td style="text-align: left">1</td></tr></tbody></table>'
+    );
 });
 
 
@@ -102,12 +110,25 @@ test('markdownHtml headings', () => {
 
     // More than six hash characters, or no space, isn't a heading
     assert.equal(markdownHtml(['####### Seven', '#NoSpace']), '<p>####### Seven\n#NoSpace</p>');
+
+    // A paragraph underlined with "=" or "-" is a level one or two heading
+    assert.equal(
+        markdownHtml(['The *Site*', '===', 'text', '', 'Two', 'lines', ' -- ', 'more', '=', '', '===', '', 'last']),
+        '<h1 id="the-site">The <em>Site</em></h1>\n<p>text</p>\n<h2 id="two-lines">Two\nlines</h2>\n<h1 id="more">more</h1>\n' +
+        '<p>===</p>\n<p>last</p>'
+    );
 });
 
 
 test('markdownHtml horizontal rules', () => {
     assert.equal(markdownHtml(['one', '', '---', '* * *', '_____', 'two']), '<p>one</p>\n<hr>\n<hr>\n<hr>\n<p>two</p>');
     assert.equal(markdownHtml(['--']), '<p>--</p>');
+
+    // A horizontal rule ends a paragraph - but a line of "-" under a paragraph makes it a heading
+    assert.equal(
+        markdownHtml(['one', '***', 'two', '_ _ _', 'three', '- - -', 'four', '---']),
+        '<p>one</p>\n<hr>\n<p>two</p>\n<hr>\n<p>three</p>\n<hr>\n<h2 id="four">four</h2>'
+    );
 });
 
 

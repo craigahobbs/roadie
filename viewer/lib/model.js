@@ -1177,6 +1177,20 @@ export function sampleAt(samples, stationValue) {
 }
 
 
+// Interpolate the road centerline's point ([x, y, z]) at a station - it's between the samples either side of the station
+export function centerlineAt(samples, stationValue) {
+    const last = samples.length - 1;
+    const position = Math.max(0, Math.min(last, stationValue / (samples[last].station / last)));
+    const ixSample = Math.min(last - 1, Math.floor(position));
+    const fraction = position - ixSample;
+    const sample = samples[ixSample];
+    const next = samples[ixSample + 1];
+    return [
+        sample.x + (next.x - sample.x) * fraction, sample.y + (next.y - sample.y) * fraction, sample.z + (next.z - sample.z) * fraction
+    ];
+}
+
+
 // Create a cost item object
 function costItem(name, quantity, quantityType, cost) {
     return {name, quantity, 'type': quantityType, cost};
