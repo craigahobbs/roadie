@@ -8,6 +8,7 @@
         "test": "node --test test/"
     },
     "dependencies": {
+        "@resvg/resvg-js": "~2.6",
         "geotiff": "~3.0",
         "schema-markdown": "~1.3"
     },

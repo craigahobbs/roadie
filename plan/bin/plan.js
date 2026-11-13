@@ -2,10 +2,12 @@
 // plan.js - the Roadie planning tools' command line (see lib/cli.js)
 //
 // usage: node bin/plan.js site <site.json> <plan.json>
+//        node bin/plan.js plot <plan.json> <plot.png>
 //        node bin/plan.js doc
 
 import {fetchBytes, fetchJson} from '../lib/usgs.js';
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {Resvg} from '@resvg/resvg-js';
 import {cliMain} from '../lib/cli.js';
 import {dirname} from 'node:path';
 import {elevationImage} from '../lib/elevationImage.js';
@@ -37,5 +39,6 @@ process.exitCode = await cliMain(process.argv.slice(2), {
     'write': (text) => process.stdout.write(text),
     'getJson': (url) => fetchJson(fetch, sleep, url),
     'getBytes': (url) => fetchBytes(fetch, sleep, url),
+    'renderPng': (svg) => new Resvg(svg, {'background': 'white', 'font': {'loadSystemFonts': true}}).render().asPng(),
     openImage
 });

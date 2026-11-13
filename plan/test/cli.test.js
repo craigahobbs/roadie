@@ -14,10 +14,12 @@ async function run(argv) {
 // The command line's usage
 const usage = `\
 usage: plan site <site.json> <plan.json>
+       plan plot <plan.json> <plot.png>
        plan doc
 
   site    Create a road plan model's site from a road site model - its topography (USGS lidar terrain),
-          georeference, and start and end points
+          georeference, start and end points, features, and topographic map image
+  plot    Plot a road plan model - its terrain, features, and options
   doc     Print the road site model documentation
 `;
 

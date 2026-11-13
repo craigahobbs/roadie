@@ -10,6 +10,7 @@ roads.
 
 ```sh
 node bin/plan.js site <site.json> <plan.json>    # create a plan's site from a road site model - its lidar terrain
+node bin/plan.js plot <plan.json> <plot.png>     # plot a plan - its terrain, features, and options
 node bin/plan.js doc                             # the road site model documentation
 ```
 
@@ -20,3 +21,6 @@ ground elevations), reads the site's part of them (it's cached in the plan's wor
 the site. The newest survey's elevations are used, and an older survey's where the newer have none. The site's
 features are the USGS National Map's streams, roads, and trails, and the site's exclusion areas, and its
 topographic map image (`<plan>.png`) is the National Map's.
+
+`plot` draws a plan for the planning session to study: its terrain, shaded (lit from the northwest) with contours,
+its features, each option's line with its stations and structures, and the plan's coordinates along its sides.

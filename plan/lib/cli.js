@@ -1,5 +1,6 @@
 // cli.js - the Roadie planning tools' command line (see bin/plan.js)
 
+import {plotCommand, plotUsage} from './plot.js';
 import {siteCommand, siteUsage} from './siteCommand.js';
 import {schemaDocMarkdown} from '../../viewer/lib/schemaDoc.js';
 import {siteTypes} from './site.js';
@@ -8,10 +9,12 @@ import {siteTypes} from './site.js';
 // The command line's usage text lines
 const usage = [
     'usage: plan site <site.json> <plan.json>',
+    '       plan plot <plan.json> <plot.png>',
     '       plan doc',
     '',
     '  site    Create a road plan model\'s site from a road site model - its topography (USGS lidar terrain),',
-    '          georeference, and start and end points',
+    '          georeference, start and end points, features, and topographic map image',
+    '  plot    Plot a road plan model - its terrain, features, and options',
     '  doc     Print the road site model documentation'
 ];
 
@@ -21,6 +24,7 @@ const usage = [
 // invalid - and each command's usage text lines
 const commands = {
     'site': [siteCommand, siteUsage],
+    'plot': [plotCommand, plotUsage],
     'doc': [(args) => (args.length === 0 ? {'code': 0, 'lines': schemaDocMarkdown(siteTypes, 'RoadSite')} : null), usage]
 };
 
