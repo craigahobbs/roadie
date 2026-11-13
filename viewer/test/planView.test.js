@@ -57,7 +57,11 @@ test('planView, a meters plan', () => {
     assert.ok(planElements[0].startsWith('<path d="M110 90L10 90M110 70L10 70M110 50L10 50M110 30L10 30M210 90L110 90M'));
     assert.ok(planElements[0].endsWith('" fill="none" stroke="#b89a72" stroke-width="0.6"/>'));
     assert.equal(countOf(planElements[0], 'M'), 4 * 16);
-    assert.ok(planElements[1].endsWith('" fill="none" stroke="#8a6a45" stroke-width="1.3"/>'));
+
+    // Each grid row is at a whole meter - its index contour is along the north side of the grid cells below it
+    assert.ok(planElements[1].startsWith('<path d="M110 10L10 10M210 10L110 10M310 10L210 10M410 10L310 10M110 110L10 110M'));
+    assert.ok(planElements[1].endsWith('M410 310L310 310" fill="none" stroke="#8a6a45" stroke-width="1.3"/>'));
+    assert.equal(countOf(planElements[1], 'M'), 16);
 
     // The road's footprint - its 12 sample intervals' cut slopes (uphill), fill slopes (downhill), and gravel surface. The
     // road is 10 meters wide, from 5 meters either side of its centerline
@@ -307,6 +311,35 @@ test('profileView, a steep meters road', () => {
         profileElements[profileElements.length - 1],
         `<text x="367" y="24" font-size="10" ${textAttr.replace('middle', 'start')} fill="#444" ${textStroke}>Over 12%</text>`
     );
+});
+
+
+test('profileView, a level road', () => {
+    // The road is level, on level ground along it (102 meters) - the elevation grid is the meter below it
+    const {profileElements} = drawings(simplePlan(), 0, 420);
+    assert.deepEqual(texts(profileElements, 'text-anchor', 'end'), ['101', '102']);
+    assert.deepEqual(withAttr(profileElements, 'stroke', '#dddddd').slice(0, 3).map((element) => element.match(/points="([^"]*)"/)[1]), [
+        '64,280 404,280', '64,16 404,16', '64,16 64,280'
+    ]);
+
+    // 264 pixels per meter of elevation and 8.5 pixels per meter of station
+    assert.deepEqual(texts(profileElements, 'font-size', '11'), ['Station', 'Elevation (m) — vertical exaggeration 31.1x']);
+
+    // The ground and grade lines are at the top of the grid
+    assert.deepEqual(profileElements.slice(-12, -10).map((element) => element.match(/points="([^"]*)"/)[1]), [
+        '64,16 92.3,16 120.7,16 149,16 177.3,16 205.7,16 234,16 262.3,16 290.7,16 319,16 347.3,16 375.7,16 404,16',
+        '64,16 404,16'
+    ]);
+});
+
+
+test('profileView, a road with little relief', () => {
+    // The road climbs 2.5 meters - the elevation grid's lines are a meter apart, not less, so their labels are whole meters
+    const planValue = simplePlan();
+    planValue.options[0].alignment[1].z = 104.5;
+    const {profileElements} = drawings(planValue, 0, 420);
+    assert.deepEqual(texts(profileElements, 'text-anchor', 'end'), ['101', '102', '103', '104', '105']);
+    assert.deepEqual(texts(profileElements, 'font-size', '11'), ['Station', 'Elevation (m) — vertical exaggeration 7.8x']);
 });
 
 

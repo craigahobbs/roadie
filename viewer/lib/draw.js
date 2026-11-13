@@ -137,6 +137,14 @@ export function contourInterval(plan, topo) {
 }
 
 
+// Compute a contour level's elevation - a whole number of contour intervals. It's rounded to nine decimal places, so
+// it's the same number as an elevation of that value (0.6, not 3 * 0.2 = 0.6000000000000001) - a contour along grid
+// points at its level is at their elevation, not just above it. Every fifth level is an index contour.
+export function contourLevel(ixLevel, interval) {
+    return Math.round(ixLevel * interval * 1e9) / 1e9;
+}
+
+
 // Compute a grid cell's contour segments at a level. The cell's corner elevations are given clockwise from the
 // northwest corner. The segments are written to the "out" array as [fx1, fy1, fx2, fy2, ...] in cell fractions, where
 // fx increases to the east and fy increases to the south. Returns the number of segments (0, 1, or 2).

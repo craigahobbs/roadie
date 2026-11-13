@@ -1,7 +1,7 @@
 // planView.js - the plan view and profile view drawings
 
 import {
-    cellContours, colors, contourInterval, labelX, minRoadPx, niceStep, rgb, roadColor, samplePoints, svgOpen, svgPolygon,
+    cellContours, colors, contourInterval, contourLevel, labelX, minRoadPx, niceStep, rgb, roadColor, samplePoints, svgOpen, svgPolygon,
     svgPolyline, svgStyle, svgText
 } from './draw.js';
 import {fixedTrim, station as formatStation, number, px, unitLabel} from './format.js';
@@ -40,9 +40,12 @@ export function planView(plan, topo, analyses, ixOption, width, outlines) {
             const zSE = rowBottom[col + 1];
             const zSW = rowBottom[col];
             const zMax = Math.max(zNW, zNE, zSE, zSW);
-            for (let level = Math.ceil(Math.min(zNW, zNE, zSE, zSW) / interval) * interval; level <= zMax; level += interval) {
-                const indexLevel = level / interval / 5;
-                const isIndex = Math.abs(indexLevel - Math.floor(indexLevel + 0.5)) < 1e-6;
+            for (let ixLevel = Math.ceil(Math.min(zNW, zNE, zSE, zSW) / interval); ; ixLevel++) {
+                const level = contourLevel(ixLevel, interval);
+                if (level > zMax) {
+                    break;
+                }
+                const isIndex = ixLevel % 5 === 0;
                 const segmentCount = cellContours(zNW, zNE, zSE, zSW, level, segments);
                 for (let ixSegment = 0; ixSegment < segmentCount; ixSegment++) {
                     const ix = ixSegment * 4;
@@ -245,7 +248,8 @@ export function profileView(plan, option, analysis, width, height) {
         minZ = minZ === null ? low : Math.min(minZ, low);
         maxZ = maxZ === null ? high : Math.max(maxZ, high);
     }
-    const zStep = niceStep(maxZ - minZ, 6);
+    // The elevation grid lines are at least a unit apart (their labels are whole numbers) - so a level road has a range
+    const zStep = Math.max(1, niceStep(maxZ - minZ, 6));
     minZ = Math.floor(minZ / zStep) * zStep - zStep;
     maxZ = Math.ceil(maxZ / zStep) * zStep;
 

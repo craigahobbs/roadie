@@ -1,5 +1,5 @@
 import {buildReport, planImageURL} from '../lib/report.js';
-import {complexPlan, countOf, planData, simplePlan} from './viewFixtures.js';
+import {complexPlan, countOf, planData, ridgesPlan, simplePlan} from './viewFixtures.js';
 import {PlanData} from '../lib/planData.js';
 import {argsParse} from '../lib/args.js';
 import assert from 'node:assert/strict';
@@ -7,7 +7,6 @@ import {fixturePlan} from './fixture.js';
 import {opsToSvg} from '../lib/canvas.js';
 import {smoothLimitsCanvas} from '../lib/view3d.js';
 import test from 'node:test';
-import {validatePlan} from '../lib/model.js';
 
 
 // The cost score explanation paragraph
@@ -349,14 +348,6 @@ test('buildReport, canvas 3D views', () => {
 });
 
 
-// A plan data whose report views all have hidden road points
-class HiddenRoadData extends PlanData {
-    reportViews(ixOption, width) {
-        return super.reportViews(ixOption, width).map((reportView) => ({...reportView, 'hidden': 3}));
-    }
-}
-
-
 test('buildReport, the 3D view captions', () => {
     // A road running west, down the slope, is viewed looking upslope - so it runs right to left
     const west = fixturePlan([{'name': 'West', 'section': {'width': 12}, 'alignment': [{'x': 380, 'y': 250}, {'x': 20, 'y': 30}]}]);
@@ -388,23 +379,10 @@ test('buildReport, the 3D view captions', () => {
         ]);
     }
 
-    // A view of a road with points hidden by the terrain says so
-    const hiddenPlan = validatePlan(simplePlan()).plan;
-    assert.deepEqual(captions(report(new HiddenRoadData(hiddenPlan, 'simple.json')).html), [
-        '<strong>View 1 of 1: Overview</strong> - the whole site, looking north (0°) from 55° above the horizon. ' +
-            'The road runs left to right from its start to its end - the terrain hides parts of the road.'
-    ]);
-
-    // With road segment views, the overview's hidden parts are shown in the views that follow
-    hiddenPlan.options[0].section.width = 0.1;
-    assert.deepEqual(captions(report(new HiddenRoadData(hiddenPlan, 'simple.json')).html), [
-        '<strong>View 1 of 3: Overview</strong> - the whole site, looking north (0°) from 55° above the horizon. ' +
-            'The road runs left to right from its start to its end - the terrain hides parts of the road, shown in the views that ' +
-            'follow.',
-        '<strong>View 2 of 3</strong> - stations 0+000 to 0+020, looking north (0°) from 40° above the horizon. ' +
-            'The road runs left to right from its start to its end - the terrain hides parts of the road.',
-        '<strong>View 3 of 3</strong> - stations 0+020 to 0+040, looking north (0°) from 40° above the horizon. ' +
-            'The road runs left to right from its start to its end - the terrain hides parts of the road.'
+    // A road that the terrain hides at every tilt is viewed from straight above
+    assert.deepEqual(captions(report(ridgesPlan()).html), [
+        '<strong>View 1 of 1: Overview</strong> - the whole site, looking north (0°) from 90° above the horizon. ' +
+            'The road runs left to right from its start to its end.'
     ]);
 });
 

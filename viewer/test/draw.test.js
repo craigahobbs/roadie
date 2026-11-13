@@ -1,7 +1,7 @@
 import {analyzeOption, planTopo, validatePlan} from '../lib/model.js';
 import {
-    cellContours, colors, contourInterval, labelX, minRoadPx, niceStep, quadBrightness, rgb, roadColor, samplePoints, svgOpen, svgPoints,
-    svgPolygon, svgPolyline, svgStyle, svgText, terrainFill
+    cellContours, colors, contourInterval, contourLevel, labelX, minRoadPx, niceStep, quadBrightness, rgb, roadColor, samplePoints, svgOpen,
+    svgPoints, svgPolygon, svgPolyline, svgStyle, svgText, terrainFill
 } from '../lib/draw.js';
 import {planComplex, planSimple} from './planFixtures.js';
 import assert from 'node:assert/strict';
@@ -112,6 +112,25 @@ test('contourInterval', () => {
     assert.equal(contourInterval(complex, planTopo(complex)), 5);
     const simple = planSimple();
     assert.equal(contourInterval(simple, planTopo(simple)), 0.2);
+});
+
+
+test('contourLevel', () => {
+    // A level is a whole number of contour intervals
+    assert.equal(contourLevel(7, 5), 35);
+    assert.equal(contourLevel(3, 0.25), 0.75);
+    assert.equal(contourLevel(-2, 20), -40);
+
+    // A level is the same number as an elevation of its value - the product of the level and the interval may not be
+    assert.equal(3 * 0.2, 0.6000000000000001);
+    assert.equal(contourLevel(3, 0.2), 0.6);
+    assert.equal(-3 * 0.1, -0.30000000000000004);
+    assert.equal(contourLevel(-3, 0.1), -0.3);
+    assert.equal(contourLevel(1234567, 0.001), 1234.567);
+
+    // So a contour along grid points at its level is drawn - it's along the north side of the cell below them
+    assert.deepEqual(contours(0.6, 0.6, 0.4, 0.4, contourLevel(3, 0.2)), [1, [1, -0, 0, 0]]);
+    assert.deepEqual(contours(0.6, 0.6, 0.4, 0.4, 3 * 0.2), [0, []]);
 });
 
 

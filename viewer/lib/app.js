@@ -211,8 +211,13 @@ export class RoadieApp {
             if (planName === null && file.name.toLowerCase().endsWith('.json')) {
                 planName = file.name;
             }
-            // A re-opened file replaces its cached plan
-            this.plans.delete(`${localPrefix}${file.name}`);
+        }
+
+        // The opened files replace the cached local plans - a plan's own file, or its map image
+        if (files.length > 0) {
+            for (const file of [...this.plans.keys()].filter((planFile) => planFile.startsWith(localPrefix))) {
+                this.plans.delete(file);
+            }
         }
         if (planName !== null) {
             const hash = argsURL({}, {'file': `${localPrefix}${planName}`});

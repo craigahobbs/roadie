@@ -490,6 +490,48 @@ test('opening a local plan and its source map image', async (context) => {
 });
 
 
+test('opening a local plan, then its source map image', async (context) => {
+    const plan = fixturePlan();
+    plan.image = 'topo.png';
+    const browser = fakeBrowser(context, {storage, 'files': fixtureFiles});
+    const {document, indexedDB, main, window} = browser;
+    const app = await startApp(browser);
+
+    // The plan without its map image
+    await selectFiles(browser, [localFile(browser, 'plan.json', JSON.stringify(plan))]);
+    assert.equal(document.getElementById('source-map').nextElementSibling.textContent,
+        'Open the map image ("topo.png") with the road plan to show it here.');
+    const {data} = app.page;
+
+    // Drop the map image on the plan's report - the report shows it
+    const imageFile = localFile(browser, 'topo.png', 'PNG', 'image/png');
+    await dropFiles(browser, [imageFile]);
+    assert.equal(window.location.hash, "#var.vFile='local%3Aplan.json'");
+    assert.equal(document.title, 'Fixture Plan');
+    assert.deepEqual(headings(browser), [...directHeadings, 'Source Map']);
+    assert.equal(
+        document.getElementById('source-map').nextElementSibling.outerHTML,
+        '<p><img src="blob:http://localhost/1" alt="The source topographic map" style="max-width: 100%; height: auto;"></p>'
+    );
+    assert.deepEqual(browser.objectURLs, [imageFile]);
+    assert.notEqual(app.page.data, data);
+    assert.deepEqual(indexedDB.records('files').map(({name}) => name), ['plan.json', 'topo.png']);
+
+    // A revised map image replaces it
+    const revisedFile = localFile(browser, 'topo.png', 'PNG2', 'image/png');
+    await dropFiles(browser, [revisedFile]);
+    assert.equal(main.querySelector('img').getAttribute('src'), 'blob:http://localhost/2');
+    assert.deepEqual(browser.objectURLs, [imageFile, revisedFile]);
+
+    // A plan from a URL is still cached
+    window.location.hash = "#var.vFile='plans%2Ffixture.json'";
+    await flush();
+    await dropFiles(browser, [localFile(browser, 'other.png', 'PNG', 'image/png')]);
+    assert.equal(document.title, 'Fixture Plan');
+    assert.deepEqual(browser.fetches, ['plans/fixture.json']);
+});
+
+
 test('opening a source map image, then its local plan', async (context) => {
     const plan = fixturePlan();
     plan.image = 'topo.png';

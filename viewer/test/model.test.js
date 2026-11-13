@@ -77,6 +77,16 @@ test('validatePlan', () => {
         {'error': 'Option "Direct" turnout at station 100 requires an endStation greater than its station'}
     );
 
+    // A road has length - a repeated alignment point is fine, but not all of them
+    const noLength = fixturePlan();
+    noLength.options[0].alignment = [{'x': 20, 'y': 30}, {'x': 20, 'y': 30, 'z': 110}, {'x': 20, 'y': 30}];
+    assert.deepEqual(
+        validatePlan(noLength),
+        {'error': 'Option "Direct" alignment has no length - its points are all the same point'}
+    );
+    noLength.options[0].alignment[2].x = 21;
+    assert.ok('plan' in validatePlan(noLength));
+
     const shortRow = fixturePlan();
     shortRow.topography.elevations = [[1, 2]];
     assert.equal(validatePlan(shortRow).error,
@@ -406,22 +416,21 @@ test('analyzeOption, alignment', () => {
 });
 
 
-// A zero-length alignment has two samples at its point, heading east
-test('analyzeOption, zero-length alignment', () => {
+// A repeated alignment point is a zero-length segment - the sample at its station is at the point, heading east
+test('analyzeOption, repeated alignment point', () => {
     const plan = planSimple();
     plan.start = {'x': 20, 'y': 20};
-    plan.end = {'x': 20, 'y': 20};
-    plan.options[0].alignment = [{'x': 20, 'y': 20}, {'x': 20, 'y': 20}];
+    plan.options[0].alignment = [{'x': 20, 'y': 20}, {'x': 20, 'y': 20}, {'x': 20, 'y': 30}];
     const analysis = analyze(plan);
-    assert.equal(analysis.length, 0);
-    assert.deepEqual(analysis.alignment, [{'x': 20, 'y': 20, 'z': 102, 'station': 0}, {'x': 20, 'y': 20, 'z': 102, 'station': 0}]);
+    assert.equal(analysis.length, 10);
+    assert.deepEqual(analysis.alignment, [
+        {'x': 20, 'y': 20, 'z': 102, 'station': 0}, {'x': 20, 'y': 20, 'z': 102, 'station': 0}, {'x': 20, 'y': 30, 'z': 103, 'station': 10}
+    ]);
     assert.deepEqual(
-        analysis.samples.map((sample) => [sample.station, sample.x, sample.y, sample.z, sample.dx, sample.dy, sample.slope]),
-        [[0, 20, 20, 102, 1, 0, 0.1], [0, 20, 20, 102, 1, 0, 0.1]]
+        analysis.samples.map(({station, x, y, z, dx, dy}) => [station, x, y, z, dx, dy].map((value) => Math.round(value * 1000) / 1000)),
+        [[0, 20, 20, 102, 1, 0], [3.333, 20, 23.333, 102.333, 0, 1], [6.667, 20, 26.667, 102.667, 0, 1], [10, 20, 30, 103, 0, 1]]
     );
-    assert.deepEqual(analysis.grades, []);
-    assert.deepEqual([analysis.maxGrade, analysis.minRadius, analysis.cut, analysis.fill, analysis.total], [0, null, 0, 0, 0]);
-    assert.deepEqual(analysis.warnings, []);
+    assert.deepEqual(analysis.grades, [{'station': 0, 'endStation': 10, 'grade': 10, 'existing': false}]);
 });
 
 

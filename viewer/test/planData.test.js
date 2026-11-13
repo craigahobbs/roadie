@@ -72,8 +72,8 @@ test('PlanData reportViews', () => {
     const views = data.reportViews(0, 800);
     assert.equal(views.length, 1);
     assert.deepEqual(
-        [views[0].station, views[0].endStation, views[0].hidden, views[0].leftToRight, views[0].view.width, views[0].args.smooth],
-        [0, 40, 0, true, 800, false]
+        [views[0].station, views[0].endStation, views[0].leftToRight, views[0].view.width, views[0].args.smooth],
+        [0, 40, true, 800, false]
     );
     assert.deepEqual(views, reportViews(data.topo, data.rows(0), data.analysis(0), 5, 800, false));
 

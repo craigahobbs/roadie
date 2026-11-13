@@ -374,8 +374,14 @@ export function validatePlan(planValue) {
         }
     }
 
-    // Structure ranges
     for (const option of plan.options) {
+        // A road has length - its alignment points aren't all the same point
+        const [first] = option.alignment;
+        if (option.alignment.every((point) => point.x === first.x && point.y === first.y)) {
+            return {'error': `Option "${option.name}" alignment has no length - its points are all the same point`};
+        }
+
+        // Structure ranges
         for (const structure of option.structures ?? []) {
             const {type} = structure;
             if (type !== 'culvert') {

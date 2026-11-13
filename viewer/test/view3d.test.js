@@ -233,20 +233,22 @@ test('view3DParts and view3D', () => {
         [400, 300, '3D view of the Flat road plan option', 1, 1, false]
     );
 
-    // 16 terrain cells (each with its minor contours), 12 road intervals of surface and two side slopes, and a station
-    // label (20 m), depth-sorted, then two markers and the compass
+    // 16 terrain cells (each with its minor and index contours), 12 road intervals of surface and two side slopes, and a
+    // station label (20 m), depth-sorted, then two markers and the compass
     const {elements} = parts;
     assert.equal(elements.length, 16 + 12 * 3 + 1 + 4 + 1);
     assert.deepEqual(elementCounts(elements.slice(0, -5)), {
-        'cells': 16, 'minor': 16, 'index': 0, 'quads': 36, 'titles': 12, 'lines': {}, 'labels': ['0+020']
+        'cells': 16, 'minor': 16, 'index': 16, 'quads': 36, 'titles': 12, 'lines': {}, 'labels': ['0+020']
     });
 
-    // The farthest terrain cell (the northeast corner's) is first - its contours are a path
+    // The farthest terrain cell (the northeast corner's) is first - its contours are two paths. The contour interval is
+    // 0.2 m, and the cell's north grid points are at 104 m - so their index contour is the cell's north edge.
     assert.equal(
         elements[0],
         '<polygon points="192.7,101.5 240,85.8 267.3,119.7 220,135.4" fill="rgb(155,132,93)" stroke="rgb(155,132,93)" ' +
             'stroke-width="0.6"/><path d="M261.9 112.9L214.5 128.6M256.4 106.2L209.1 121.8M250.9 99.4L203.6 115.1M245.5 92.6L198.1 ' +
-            '108.3" fill="none" stroke="rgba(70,50,30,0.45)" stroke-width="0.5" stroke-linecap="round"/>'
+            '108.3" fill="none" stroke="rgba(70,50,30,0.45)" stroke-width="0.5" stroke-linecap="round"/>' +
+            '<path d="M240 85.8L192.7 101.5" fill="none" stroke="rgba(70,50,30,0.45)" stroke-width="1.2" stroke-linecap="round"/>'
     );
 
     // The road surface's intervals have their end station's grade and ground elevations
@@ -311,7 +313,8 @@ test('view3DParts, a top view', () => {
         elements[0],
         '<polygon points="25.1,62.4 37.6,62.4 37.6,74.9 25.1,74.9" fill="rgb(104,139,81)" stroke="rgb(104,139,81)" ' +
             'stroke-width="0.6"/><path d="M37.6 72.4L25.1 72.4M37.6 69.9L25.1 69.9M37.6 67.4L25.1 67.4M37.6 64.9L25.1 64.9" ' +
-            'fill="none" stroke="rgba(70,50,30,0.45)" stroke-width="0.5" stroke-linecap="round"/>'
+            'fill="none" stroke="rgba(70,50,30,0.45)" stroke-width="0.5" stroke-linecap="round"/>' +
+            '<path d="M37.6 62.4L25.1 62.4" fill="none" stroke="rgba(70,50,30,0.45)" stroke-width="1.2" stroke-linecap="round"/>'
     );
 
     // The marker poles are vertical, so they're points - and the compass points up
@@ -352,7 +355,7 @@ test('view3DParts, a zoomed view', () => {
     assert.equal(height, 300);
     assert.equal(elements.length, 8 + 12 + 2 + 4 + 1);
     assert.deepEqual(elementCounts(elements.slice(0, -5)), {
-        'cells': 8, 'minor': 8, 'index': 0, 'quads': 12, 'titles': 6, 'lines': {}, 'labels': ['0+030', '0+025']
+        'cells': 8, 'minor': 8, 'index': 8, 'quads': 12, 'titles': 6, 'lines': {}, 'labels': ['0+030', '0+025']
     });
 
     // The marker poles are the same height on screen as the unzoomed view's
@@ -370,7 +373,7 @@ test('view3DParts, a zoomed view', () => {
     ];
     const streams = scene(planValue);
     assert.deepEqual(elementCounts(draw(streams, zoomArgs).elements.slice(0, -5)), {
-        'cells': 8, 'minor': 8, 'index': 0, 'quads': 12, 'titles': 6, 'lines': {'#2a6fdb 2.5': 4}, 'labels': ['0+030', '0+025']
+        'cells': 8, 'minor': 8, 'index': 8, 'quads': 12, 'titles': 6, 'lines': {'#2a6fdb 2.5': 4}, 'labels': ['0+030', '0+025']
     });
 
     // The unzoomed view draws both streams - in steps of half a terrain cell
@@ -387,7 +390,7 @@ test('view3DParts, a narrow road', () => {
     const {elements} = draw(narrow, baseArgs);
     assert.equal(elements.length, 16 + 12 * 3 + 12 * 2 + 1 + 4 + 1);
     assert.deepEqual(elementCounts(elements.slice(0, -5)), {
-        'cells': 16, 'minor': 16, 'index': 0, 'quads': 36, 'titles': 12, 'lines': {'white 6': 12, '#d6246e 3': 12}, 'labels': ['0+020']
+        'cells': 16, 'minor': 16, 'index': 16, 'quads': 36, 'titles': 12, 'lines': {'white 6': 12, '#d6246e 3': 12}, 'labels': ['0+020']
     });
 
     // Each interval's line is drawn after (nearer than) its halo and its neighbors' halos
@@ -630,7 +633,6 @@ test('reportViews', () => {
         'view': null,
         'station': 0,
         'endStation': 40,
-        'hidden': 0,
         'leftToRight': true
     }]);
     assert.deepEqual([views[0].view.width, views[0].view.height, views[0].view.zoom, views[0].view.smooth], [976, 675, 1.32, false]);
@@ -674,12 +676,18 @@ test('reportViews, the viewpoints', () => {
     southRidge.topography.elevations[3].fill(115);
     assert.deepEqual(viewpoints(planReportViews(southRidge)), [[180, 55, 0, 40, false]]);
 
-    // Ridges on both sides hide the road at a low tilt - the lowest tilt that shows all of the road wins
+    // Ridges on both sides hide the road at a low tilt - the lowest tilt that shows all of the road wins. Ridges that
+    // hide the road at every tilt are viewed from straight above.
     const lowRidges = simplePlan();
     lowRidges.topography.elevations[1].fill(115);
     lowRidges.topography.elevations[3].fill(115);
     assert.deepEqual(viewpoints(planReportViews(lowRidges)), [[0, 70, 0, 40, true]]);
     assert.deepEqual(viewpoints(planReportViews(ridgesPlan())), [[0, 90, 0, 40, true]]);
+
+    // A narrow road's segment views are from straight above, too, in the overview's orientation
+    const narrowRidges = ridgesPlan();
+    narrowRidges.options[0].section.width = 0.1;
+    assert.deepEqual(viewpoints(planReportViews(narrowRidges)), [[0, 90, 0, 40, true], [0, 90, 0, 20, true], [0, 90, 20, 40, true]]);
 
     // A loop's overview looks to the left of the road's first direction
     const loopPoints = [{'x': 20, 'y': 30}, {'x': 150, 'y': 30}, {'x': 150, 'y': 120}, {'x': 20, 'y': 120}, {'x': 20, 'y': 30}];
@@ -705,7 +713,6 @@ test('reportViews, the road segment views', () => {
         [304.4, 70, 309, 386, true],
         [304.4, 40, 386, 464, true]
     ]);
-    assert.deepEqual(views.map((reportView) => reportView.hidden), [0, 0, 0, 0, 0, 0, 0]);
     assert.deepEqual(views.map(({view}) => [view.zoom, view.height]), [
         [1, 679], [6.379, 732], [6.635, 732], [6.379, 732], [7.952, 732], [8.248, 732], [6.379, 732]
     ]);

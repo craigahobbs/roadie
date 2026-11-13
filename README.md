@@ -34,11 +34,11 @@ and cost score, then shows:
   grades over the maximum highlighted
 - **3D views** - the terrain (with contours) graded to the road's finished surface: the road, cut and
   fill slopes, retaining walls, bridges, culverts, streams, station labels, and other features. The
-  first view is always the whole site. When the road is too narrow to see in it (or the terrain hides
-  parts of it), views of equal road segments follow, from the start to the end. Every view keeps the
-  overview's general orientation, so the reader stays oriented across the views. Each looks across its
-  road segment - preferably upslope, where the road's cuts into the hillsides and its fill slopes face
-  the viewer - at the lowest tilt that shows all of its road.
+  first view is always the whole site. When the road is too narrow to see in it, views of equal road
+  segments follow, from the start to the end. Every view keeps the overview's general orientation, so
+  the reader stays oriented across the views. Each looks across its road segment - preferably upslope,
+  where the road's cuts into the hillsides and its fill slopes face the viewer - at the lowest tilt
+  that shows all of its road (from straight above, if the terrain hides parts of it at every tilt).
 - **Cost** - the cost breakdown by item
 - **Design warnings** - grades over the maximum, curves under the minimum radius, slopes that don't
   daylight (retaining walls needed), walls over the maximum height, unprotected stream crossings,

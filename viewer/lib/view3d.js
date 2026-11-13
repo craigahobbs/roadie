@@ -1,7 +1,7 @@
 // view3d.js - the 3D views: projection, finished grade, terrain, road, and the report's 3D view choices
 
 import {
-    cellContours, colors, contourInterval, labelX, minRoadPx, niceStep, quadBrightness, rgb, roadColor, samplePoints,
+    cellContours, colors, contourInterval, contourLevel, labelX, minRoadPx, niceStep, quadBrightness, rgb, roadColor, samplePoints,
     svgOpen, svgPolygon, svgPolyline, svgText, terrainFill
 } from './draw.js';
 import {elevation, gradient, outsideBox, sampleAt, unitLength} from './model.js';
@@ -714,11 +714,13 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
             let indexPath = '';
             let minorSegments = null;
             let indexSegments = null;
-            let level = Math.ceil(Math.min(zNW, zNE, zSE, zSW) / interval) * interval;
             const zMax = Math.max(zNW, zNE, zSE, zSW);
-            while (level <= zMax) {
-                const indexLevel = level / interval / 5;
-                const isIndex = Math.abs(indexLevel - Math.floor(indexLevel + 0.5)) < 1e-6;
+            for (let ixLevel = Math.ceil(Math.min(zNW, zNE, zSE, zSW) / interval); ; ixLevel++) {
+                const level = contourLevel(ixLevel, interval);
+                if (level > zMax) {
+                    break;
+                }
+                const isIndex = ixLevel % 5 === 0;
                 if (isIndex || drawMinor) {
                     // The segments' end points are projected with the project computation, inlined - the level's
                     // elevation term is the same for every end point
@@ -750,7 +752,6 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
                         }
                     }
                 }
-                level += interval;
             }
             if (canvas) {
                 const offset = cellCount * 8;
@@ -1031,15 +1032,15 @@ const maxViewTurn = 40;
 
 
 // Choose the report's 3D views - an overview of the whole site, then, if the road is too narrow to see in the
-// overview or the terrain hides parts of it, views of equal road segments from the start to the end. Returns an
-// array of report view objects ("args", "view", "station", "endStation", "hidden", and "leftToRight").
+// overview, views of equal road segments from the start to the end. Returns an array of report view objects ("args",
+// "view", "station", "endStation", and "leftToRight").
 export function reportViews(topo, rows, analysis, halfWidth, width, smooth) {
     const maxHeight = Math.round(width * 0.75);
     const {samples, length} = analysis;
     const finishedTopo = {...topo, rows};
 
     // The overview - the whole site, fit to its terrain
-    let viewpoint = chooseViewpoint(topo, finishedTopo, samples, 0, length, [55, 70, 90], null);
+    let viewpoint = chooseViewpoint(topo, finishedTopo, samples, 0, length, [55, 70], null);
     const terrainPoints = [];
     const {nRows, nCols, spacing} = topo;
     const step = Math.max(1, Math.ceil(Math.max(nRows, nCols) / 40));
@@ -1053,7 +1054,7 @@ export function reportViews(topo, rows, analysis, halfWidth, width, smooth) {
     overviewArgs.smooth = smooth;
     const views = [reportView(topo, samples, 0, length, viewpoint, overviewArgs, width, maxHeight)];
     const overview = views[0].view;
-    if (2 * halfWidth * overview.scale >= reportRoadPx && viewpoint.hidden === 0) {
+    if (2 * halfWidth * overview.scale >= reportRoadPx) {
         return views;
     }
 
@@ -1064,7 +1065,7 @@ export function reportViews(topo, rows, analysis, halfWidth, width, smooth) {
     for (let ixSegment = 0; ixSegment < count; ixSegment++) {
         const stationValue = length * ixSegment / count;
         const endStation = length * (ixSegment + 1) / count;
-        viewpoint = chooseViewpoint(topo, finishedTopo, samples, stationValue, endStation, [40, 55, 70, 90], baseAzimuth);
+        viewpoint = chooseViewpoint(topo, finishedTopo, samples, stationValue, endStation, [40, 55, 70], baseAzimuth);
         const footprint = [];
         for (const sample of segmentSamples(samples, stationValue, endStation)) {
             footprint.push(...samplePoints(sample, halfWidth));
@@ -1100,7 +1101,6 @@ function reportView(topo, samples, stationValue, endStation, viewpoint, viewArgs
         view,
         'station': stationValue,
         endStation,
-        'hidden': viewpoint.hidden,
         'leftToRight': lastPoint[0] >= firstPoint[0]
     };
 }
@@ -1118,12 +1118,11 @@ function angleDifference(angle, otherAngle) {
 }
 
 
-// Choose a road segment's viewpoint - returns an object with the "azimuth" and "tilt" (degrees) and the number of hidden
-// road points ("hidden"). The viewpoint looks across the segment's direction of travel. Without a base azimuth (the
-// overview), it looks from the side looking upslope (or, on flat ground, the side with the start on the left).
-// Otherwise, it looks from the base azimuth's side, turned at most maxViewTurn degrees from the base azimuth - or
-// along the base azimuth itself. The lowest tilt that shows all of the road points wins - otherwise, the viewpoint
-// hiding the fewest.
+// Choose a road segment's viewpoint - returns an object with the "azimuth" and "tilt" (degrees). The viewpoint looks
+// across the segment's direction of travel. Without a base azimuth (the overview), it looks from the side looking
+// upslope (or, on flat ground, the side with the start on the left). Otherwise, it looks from the base azimuth's side,
+// turned at most maxViewTurn degrees from the base azimuth - or along the base azimuth itself. The lowest of the tilts
+// that shows all of the road points wins - otherwise, the view is from straight above, which hides none of the road.
 function chooseViewpoint(topo, finishedTopo, samples, stationValue, endStation, tilts, baseAzimuth) {
     const segment = segmentSamples(samples, stationValue, endStation);
     const [first] = segment;
@@ -1166,39 +1165,27 @@ function chooseViewpoint(topo, finishedTopo, samples, stationValue, endStation, 
         azimuths = [baseAzimuth + turn, baseAzimuth];
     }
 
-    let best = null;
+    azimuths = azimuths.map((azimuth) => round((azimuth + 720) % 360, 1));
     for (const tilt of tilts) {
-        for (const azimuthCandidate of azimuths) {
-            const azimuth = round((azimuthCandidate + 720) % 360, 1);
-            const hidden = hiddenPoints(finishedTopo, points, azimuth, tilt, reportExaggeration);
-            if (best === null || hidden < best.hidden) {
-                best = {azimuth, tilt, hidden};
+        for (const azimuth of azimuths) {
+            if (!hidesPoints(finishedTopo, points, azimuth, tilt, reportExaggeration)) {
+                return {azimuth, tilt};
             }
-            if (hidden === 0) {
-                break;
-            }
-        }
-        if (best.hidden === 0) {
-            break;
         }
     }
-    return best;
+    return {'azimuth': azimuths[0], 'tilt': 90};
 }
 
 
-// Count the road points ([x, y, z] arrays) hidden by the terrain from a viewpoint - each point's view ray is followed
-// toward the viewer until it rises above the terrain or leaves the topography
-function hiddenPoints(topo, points, azimuth, tilt, exaggeration) {
-    if (tilt >= 89.9) {
-        return 0;
-    }
+// Determine if the terrain hides any of the road points ([x, y, z] arrays) from a viewpoint - each point's view ray is
+// followed toward the viewer until it rises above the terrain or leaves the topography
+function hidesPoints(topo, points, azimuth, tilt, exaggeration) {
     const radians = azimuth * Math.PI / 180;
     const towardX = -Math.sin(radians);
     const towardY = -Math.cos(radians);
     const rise = Math.tan(tilt * Math.PI / 180) / exaggeration;
     const {spacing, maxZ} = topo;
     const tolerance = spacing * 0.02;
-    let hidden = 0;
     for (const [x, y, z] of points) {
         let distance = spacing;
         while (z + distance * rise <= maxZ) {
@@ -1207,13 +1194,12 @@ function hiddenPoints(topo, points, azimuth, tilt, exaggeration) {
                 break;
             }
             if (ground > z + distance * rise + tolerance) {
-                hidden += 1;
-                break;
+                return true;
             }
             distance += spacing;
         }
     }
-    return hidden;
+    return false;
 }
 
 
