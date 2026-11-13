@@ -69,9 +69,11 @@ site:
 	cp viewer/README.md build/gh-pages/viewer/
 
 
-# Update the project's gh-pages branch checkout (../roadie.gh-pages) with the web site - commit and push it to publish
+# Update the project's gh-pages branch checkout (../roadie.gh-pages) with the web site - commit and push it to publish.
+# The site is staged after the pre-commit gate (not with it, under "make -j") - both stage the viewer application.
 .PHONY: gh-pages
-gh-pages: commit site
+gh-pages: commit
+	@$(MAKE) --no-print-directory site
 	if [ ! -d ../$(notdir $(CURDIR)).gh-pages ]; then git clone -b gh-pages `git config --get remote.origin.url` ../$(notdir $(CURDIR)).gh-pages; fi
 	cd ../$(notdir $(CURDIR)).gh-pages && git pull
 	rsync -rv --delete --exclude=.git/ build/gh-pages/ ../$(notdir $(CURDIR)).gh-pages
