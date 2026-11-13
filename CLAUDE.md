@@ -15,9 +15,6 @@ The project is two subprojects, and the top-level makefile delegates to them:
   planning notes): the tools build the site from the USGS 3D Elevation Program's 1 meter lidar terrain, and engineer
   its road options. **Planning a road** (`make plan`, `make update`) follows PLAN.md - when asked to plan or update
   a road, follow PLAN.md exactly. The planning session runs in `plan/`. See [plan/README.md](plan/README.md).
-- **The Python planning tools** (`plan/legacy/`, [python-build](https://github.com/craigahobbs/python-build#readme))
-  that the JavaScript tools replace - they digitized a topographic map image. They're kept, for comparison, until the
-  JavaScript tools are validated on a real site; then they're removed.
 
 `example/` is a small synthetic plan. `index.html` renders this project's README on its web site.
 
@@ -34,7 +31,7 @@ make run FILE=<plan.json>         # view a plan in the browser
 make site                         # stage the web site (build/gh-pages/): README, example, and viewer/
 ```
 
-Run `make` in `viewer/`, `plan/`, or `plan/legacy/` for a subproject's own targets (e.g.
+Run `make` in `viewer/` or `plan/` for a subproject's own targets (e.g.
 `make -C viewer test TEST=name`, `make -C viewer check`, `make -C plan lint`).
 
 ## Conventions

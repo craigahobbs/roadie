@@ -34,5 +34,6 @@ its features, each option's line with its stations and structures, and the plan'
 `route` searches for the least-cost horizontal alignment on a lattice with heading states (so its turns have the
 minimum radius), designs the vertical profile by dynamic programming (the minimum earthwork cost within the grade
 limits, within the maximum cut and fill depth of the ground), and places the structures (`lib/route.js`,
-`lib/profile.js`, `lib/structures.js`). It's a port of the Python planning tools' (`legacy/`), which are kept, for
-comparison, until the JavaScript tools are validated on a real site.
+`lib/profile.js`, `lib/structures.js`). It's a port of the project's first planning tools, which were Python (they
+digitized a topographic map image) - their results are the engineering tests' expectations
+(`test/expected/pythonTools.json`).
