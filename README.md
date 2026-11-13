@@ -4,7 +4,7 @@ Roadie engineers low-volume roads (driveways, rural access roads, and forest roa
 topographic map image, and views the resulting road grading plans in 3D.
 
 - **`make plan FILE=<plan.png> [OUTPUT=<plan.json>]`** launches a Claude Code session with detailed
-  road engineering instructions ([PLAN.md](PLAN.md)). Claude digitizes the map's topography, engineers
+  road engineering instructions ([PLAN.md](plan/PLAN.md)). Claude digitizes the map's topography, engineers
   one or more cost-optimal road plan options from the labeled start point to the labeled end point,
   and writes the road plan model (`OUTPUT`, default `<plan>.json`).
 - **`make update FILE=<plan.json>`** launches a Claude Code session that
@@ -87,7 +87,7 @@ average bid prices and low-volume road references):
   surfacing, and ditches
 - **Mobilization** (10%)
 
-A plan can override any unit rate (`costRates`) for local prices. See [PLAN.md](PLAN.md#appendix-the-cost-score)
+A plan can override any unit rate (`costRates`) for local prices. See [PLAN.md](plan/PLAN.md#appendix-the-cost-score)
 for the default rates.
 
 
@@ -98,11 +98,11 @@ make plan FILE=site.png
 ```
 
 The map (an image or a PDF) must clearly label the road's start and end points and should include a
-scale bar and contour interval. The Claude Code session follows [PLAN.md](PLAN.md), which covers reading the map,
+scale bar and contour interval. The Claude Code session follows [PLAN.md](plan/PLAN.md), which covers reading the map,
 digitizing the topography, design criteria, road engineering principles, generating and refining
 options, and finalizing the model. It uses these tools:
 
-- [tools/plan_tools.py](tools/plan_tools.py) - image inspection (`info`, `crop`), contour tracing
+- [plan/plan_tools.py](plan/plan_tools.py) - image inspection (`info`, `crop`), contour tracing
   (`trace`, `transect`), the topography grid (`grid`), plotting (`plot`), and road engineering
   (`route`, `profile`). `route` finds the least-cost horizontal alignment with a lattice search
   (radius-constrained turns, grade, side slope, stream crossing, rock, and exclusion costs), designs
@@ -155,7 +155,7 @@ make update FILE=site.json
 ```
 
 The session asks for the feedback - paste it in, or give the path of a file that contains it. It
-follows [Updating a plan](PLAN.md#updating-a-plan): it saves a dated copy of the plan in the work
+follows [Updating a plan](plan/PLAN.md#updating-a-plan): it saves a dated copy of the plan in the work
 directory (`site.work/`), restates each feedback item and how it will address it, updates the
 criteria, site features, topography, or options (reusing the original session's digitized contours),
 re-engineers and re-evaluates the affected options, and adds a revision history to the plan's
@@ -188,7 +188,7 @@ make run FILE=example/example.json
 ```
 make commit       # run the BareScript tests (100% coverage), the planning tools tests, and lint
 make test         # run the BareScript tests (TEST=testName runs one test)
-make test-tools   # run the planning tools tests
+make test-tools   # run the planning tools tests and lint (plan/)
 make clean        # remove the build directory
 ```
 
@@ -197,7 +197,7 @@ make clean        # remove the build directory
 | [roadie.md](roadie.md), [roadie.bare](roadie.bare) | The viewer application and its 3D, plan, and profile drawings |
 | [roadieModel.bare](roadieModel.bare) | The road plan model schema, validation, earthwork, and cost analysis |
 | [roadieCLI.bare](roadieCLI.bare) | The command-line evaluator (`make evaluate`, `make doc`) |
-| [PLAN.md](PLAN.md) | The road planning instructions for Claude Code |
+| [PLAN.md](plan/PLAN.md) | The road planning instructions for Claude Code |
 | [CLAUDE.md](CLAUDE.md) | The repository guide for Claude Code |
-| [tools/plan_tools.py](tools/plan_tools.py) | The planning tools |
+| [plan/plan_tools.py](plan/plan_tools.py) | The planning tools |
 | [test/](test/) | The BareScript unit tests |

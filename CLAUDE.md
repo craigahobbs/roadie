@@ -3,14 +3,16 @@
 Roadie engineers low-volume roads from a topographic map and views the resulting road plan models in
 a printable report with 3D views. See [README.md](README.md) for the user-facing overview.
 
-- **Planning a road** (`make plan`, `make update`) follows [PLAN.md](PLAN.md) - when asked to plan
-  or update a road, follow PLAN.md exactly. The planning tools are `tools/plan_tools.py` (Python).
+- **Planning a road** (`make plan`, `make update`) follows [plan/PLAN.md](plan/PLAN.md) - when asked to plan
+  or update a road, follow PLAN.md exactly. The planning tools are `plan/plan_tools.py` (Python, built with
+  python-build - `make -C plan commit` runs their tests and pylint). The planning session runs in `plan/`.
 - **The viewer** is a [MarkdownUp](https://github.com/craigahobbs/markdown-up) application written
   in BareScript: `roadie.md` / `roadie.bare` (report, 3D views, 3D explorer, plan and profile
   views), `roadieModel.bare` (model schema, validation, earthwork, and cost analysis), and
-  `roadieCLI.bare` (`make evaluate`, `make doc`). Use the `bare-script` skill when writing BareScript.
+  `roadieCLI.bare` (its command line). Use the `bare-script` skill when writing BareScript.
 - **The JavaScript viewer** (`viewer/`, see [viewer/CLAUDE.md](viewer/CLAUDE.md)) is a rewrite of the MarkdownUp viewer
-  that is replacing it - its report must stay identical to the MarkdownUp viewer's (`make -C viewer parity`).
+  that is replacing it - its report must stay identical to the MarkdownUp viewer's (`make -C viewer parity`). Its
+  command line (`viewer/bin/roadie.js`) is what `make evaluate` and `make doc` run.
 - `SPEC.md` is the original viewer specification; `example/` is a small synthetic plan.
 
 ## Commands
@@ -18,7 +20,7 @@ a printable report with 3D views. See [README.md](README.md) for the user-facing
 ```sh
 make commit                       # the pre-commit gate: BareScript tests, planning tools tests, and lint
 make test [TEST=testName]         # BareScript tests (debug mode, 100% coverage required)
-make test-tools                   # planning tools tests
+make test-tools                   # planning tools tests and lint (make -C plan commit)
 make lint                         # BareScript static analysis
 make evaluate FILE=<plan.json> [DETAIL=1]   # a plan's analysis and cost from the command line
 make run FILE=<plan.json>         # view a plan in the browser

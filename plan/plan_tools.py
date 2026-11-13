@@ -12,7 +12,7 @@ Subcommands:
   route    Engineer a road option - least-cost horizontal alignment search and vertical profile design
   profile  Re-design the vertical profile (and structures) of an existing option's alignment
 
-Run "python3 tools/plan_tools.py <subcommand> -h" for each subcommand's arguments.
+Run "python3 plan_tools.py <subcommand> -h" for each subcommand's arguments.
 """
 
 import argparse
@@ -55,6 +55,7 @@ METERS_PER_FOOT = 0.3048
 
 
 def main(argv=None):
+    """The planning tools command-line entry point"""
     parser = argparse.ArgumentParser(prog='plan_tools.py', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -117,7 +118,8 @@ def main(argv=None):
         parser_route.add_argument('--turnouts', type=float,
                                   help='the turnout spacing, 0 for none (default is 400 feet / 120 meters for roads under 16 feet wide)')
         parser_route.add_argument('--bridge-fill', type=float,
-                                  help='replace stream crossing fills deeper than this with a bridge, up to 150 feet / 45 meters long (default is no bridges)')
+                                  help='replace stream crossing fills deeper than this with a bridge, up to 150 feet / 45 meters long '
+                                       '(default is no bridges)')
         parser_route.add_argument('--existing-road', action='append', metavar='STATION,END',
                                   help='a station range where the road follows an existing road - its grade follows the ground, with no '
                                        'earthwork or structures (may be repeated; profile keeps the option\'s existing roads by default)')
@@ -139,11 +141,13 @@ def main(argv=None):
 #
 
 def load_image(path):
+    """Load an image file as an RGB image"""
     from PIL import Image # pylint: disable=import-outside-toplevel
     return Image.open(path).convert('RGB')
 
 
 def command_info(args):
+    """The "info" subcommand - print an image's size and dominant colors"""
     image = load_image(args.image)
     pixels = np.asarray(image).reshape(-1, 3)
     quantized = (pixels // 16).astype(np.int32)
@@ -162,10 +166,11 @@ def command_info(args):
 
 
 def command_crop(args):
+    """The "crop" subcommand - crop and enlarge an image region, with an optional labeled pixel grid"""
     from PIL import Image, ImageDraw # pylint: disable=import-outside-toplevel
     image = load_image(args.image)
     crop = image.crop((args.left, args.top, args.left + args.width, args.top + args.height))
-    crop = crop.resize((int(args.width * args.scale), int(args.height * args.scale)), Image.LANCZOS)
+    crop = crop.resize((int(args.width * args.scale), int(args.height * args.scale)), Image.Resampling.LANCZOS)
     if args.grid > 0:
         draw = ImageDraw.Draw(crop)
         start_x = (args.left // args.grid + 1) * args.grid
@@ -183,6 +188,7 @@ def command_crop(args):
 
 
 def parse_ints(text, count):
+    """Parse a comma-separated list of a number of integers"""
     values = [int(float(value)) for value in text.split(',')]
     if len(values) != count:
         raise SystemExit(f'error: expected {count} comma-separated values, got "{text}"')
@@ -190,6 +196,7 @@ def parse_ints(text, count):
 
 
 def command_trace(args):
+    """The "trace" subcommand - extract contour line pixels of a color into numbered components, with a preview image"""
     from PIL import Image, ImageDraw, ImageFont # pylint: disable=import-outside-toplevel
     from scipy import ndimage # pylint: disable=import-outside-toplevel
 
@@ -233,7 +240,7 @@ def command_trace(args):
 
     # Preview image (2x) with each component's number at its ends and middle
     preview = Image.fromarray(preview_pixels)
-    preview = preview.resize((preview.width * 2, preview.height * 2), Image.NEAREST)
+    preview = preview.resize((preview.width * 2, preview.height * 2), Image.Resampling.NEAREST)
     draw = ImageDraw.Draw(preview)
     try:
         font = ImageFont.load_default(size=16)
@@ -269,6 +276,7 @@ def image_hue_saturation(pixels):
 
 
 def traced_labels_path(traced_path):
+    """Get the path of a traced contours file's component label image"""
     return os.path.splitext(traced_path)[0] + '.labels.npy'
 
 
@@ -290,6 +298,7 @@ def transect_crossings(labels, x1, y1, x2, y2):
 
 
 def command_transect(args):
+    """The "transect" subcommand - list the traced components a line crosses, in order"""
     labels = np.load(traced_labels_path(args.traced))
     x1, y1, x2, y2 = parse_ints(args.line, 4)
     crossings = transect_crossings(labels, x1, y1, x2, y2)
@@ -376,6 +385,7 @@ def georeference(contours_model, points):
 
 
 def pixel_to_plan(georef, px, py):
+    """Convert image pixel coordinates to plan coordinates"""
     (left, _, _, bottom), pixels_per_unit = georef
     return (px - left) / pixels_per_unit, (bottom - py) / pixels_per_unit
 
@@ -387,6 +397,7 @@ def plan_point(georef, px, py):
 
 
 def command_grid(args):
+    """The "grid" subcommand - build the road plan model's topography from digitized contours"""
     from scipy.interpolate import RBFInterpolator # pylint: disable=import-outside-toplevel
 
     contours_dir = os.path.dirname(os.path.abspath(args.contours))
@@ -463,6 +474,7 @@ def command_grid(args):
 
 
 def nice_number(value):
+    """Round a positive number up to a nice number - 1, 2, 2.5, 5, or 10 times a power of ten"""
     power = 10 ** math.floor(math.log10(value))
     for multiple in (1, 2, 2.5, 5):
         if multiple * power >= value:
@@ -471,16 +483,19 @@ def nice_number(value):
 
 
 def order_plan(plan):
+    """Order a road plan model's members - the model's members in schema order, then any others"""
     keys = ('title', 'description', 'image', 'units', 'topography', 'start', 'end', 'criteria', 'costRates', 'options')
     return {key: plan[key] for key in keys if key in plan} | {key: value for key, value in plan.items() if key not in keys}
 
 
 def load_json(path):
+    """Load a JSON file"""
     with open(path, 'r', encoding='utf-8') as file:
         return json.load(file)
 
 
 def write_plan(path, plan):
+    """Write a road plan model file"""
     # Write the plan with one elevation row per line for readability
     rows = plan['topography']['elevations']
     plan_copy = dict(plan)
@@ -509,9 +524,11 @@ class Topo:
         self.features = topography.get('features', [])
 
     def inside(self, x, y):
+        """Determine if points are within the topography grid"""
         return (x >= 0) & (y >= 0) & (x <= self.width) & (y <= self.height)
 
     def elevation(self, x, y):
+        """Get the ground elevation at points - bilinear interpolation, clamped to the grid"""
         x = np.clip(np.asarray(x, dtype=np.float64), 0, self.width)
         y = np.clip(np.asarray(y, dtype=np.float64), 0, self.height)
         f_col = x / self.spacing
@@ -525,6 +542,7 @@ class Topo:
         return z_top * (1 - ty) + z_bottom * ty
 
     def gradient(self, x, y):
+        """Get the ground elevation gradient (dz/dx, dz/dy) at points"""
         h = self.spacing * 0.5
         x = np.asarray(x, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64)
@@ -537,9 +555,11 @@ class Topo:
         return dzdx, dzdy
 
     def polygons(self, feature_type):
+        """Get the point arrays of the topography's polygon features of a type"""
         return [xy_array(feature['points']) for feature in self.features if feature['type'] == feature_type]
 
     def streams(self):
+        """Get the topography's stream features as (name, point array) tuples"""
         return [(feature.get('name', 'stream'), xy_array(feature['points']))
                 for feature in self.features if feature['type'] == 'stream']
 
@@ -550,12 +570,12 @@ def xy_array(points):
 
 
 def points_in_polygon(x, y, polygon):
+    """Determine if points are inside a polygon, by the even-odd rule"""
     x = np.asarray(x, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
     inside = np.zeros(np.broadcast(x, y).shape, dtype=bool)
     j = len(polygon) - 1
-    for i in range(len(polygon)):
-        xi, yi = polygon[i]
+    for i, (xi, yi) in enumerate(polygon):
         xj, yj = polygon[j]
         crosses = (yi > y) != (yj > y)
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -583,6 +603,7 @@ def segments_intersect(p1, p2, q1, q2):
 #
 
 def linear_areas(v1, v2, length):
+    """Compute the positive (cut) and negative (fill) areas under a value that varies linearly from v1 to v2 over a length"""
     both_pos = (v1 >= 0) & (v2 >= 0)
     both_neg = (v1 <= 0) & (v2 <= 0)
     positive = np.maximum(np.maximum(v1, v2), 0)
@@ -731,7 +752,7 @@ def route_search(topo, design, start, end, grade_weight, slope_weight, start_hea
         # Excess climb - climb beyond the design grade must be absorbed by earthwork (soft, up to 3% over the design
         # grade), or it makes the end unreachable (hard)
         # Turning moves are limited to the switchback grade.
-        def excess_cost(limit_grade):
+        def excess_cost(limit_grade, ground_grade=ground_grade, length=length):
             excess = np.maximum(0, ground_grade - (limit_grade - grade_margin)) * length
             soft = np.minimum(excess, soft_band * length)
             return grade_weight * (soft * design.cost_length * 15 + (excess - soft) * design.cost_length * 300)
@@ -827,6 +848,7 @@ def polyline_stations(x, y):
 
 
 def resample_polyline(points, interval):
+    """Resample a polyline at an even interval - returns its x and y arrays and their stations"""
     points = np.array(points, dtype=np.float64)
     stations = polyline_stations(points[:, 0], points[:, 1])
     length = stations[-1]
@@ -1064,6 +1086,7 @@ def existing_mask(stations, existing_roads):
 
 
 def command_route(args):
+    """The "route" and "profile" subcommands - engineer a road option, or re-design an existing option's profile and structures"""
     plan = load_json(args.plan)
     topo = Topo(plan)
     design = Design(plan, args)
@@ -1146,6 +1169,7 @@ def command_route(args):
 #
 
 def plot_plan(plan, output, contours_model=None, contours_dir=None):
+    """Plot a road plan model - contours, features, and options - optionally over the map image"""
     import matplotlib # pylint: disable=import-outside-toplevel
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt # pylint: disable=import-outside-toplevel
@@ -1221,6 +1245,7 @@ def plot_plan(plan, output, contours_model=None, contours_dir=None):
 
 
 def command_plot(args):
+    """The "plot" subcommand - plot a road plan model"""
     contours_model = None
     contours_dir = None
     if args.contours:

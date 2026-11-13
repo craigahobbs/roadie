@@ -1,5 +1,5 @@
 """
-Roadie planning tools unit tests - run with "make test-tools"
+Roadie planning tools unit tests - run with "make test"
 """
 
 import json

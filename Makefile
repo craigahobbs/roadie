@@ -1,14 +1,15 @@
 # Dependencies installed into the build virtual environment
 TESTS_REQUIRE := bare-script
 RUN_REQUIRE := markdown-up
-PLAN_REQUIRE := numpy scipy pillow matplotlib
 
 # Python virtual environment paths
 VENV_DIR := build/venv
 VENV_BIN := $(VENV_DIR)/bin
 VENV_BUILD := $(VENV_DIR).build
 VENV_RUN := $(VENV_DIR).run
-VENV_PLAN := $(VENV_DIR).plan
+
+# Delegate a target to the planning tools project (plan/) - FILE and OUTPUT are relative to this directory
+PLAN_MAKE = @$(MAKE) --no-print-directory -C plan $(1)$(if $(FILE), FILE="$(abspath $(FILE))")$(if $(OUTPUT), OUTPUT="$(abspath $(OUTPUT))")
 
 # The MarkdownUp application port
 PORT ?= 8080
@@ -23,7 +24,7 @@ help:
 	@echo ""
 	@echo "  make plan FILE=<plan.png> [OUTPUT=<plan.json>]  Engineer road plan options from a topo map image (Claude Code)"
 	@echo "  make update FILE=<plan.json>              Update a road plan model with review feedback (Claude Code)"
-	@echo "    (plan and update accept MODEL=<model> [default: $(MODEL)] and EFFORT=<effort> [default: $(EFFORT)],"
+	@echo "    (plan and update accept MODEL=<model> [default: opus] and EFFORT=<effort> [default: high],"
 	@echo "     OLLAMA=1 to launch Claude Code with an Ollama model - MODEL then names the Ollama model,"
 	@echo "     and GROK=1 to launch the Grok CLI instead - MODEL then names the Grok model)"
 	@echo "  make run [FILE=<plan.json>]              View a road plan model in the browser"
@@ -43,10 +44,10 @@ test: $(VENV_BUILD)
 	$(VENV_BIN)/bare -d -m test/runTests.bare$(if $(TEST), -v vUnittestTest "'$(TEST)'")
 
 
-# Run the planning tools unit tests
+# Run the planning tools unit tests and lint (plan/)
 .PHONY: test-tools
-test-tools: $(VENV_PLAN)
-	cd tools && ../$(VENV_BIN)/python3 -m unittest -v test_plan_tools
+test-tools:
+	$(call PLAN_MAKE,commit)
 
 
 # Lint every script standalone. -x lints and executes (libraries + test files);
@@ -76,77 +77,17 @@ else
 endif
 
 
-# Engineer road plan options from a topographic map image - launches Claude Code (or Grok) with the planning
-# instructions (PLAN.md). Outputs OUTPUT (default is "<plan>.json"); intermediate work files go in the
-# output's ".work/" directory (e.g., "<plan>.work/").
-PLAN_OUTPUT = $(if $(OUTPUT),$(OUTPUT),$(basename $(FILE)).json)
-PLAN_WORK = $(basename $(PLAN_OUTPUT)).work
-
-# The Claude Code model and effort level for the plan and update sessions. OLLAMA=1 launches Claude Code
-# with an Ollama model instead ("ollama launch claude") - MODEL then names the Ollama model, and when it
-# isn't given Ollama chooses the model (it prompts if needed). GROK=1 launches the Grok CLI instead -
-# MODEL then names the Grok model, and when it isn't given Grok uses its default model.
-MODEL = opus
-EFFORT = high
-MODEL_ARG = $(if $(filter command line,$(origin MODEL)),--model "$(MODEL)")
-ifdef GROK
-AGENT = grok $(MODEL_ARG)
-else ifdef OLLAMA
-AGENT = ollama launch claude $(MODEL_ARG) --
-else
-AGENT = claude --model "$(MODEL)"
-endif
-
-# The agent session's display name argument (the Grok CLI doesn't name sessions)
-AGENT_NAME = $(if $(GROK),,--name "$(1)")
-
-.PHONY: plan
-plan: $(VENV_BUILD) $(VENV_PLAN)
-	@test -n "$(FILE)" || (echo 'usage: make plan FILE=<plan.png> [OUTPUT=<plan.json>] [MODEL=<model>] [EFFORT=<effort>] [OLLAMA=1|GROK=1]' && exit 1)
-	@test -f "$(FILE)" || (echo 'error: "$(FILE)" does not exist' && exit 1)
-	mkdir -p "$(PLAN_WORK)"
-	$(AGENT) \
-		--allowedTools "Bash($(VENV_BIN)/python3 tools/plan_tools.py *) Bash($(VENV_BIN)/python3 $(PLAN_WORK)/scripts/*) \
-Bash(make evaluate *) Bash(make doc)" \
-		--permission-mode acceptEdits \
-		--effort "$(EFFORT)" \
-		$(call AGENT_NAME,Roadie: $(notdir $(FILE))) \
-		"Engineer cost-optimal road plan options for the topographic map image \"$(FILE)\" by following the \
-instructions in PLAN.md exactly. Write the road plan model to \"$(PLAN_OUTPUT)\" and put intermediate \
-work files in \"$(PLAN_WORK)/\". The Python tools are run with \"$(VENV_BIN)/python3 tools/plan_tools.py\"."
+# Engineer road plan options from a topographic map image, and update an existing road plan model with review
+# feedback (Claude Code or Grok) - see plan/Makefile and plan/PLAN.md
+.PHONY: plan update
+plan update:
+	$(call PLAN_MAKE,$@)
 
 
-# Update an existing road plan model with review feedback (Claude Code or Grok) - the session asks for the feedback
-UPDATE_WORK = $(basename $(FILE)).work
-
-.PHONY: update
-update: $(VENV_BUILD) $(VENV_PLAN)
-	@test -n "$(FILE)" || (echo 'usage: make update FILE=<plan.json> [MODEL=<model>] [EFFORT=<effort>] [OLLAMA=1|GROK=1]' && exit 1)
-	@test -f "$(FILE)" || (echo 'error: "$(FILE)" does not exist' && exit 1)
-	mkdir -p "$(UPDATE_WORK)"
-	$(AGENT) \
-		--allowedTools "Bash($(VENV_BIN)/python3 tools/plan_tools.py *) Bash($(VENV_BIN)/python3 $(UPDATE_WORK)/scripts/*) \
-Bash(make evaluate *) Bash(make doc)" \
-		--permission-mode acceptEdits \
-		--effort "$(EFFORT)" \
-		$(call AGENT_NAME,Roadie update: $(notdir $(FILE))) \
-		"Update the road plan model \"$(FILE)\" with review feedback by following the \"Updating a plan\" \
-instructions in PLAN.md exactly. Intermediate work files (including any from the original planning \
-session) are in \"$(UPDATE_WORK)/\". The Python tools are run with \"$(VENV_BIN)/python3 tools/plan_tools.py\". \
-Ask me for the review feedback first."
-
-
-# Print a road plan model's analysis and cost (DETAIL=1 adds the station table)
-.PHONY: evaluate
-evaluate: $(VENV_BUILD)
-	@test -n "$(FILE)" || (echo 'usage: make evaluate FILE=<plan.json> [DETAIL=1]' && exit 1)
-	@$(VENV_BIN)/bare -m roadieCLI.bare -c 'return roadieCLIMain()' -v vFile "'$(FILE)'"$(if $(DETAIL), -v vDetail true)
-
-
-# Print the road plan model documentation
-.PHONY: doc
-doc: $(VENV_BUILD)
-	@$(VENV_BIN)/bare -m roadieCLI.bare -c 'return roadieCLIMain()' -v vDoc true
+# Print a road plan model's analysis and cost (DETAIL=1 adds the station table), and the road plan model documentation
+.PHONY: evaluate doc
+evaluate doc:
+	$(call PLAN_MAKE,$@)
 
 
 # Remove the build directory (and the virtual environment)
@@ -165,9 +106,4 @@ $(VENV_BUILD):
 # Add the MarkdownUp server to the virtual environment, once
 $(VENV_RUN): $(VENV_BUILD)
 	$(VENV_BIN)/pip install $(RUN_REQUIRE)
-	touch $@
-
-# Add the planning tool dependencies to the virtual environment, once
-$(VENV_PLAN): $(VENV_BUILD)
-	$(VENV_BIN)/pip install $(PLAN_REQUIRE)
 	touch $@
