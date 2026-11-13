@@ -42,6 +42,7 @@ process.exitCode = await cliMain(process.argv.slice(2), {
     'write': (text) => process.stdout.write(text),
     'getJson': (url) => fetchJson(fetch, sleep, url),
     'getBytes': (url) => fetchBytes(fetch, sleep, url),
+    sleep,
     'renderPng': (svg) => new Resvg(svg, {'background': 'white', 'font': {'loadSystemFonts': true}}).render().asPng(),
     openImage
 });

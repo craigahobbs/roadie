@@ -97,6 +97,11 @@ export function testIo({files = {}, images = {}, pages = [], mapImage = null} = 
             files[path] = bytes.slice();
         },
         'write': (text) => io.output.push(text),
+        'sleeps': [],
+        'sleep': (milliseconds) => {
+            io.sleeps.push(milliseconds);
+            return Promise.resolve();
+        },
         'getJson': (url) => {
             const page = typeof pages === 'function' ? pages : pages[io.urls.length];
             io.urls.push(url);

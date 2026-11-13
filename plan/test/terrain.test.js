@@ -38,7 +38,8 @@ function smallLayout(members = {}) {
 
 test('siteLayout', () => {
     // The plan's projection is centered between the start and end points. The site extends its margin beyond them - 30%
-    // of the 372 meters between them, but at least 150 meters - and its grid is the finest that's within the limit
+    // of the 372 meters between them, but at least 150 meters (and at most 600 meters) - and its grid is the finest
+    // that's within the limit
     assert.equal(gridLimit, 1000000);
     assert.equal(metersPerFoot, 0.3048);
     assert.deepEqual(layoutMembers(siteLayout(testSite())), {
@@ -113,12 +114,22 @@ test('siteLayout, the site\'s margin and spacing', () => {
     const coarse = siteLayout(testSite({'margin': 20, 'spacing': 50}));
     assert.deepEqual([coarse.nCols, coarse.nRows], [8, 7]);
 
-    // A longer road's margin is 30% of its length - here, 4,201 meters
+    // A longer road's margin is 30% of its length - here, 1,232 meters
+    const longer = siteLayout(testSite({'end': {'latitude': 40.008, 'longitude': -105.27}}));
+    assert.deepEqual([longer.start, longer.end, longer.spacing, longer.nCols, longer.nRows], [
+        {'x': 369.64, 'y': 369.64, 'label': 'Start'}, {'x': 1223.53, 'y': 1257.92, 'label': 'End'}, 2, 798, 815
+    ]);
+    assert.equal(round(Math.hypot(1223.53 - 369.64, 1257.92 - 369.64) * 0.3, 2), 369.64);
+
+    // A long road's margin is at most 600 meters - or 2,000 feet
     const long = siteLayout(testSite({'end': {'latitude': 40.03, 'longitude': -105.25, 'label': 'Summit'}}));
     assert.deepEqual([long.start, long.end, long.spacing, long.nCols, long.nRows], [
-        {'x': 1260.57, 'y': 1260.57, 'label': 'Start'}, {'x': 3821.82, 'y': 4591.62, 'label': 'Summit'}, 10, 510, 587
+        {'x': 600, 'y': 600, 'label': 'Start'}, {'x': 3161.25, 'y': 3931.05, 'label': 'Summit'}, 5, 754, 908
     ]);
-    assert.equal(round(Math.hypot(3821.82 - 1260.57, 4591.62 - 1260.57) * 0.3, 2), 1260.57);
+    const longFeet = siteLayout(testSite({'units': 'feet', 'end': {'latitude': 40.03, 'longitude': -105.25}}));
+    assert.deepEqual([longFeet.start, longFeet.end, longFeet.spacing, longFeet.nCols, longFeet.nRows], [
+        {'x': 2000, 'y': 2000, 'label': 'Start'}, {'x': 10403.07, 'y': 12928.63, 'label': 'End'}, 15, 828, 997
+    ]);
 });
 
 
@@ -172,6 +183,14 @@ test('tileWindow', () => {
     const small = smallLayout();
     assert.deepEqual(tileWindow(small, testImage().georeference), [825, 857, 1174, 1131]);
     assert.deepEqual(tileWindow(small, testImage({'resolution': 2}).georeference), [411, 427, 588, 567]);
+
+    // A region of the grid - all of it, its west half, a point, and its southeast corner
+    const image = testImage().georeference;
+    assert.deepEqual(tileWindow(small, image, [0, 0, 86, 67]), [825, 857, 1174, 1131]);
+    assert.deepEqual(tileWindow(small, image, [0, 0, 41, 67]), [825, 857, 994, 1130]);
+    assert.deepEqual(tileWindow(small, image, [40, 30, 41, 31]), [985, 977, 994, 986]);
+    assert.deepEqual(tileWindow(small, image, [80, 60, 86, 67]), [1145, 1098, 1174, 1131]);
+    assert.equal(tileWindow(small, testImage({'width': 900}).georeference, [40, 30, 41, 31]), null);
 
     // Another zone's model - the site is far to the east of zone 12's center, so the grid is turned 4 degrees there
     const zone12 = testImage({'zone': 12, 'east': 988000, 'north': 4444000, 'width': 1000, 'height': 1000}).georeference;
@@ -349,7 +368,7 @@ test('readTile', async () => {
     assert.ok(Math.abs(tile.data[0] - plane(siteEast - 1000 + 825.5, siteNorth + 1000 - 857.5)) < 0.001);
     assert.deepEqual([io.opened, image.reads], [[url], [window]]);
     assert.deepEqual(io.written, [
-        'plan.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json', 'plan.work/terrain/USGS_1M_13_x47y443_CO_New_2020.f32'
+        'plan.work/terrain/USGS_1M_13_x47y443_CO_New_2020.f32', 'plan.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json'
     ]);
     assert.deepEqual(JSON.parse(io.files['plan.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json']), {
         url, 'image': image.georeference, window
@@ -377,6 +396,78 @@ test('readTile', async () => {
         ({message}) => message
     );
     assert.equal(other, `Could not open "https://example.org${url.slice(19)}"`);
+});
+
+
+test('readTile, a region of the grid', async () => {
+    const url = 'https://example.com/model.tif';
+    const model = {'name': 'Model', 'survey': 'CO_New_2020', 'date': '2022-02-10', url};
+    const image = testImage();
+    const io = testIo({'images': {[url]: image}});
+    const layout = smallLayout();
+
+    // The tile is the region's window of the model
+    const tile = await readTile(io, 'cache', model, layout, [40, 30, 41, 31]);
+    assert.deepEqual([tile.window, tile.data.length, image.reads], [[985, 977, 994, 986], 81, [[985, 977, 994, 986]]]);
+
+    // The cached tile is another region's, if it's within it - or the model is read
+    assert.deepEqual((await readTile(io, 'cache', model, layout, [40, 30, 41, 31])).window, [985, 977, 994, 986]);
+    assert.equal(io.opened.length, 1);
+    assert.deepEqual((await readTile(io, 'cache', model, layout, [0, 0, 41, 67])).window, [825, 857, 994, 1130]);
+    assert.deepEqual((await readTile(io, 'cache', model, layout, [40, 30, 41, 31])).window, [825, 857, 994, 1130]);
+    assert.equal(io.opened.length, 2);
+    assert.deepEqual((await readTile(io, 'cache', model, layout)).window, [825, 857, 1174, 1131]);
+    assert.equal(io.opened.length, 3);
+
+    // A region outside the model
+    const narrow = testImage({'width': 900});
+    const io2 = testIo({'images': {[url]: narrow}});
+    assert.equal(await readTile(io2, 'cache', model, layout, [40, 30, 41, 31]), null);
+    assert.deepEqual([narrow.reads, io2.written], [[], ['cache/model.json']]);
+});
+
+
+test('readTile, a large window and failed reads', async () => {
+    // A window of more than 4 million pixels is read a band of its rows at a time - here, 1,666 rows of 2,400 pixels
+    const url = 'https://example.com/model.tif';
+    const model = {'name': 'Model', 'survey': 'CO_New_2020', 'date': '2022-02-10', url};
+    const image = testImage({'east': siteEast - 1200, 'north': siteNorth + 1200, 'width': 2400, 'height': 2400});
+    const io = testIo({'images': {[url]: image}});
+    const layout = siteLayout(testSite({'margin': 1100, 'spacing': 50}));
+    const tile = await readTile(io, 'cache', model, layout);
+    assert.deepEqual([tile.window, tile.data.length], [[0, 0, 2400, 2400], 2400 * 2400]);
+    assert.deepEqual(image.reads, [[0, 0, 2400, 1666], [0, 1666, 2400, 2400]]);
+    for (const [x, y] of [[0, 0], [2399, 1665], [0, 1666], [1200, 1667], [2399, 2399]]) {
+        assert.ok(Math.abs(tile.data[y * 2400 + x] - plane(siteEast - 1200 + x + 0.5, siteNorth + 1200 - y - 0.5)) < 0.001);
+    }
+    assert.deepEqual(io.sleeps, []);
+
+    // A failed read is tried again, after a wait that doubles - the model's file is opened, then read
+    let reads = 0;
+    const flaky = testImage();
+    const {read} = flaky;
+    flaky.read = (window) => {
+        reads += 1;
+        return reads <= 2 ? Promise.reject(new Error('fetch failed')) : read(window);
+    };
+    const io2 = testIo({'images': {[url]: flaky}});
+    const {openImage} = io2;
+    io2.openImage = (imageUrl) => (io2.opened.length < 2 ? openImage('missing') : openImage(imageUrl));
+    const small = smallLayout({'margin': 10});
+    const flakyTile = await readTile(io2, 'cache', model, small);
+    assert.deepEqual(
+        [flakyTile.window, io2.opened, io2.sleeps],
+        [[835, 867, 1164, 1121], ['missing', 'missing', url], [1000, 2000, 1000, 2000]]
+    );
+    assert.ok(Math.abs(flakyTile.data[0] - plane(siteEast - 1000 + 835.5, siteNorth + 1000 - 867.5)) < 0.001);
+
+    // After four tries, the read fails - and the tile isn't cached
+    const io3 = testIo({'images': {[url]: {...testImage(), 'read': () => Promise.reject(new Error('fetch failed'))}}});
+    await assert.rejects(readTile(io3, 'cache', model, small), {'message': 'fetch failed'});
+    assert.deepEqual([io3.sleeps, io3.written], [[1000, 2000, 4000], []]);
+    const io4 = testIo();
+    await assert.rejects(readTile(io4, 'cache', model, small), {'message': `Could not open "${url}"`});
+    assert.deepEqual([io4.opened.length, io4.sleeps], [4, [1000, 2000, 4000]]);
 });
 
 
@@ -420,17 +511,19 @@ test('siteTerrain', async () => {
         {'name': 'Older', 'survey': 'CO_Older_2010', 'date': '2012-01-01', 'url': 'older'}
     ];
     const read = [];
-    const readModel = async (model) => {
-        read.push(model.url);
+    const readModel = async (model, region) => {
+        read.push([model.url, region]);
         const image = images[model.url];
-        const window = tileWindow(layout, image.georeference);
+        const window = tileWindow(layout, image.georeference, region);
         return window !== null ? {'url': model.url, 'image': image.georeference, window, 'data': await image.read(window)} : null;
     };
     const {elevations, surveys, filled} = await siteTerrain(layout, models, readModel);
 
-    // The newer survey's elevations are the grid's - the older survey's where the newer has none. The oldest survey
-    // isn't read - the grid is complete without it.
-    assert.deepEqual(read, ['new1', 'new2', 'far', 'old']);
+    // The newer survey's elevations are the grid's - the older survey's where the newer has none: only the region of
+    // the grid without elevations (its west 40 columns) is read from the older surveys' models. The oldest survey isn't
+    // read - the grid is complete without it.
+    assert.deepEqual(read, [['new1', null], ['new2', null], ['far', [0, 0, 40, 67]], ['old', [0, 0, 40, 67]]]);
+    assert.deepEqual(images.old.reads, [[825, 857, 990, 1130]]);
     assert.deepEqual(surveys, [
         {'name': 'CO_New_2020', 'date': '2022-02-10', 'url': 'new1'}, {'name': 'CO_Old_2013', 'date': '2015-07-21', 'url': 'old'}
     ]);

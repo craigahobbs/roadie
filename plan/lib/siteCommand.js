@@ -77,7 +77,7 @@ export async function siteCommand(args, io) {
     let streams;
     try {
         const models = await elevationModels(io.getJson, box);
-        terrain = await siteTerrain(layout, models, (model) => readTile(io, directory, model, layout));
+        terrain = await siteTerrain(layout, models, (model, region) => readTile(io, directory, model, layout, region));
         streams = lineFeatures(layout, 'stream', await streamLines(io.getJson, box));
     } catch ({message}) {
         return error([`error: ${message}`]);

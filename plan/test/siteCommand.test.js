@@ -62,8 +62,8 @@ Wrote plans/road.json
     // The elevation models' tiles are cached in the plan's work directory, and the image is beside the plan
     assert.deepEqual(io.opened, [item.downloadURL]);
     assert.deepEqual(io.written, [
-        'plans/road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json',
         'plans/road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.f32',
+        'plans/road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json',
         'plans/road.png',
         'plans/road.json'
     ]);
@@ -168,7 +168,7 @@ end: "House" (1040.56, 788.57) at 40.00200, -105.27650, ground 5645.2
 Wrote road.JSON
 `);
     assert.deepEqual(io.written.slice(-4, -2), [
-        'road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json', 'road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.f32'
+        'road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.f32', 'road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json'
     ]);
     assert.deepEqual(io.written.slice(-2), ['road.png', 'road.JSON']);
     const plan = JSON.parse(io.files['road.JSON']);

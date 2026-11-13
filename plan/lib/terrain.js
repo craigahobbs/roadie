@@ -19,9 +19,10 @@ const gridSpacings = {
 
 
 // The site's default margin beyond its start and end points, as a fraction of the distance between them, and its
-// minimum, in feet and meters
+// minimum and maximum, in feet and meters
 const marginFraction = 0.3;
 const marginMinimum = {'feet': 500, 'meters': 150};
+const marginMaximum = {'feet': 2000, 'meters': 600};
 
 
 // Lay out a road site's topography grid - the plan's coordinate system and its grid. The plan's coordinates are a
@@ -42,7 +43,8 @@ export function siteLayout(site, limit = gridLimit) {
 
     // The site's extent
     const distance = Math.hypot(endEast - startEast, endNorth - startNorth);
-    const margin = 'margin' in site ? site.margin * scale : Math.max(marginFraction * distance, marginMinimum[units] * scale);
+    const margin = 'margin' in site ? site.margin * scale :
+        Math.max(marginMinimum[units] * scale, Math.min(marginMaximum[units] * scale, marginFraction * distance));
     const west = Math.min(startEast, endEast) - margin;
     const south = Math.min(startNorth, endNorth) - margin;
     const width = (Math.max(startEast, endEast) + margin - west) / scale;
@@ -168,10 +170,12 @@ function mapPixel(mapping, col, row, out) {
 
 
 // Find the window of an elevation model's pixels that a layout's grid needs - [x1, y1, x2, y2] (the pixel columns x1
-// up to x2, and rows y1 up to y2), or null if the grid is outside the model
-export function tileWindow(layout, image) {
-    // The grid's edges, half a grid cell beyond its points, and a pixel more for the elevations' interpolation
+// up to x2, and rows y1 up to y2), or null if the grid is outside the model. "region" is the part of the grid that's
+// needed - its points' [first column, first row, column end, row end] - or null for all of it.
+export function tileWindow(layout, image, region = null) {
+    // The region's edges, half a grid cell beyond its points, and a pixel more for the elevations' interpolation
     const mapping = pixelMapping(layout, image);
+    const [colFirst, rowFirst, colEnd, rowEnd] = region ?? [0, 0, layout.nCols, layout.nRows];
     const out = [0, 0];
     let x1 = Infinity;
     let y1 = Infinity;
@@ -184,17 +188,18 @@ export function tileWindow(layout, image) {
         x2 = Math.max(x2, out[0]);
         y2 = Math.max(y2, out[1]);
     };
-    const {nCols, nRows} = layout;
-    for (let col = 0; col < nCols; col += mapping.step) {
-        edge(col, -0.5);
-        edge(col, nRows - 0.5);
+    for (let col = colFirst; col < colEnd; col += mapping.step) {
+        edge(col, rowFirst - 0.5);
+        edge(col, rowEnd - 0.5);
     }
-    for (let row = 0; row < nRows; row += mapping.step) {
-        edge(-0.5, row);
-        edge(nCols - 0.5, row);
+    for (let row = rowFirst; row < rowEnd; row += mapping.step) {
+        edge(colFirst - 0.5, row);
+        edge(colEnd - 0.5, row);
     }
-    for (const [col, row] of [[-0.5, -0.5], [nCols - 0.5, -0.5], [-0.5, nRows - 0.5], [nCols - 0.5, nRows - 0.5]]) {
-        edge(col, row);
+    for (const col of [colFirst - 0.5, colEnd - 0.5]) {
+        for (const row of [rowFirst - 0.5, rowEnd - 0.5]) {
+            edge(col, row);
+        }
     }
     const window = [
         Math.max(0, Math.floor(x1) - 2), Math.max(0, Math.floor(y1) - 2),
@@ -204,12 +209,18 @@ export function tileWindow(layout, image) {
 }
 
 
+// The most pixels of an elevation model that are read at once, and the number of times a failed read is tried
+const readPixels = 4000000;
+const readTries = 4;
+
+
 // Read an elevation model's tile - the window of its elevations that a layout's grid needs. "io" is the tools'
-// input and output functions, "directory" is the tiles' cache directory, and "model" is the elevation model object
-// (usgs.js). Returns the tile object - the model's image georeference, its "window", and the window's elevations
-// ("data", a Float32Array of its rows) - or null if the grid is outside the model. The tile is cached, so a model is
-// only opened (it's a large remote file) for elevations that haven't been read yet.
-export async function readTile(io, directory, model, layout) {
+// input and output functions, "directory" is the tiles' cache directory, "model" is the elevation model object
+// (usgs.js), and "region" is the part of the grid that's needed (tileWindow's), or null. Returns the tile object - the
+// model's image georeference, its "window", and the window's elevations ("data", a Float32Array of its rows) - or
+// null if the region is outside the model. The tile is cached, so a model is only opened (it's a large remote file)
+// for elevations that haven't been read yet.
+export async function readTile(io, directory, model, layout, region = null) {
     const name = model.url.slice(model.url.lastIndexOf('/') + 1).replace(/\.tiff?$/i, '');
     const path = `${directory}/${name}`;
 
@@ -221,7 +232,7 @@ export async function readTile(io, directory, model, layout) {
         // The tile isn't cached
     }
     if (cached !== null && cached.url === model.url) {
-        const window = tileWindow(layout, cached.image);
+        const window = tileWindow(layout, cached.image, region);
         if (window === null) {
             return null;
         }
@@ -232,17 +243,44 @@ export async function readTile(io, directory, model, layout) {
         }
     }
 
-    // Read the tile's window, and cache it - a model that the grid is outside of is cached, too
-    const image = await io.openImage(model.url);
-    const window = tileWindow(layout, image.georeference);
+    // Read the tile's window, and cache it - a model that the grid is outside of is cached, too. The window is read a
+    // band of its rows at a time: a model's file is remote, and a read of it fails now and then, so a failed read is
+    // tried again.
+    const image = await readRetry(io, () => io.openImage(model.url));
+    const window = tileWindow(layout, image.georeference, region);
     const tile = {'url': model.url, 'image': image.georeference, window};
-    io.writeFile(`${path}.json`, `${JSON.stringify(tile)}\n`);
     if (window === null) {
+        io.writeFile(`${path}.json`, `${JSON.stringify(tile)}\n`);
         return null;
     }
-    const data = await image.read(window);
+    const [x1, y1, x2, y2] = window;
+    const width = x2 - x1;
+    const data = new Float32Array(width * (y2 - y1));
+    const bandRows = Math.max(1, Math.floor(readPixels / width));
+    for (let row = y1; row < y2; row += bandRows) {
+        const band = [x1, row, x2, Math.min(y2, row + bandRows)];
+        data.set(await readRetry(io, () => image.read(band)), (row - y1) * width);
+    }
     io.writeBytes(`${path}.f32`, new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+    io.writeFile(`${path}.json`, `${JSON.stringify(tile)}\n`);
     return {...tile, data};
+}
+
+
+// Read a remote file - "read" is the function that reads it. A failed read is tried again, after a wait.
+async function readRetry(io, read) {
+    let error = null;
+    for (let ixTry = 0; ixTry < readTries; ixTry++) {
+        if (ixTry > 0) {
+            await io.sleep(1000 * 2 ** (ixTry - 1));
+        }
+        try {
+            return await read();
+        } catch (readError) {
+            error = readError;
+        }
+    }
+    throw error;
 }
 
 
@@ -375,10 +413,11 @@ export function fillHoles(layout, elevations) {
 
 
 // Create a site's topography grid from its elevation models (usgs.js - the newest first). "readModel" is a function
-// that reads a model's tile for the layout (readTile). The newest survey's elevations are used - an older survey's
-// only where the newer surveys have none. Returns the grid's "elevations" (in meters - a Float64Array of the grid's
-// rows, north to south), the "surveys" used (their "name", "date", and "url" - a tile's), and the number of grid
-// points filled from the points around them ("filled").
+// that reads a model's tile for a region of the layout's grid (readTile). The newest survey's elevations are used - an
+// older survey's only where the newer surveys have none, so only that region of an older survey's models is read.
+// Returns the grid's "elevations" (in meters - a Float64Array of the grid's rows, north to south), the "surveys" used
+// (their "name", "date", and "url" - a tile's), and the number of grid points filled from the points around them
+// ("filled").
 export async function siteTerrain(layout, models, readModel) {
     const {nCols, nRows} = layout;
     const elevations = new Float64Array(nCols * nRows).fill(NaN);
@@ -394,9 +433,23 @@ export async function siteTerrain(layout, models, readModel) {
         if (holes === 0) {
             break;
         }
+        // The region of the grid's points that have no elevation yet
+        let region = null;
+        if (holes < elevations.length) {
+            region = [nCols, nRows, 0, 0];
+            for (let index = 0; index < elevations.length; index++) {
+                if (Number.isNaN(elevations[index])) {
+                    const row = Math.floor(index / nCols);
+                    const col = index - row * nCols;
+                    region = [
+                        Math.min(region[0], col), Math.min(region[1], row), Math.max(region[2], col + 1), Math.max(region[3], row + 1)
+                    ];
+                }
+            }
+        }
         const tiles = [];
         for (const model of surveyTiles) {
-            const tile = await readModel(model);
+            const tile = await readModel(model, region);
             if (tile !== null) {
                 tiles.push({...tile, model});
             }

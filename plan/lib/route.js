@@ -27,7 +27,9 @@ const headingCount = moves.length + 1;
 // the route's "path" (an array of [x, y] points), the "lattice" spacing, and the final "heading" - or null if there's
 // no route.
 export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, startHeading = null, softBand = 0.03, gradeMargin = 0) {
-    const lattice = Math.max(topo.spacing * 0.75, design.minRadius * 0.47, Math.max(topo.width, topo.height) / 160);
+    // The lattice is as fine as the minimum radius' turns allow (a turn is 22.5 degrees a step) - a finer lattice finds
+    // a cheaper road, on gentler ground
+    const lattice = Math.max(topo.spacing * 0.75, design.minRadius * 0.47);
     const nX = Math.trunc(topo.width / lattice) + 1;
     const nY = Math.trunc(topo.height / lattice) + 1;
     const nodeCount = nX * nY;
