@@ -167,7 +167,7 @@ export class Explorer {
         } else if (code === 'KeyN') {
             state.azimuth = 0;
         } else if (key === '0' || code === 'Home') {
-            Object.assign(state, this.initial);
+            Object.assign(state, this.initial, {'help': state.help});
         } else if (code === 'KeyH' || key === '?') {
             state.help = !state.help;
         } else {

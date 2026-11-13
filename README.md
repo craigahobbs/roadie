@@ -4,7 +4,7 @@ Roadie engineers low-volume roads (driveways, rural access roads, and forest roa
 topographic map image, and views the resulting road grading plans in 3D.
 
 - **`make plan FILE=<plan.png> [OUTPUT=<plan.json>]`** launches a Claude Code session with detailed
-  road engineering instructions ([PLAN.md](plan/PLAN.md)). Claude digitizes the map's topography, engineers
+  road engineering instructions ([PLAN.md](#url=plan/PLAN.md)). Claude digitizes the map's topography, engineers
   one or more cost-optimal road plan options from the labeled start point to the labeled end point,
   and writes the road plan model (`OUTPUT`, default `<plan>.json`).
 - **`make update FILE=<plan.json>`** launches a Claude Code session that
@@ -106,7 +106,7 @@ average bid prices and low-volume road references):
   surfacing, and ditches
 - **Mobilization** (10%)
 
-A plan can override any unit rate (`costRates`) for local prices. See [PLAN.md](plan/PLAN.md#appendix-the-cost-score)
+A plan can override any unit rate (`costRates`) for local prices. See [PLAN.md](#url=plan/PLAN.md&appendix-the-cost-score)
 for the default rates.
 
 
@@ -117,7 +117,7 @@ make plan FILE=site.png
 ```
 
 The map (an image or a PDF) must clearly label the road's start and end points and should include a
-scale bar and contour interval. The Claude Code session follows [PLAN.md](plan/PLAN.md), which covers reading the map,
+scale bar and contour interval. The Claude Code session follows [PLAN.md](#url=plan/PLAN.md), which covers reading the map,
 digitizing the topography, design criteria, road engineering principles, generating and refining
 options, and finalizing the model. It uses these tools:
 
@@ -174,7 +174,7 @@ make update FILE=site.json
 ```
 
 The session asks for the feedback - paste it in, or give the path of a file that contains it. It
-follows [Updating a plan](plan/PLAN.md#updating-a-plan): it saves a dated copy of the plan in the work
+follows [Updating a plan](#url=plan/PLAN.md&updating-a-plan): it saves a dated copy of the plan in the work
 directory (`site.work/`), restates each feedback item and how it will address it, updates the
 criteria, site features, topography, or options (reusing the original session's digitized contours),
 re-engineers and re-evaluates the affected options, and adds a revision history to the plan's
@@ -222,8 +222,8 @@ targets:
 
 | Directory | Contents |
 | --- | --- |
-| [viewer/](viewer/) | The Roadie viewer - the web application, the road plan model (its schema, validation, earthwork, and cost analysis), and the command line behind `make evaluate` and `make doc`. JavaScript, built with [javascript-build](https://github.com/craigahobbs/javascript-build#readme) - see its [README](viewer/README.md). |
-| `plan/` | The planning tools (`plan_tools.py`) and the road planning instructions for Claude Code ([PLAN.md](plan/PLAN.md)). Python, built with [python-build](https://github.com/craigahobbs/python-build#readme). |
+| [viewer/](viewer/) | The Roadie viewer - the web application, the road plan model (its schema, validation, earthwork, and cost analysis), and the command line behind `make evaluate` and `make doc`. JavaScript, built with [javascript-build](https://github.com/craigahobbs/javascript-build#readme) - see its [README](#url=viewer/README.md). |
+| `plan/` | The planning tools (`plan_tools.py`) and the road planning instructions for Claude Code ([PLAN.md](#url=plan/PLAN.md)). Python, built with [python-build](https://github.com/craigahobbs/python-build#readme). |
 | `example/` | The example plan |
 
 `CLAUDE.md` is the repository guide for Claude Code.

@@ -7,7 +7,7 @@ import {escapeHtml, headerId} from './format.js';
 
 // Render Markdown text lines as HTML
 export function markdownHtml(lines) {
-    const textLines = lines.join('\n').split('\n');
+    const textLines = lines.join('\n').split(/\r?\n/);
     const html = [];
     let ix = 0;
     while (ix < textLines.length) {
@@ -43,7 +43,7 @@ export function markdownHtml(lines) {
         }
 
         // Horizontal rule
-        if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+        if (rRule.test(line)) {
             html.push('<hr>');
             ix += 1;
             continue;
@@ -100,9 +100,19 @@ export function markdownHtml(lines) {
             continue;
         }
 
-        // Paragraph
+        // Paragraph - a line of "=" or "-" under it makes it a heading, and a horizontal rule ends it
         const paragraphLines = [];
+        let level = null;
         while (ix < textLines.length && textLines[ix].trim() !== '' && !rBlockStart.test(textLines[ix])) {
+            const mUnderline = paragraphLines.length > 0 ? textLines[ix].match(rHeadingUnderline) : null;
+            if (mUnderline !== null) {
+                level = mUnderline[1].startsWith('=') ? 1 : 2;
+                ix += 1;
+                break;
+            }
+            if (paragraphLines.length > 0 && rRule.test(textLines[ix])) {
+                break;
+            }
             paragraphLines.push(textLines[ix].trim());
             ix += 1;
         }
@@ -110,11 +120,16 @@ export function markdownHtml(lines) {
             paragraphLines.push(line.trim());
             ix += 1;
         }
-        html.push(`<p>${inlineHtml(paragraphLines.join('\n'))}</p>`);
+        const text = paragraphLines.join('\n');
+        html.push(
+            level !== null ? `<h${level} id="${escapeHtml(headerId(text))}">${inlineHtml(text)}</h${level}>` : `<p>${inlineHtml(text)}</p>`
+        );
     }
     return html.join('\n');
 }
 
+const rRule = /^\s*([-*_])(\s*\1){2,}\s*$/;
+const rHeadingUnderline = /^\s*(=+|-+)\s*$/;
 const rListItem = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 const rTableRow = /^\s*\|.*\|\s*$/;
 const rTableSeparator = /^\s*\|(\s*:?-+:?\s*\|)+\s*$/;

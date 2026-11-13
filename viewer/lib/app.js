@@ -253,14 +253,14 @@ export class RoadieApp {
     }
 
 
-    // Load a plan - returns a PlanData object or an error message string
+    // Load a plan - returns a PlanData object, or an error object with a "message" and an optional "detail"
     loadPlan(file) {
         let promise = this.plans.get(file);
         if (promise === undefined) {
             promise = this.loadPlanHelper(file);
             this.plans.set(file, promise);
             promise.then((result) => {
-                if (typeof result === 'string') {
+                if ('message' in result) {
                     this.plans.delete(file);
                 }
             });
@@ -290,11 +290,11 @@ export class RoadieApp {
             planValue = null;
         }
         if (planValue === null) {
-            return `**Error:** Could not load the road plan "${file}"`;
+            return {'message': `Could not load the road plan "${file}"`};
         }
         const validated = validatePlan(planValue);
         if ('error' in validated) {
-            return `**Error:** The road plan "${file}" is invalid:\n\n${validated.error}`;
+            return {'message': `The road plan "${file}" is invalid:`, 'detail': validated.error};
         }
         const data = new PlanData(validated.plan, file);
 
@@ -344,12 +344,12 @@ export class RoadieApp {
         if (routeCount !== this.routeCount) {
             return;
         }
-        if (typeof data === 'string') {
-            const [message, error] = data.split('\n\n');
-            const errorHtml = error !== undefined ? `<p>${escapeHtml(error)}</p>` : '';
+        if ('message' in data) {
+            const detailHtml = 'detail' in data ? `<p>${escapeHtml(data.detail)}</p>` : '';
             this.render(
                 'Roadie',
-                `<h1>Roadie</h1><p>${markdownStrong(message)}</p>${errorHtml}<p><a href="#var=">Open another road plan</a></p>`
+                `<h1>Roadie</h1><p><strong>Error:</strong> ${escapeHtml(data.message)}</p>${detailHtml}` +
+                    '<p><a href="#var=">Open another road plan</a></p>'
             );
             return;
         }
@@ -412,7 +412,6 @@ export class RoadieApp {
 
     // Render the home page - the recent local plans are added when IndexedDB answers
     renderHome(globals) {
-        const {routeCount} = this;
         const html = [
             '<h1>Roadie</h1>',
             '<p>Roadie is a 3D viewer for road grading plan models. A road grading plan model contains the site topography, ' +
@@ -433,19 +432,12 @@ export class RoadieApp {
         this.localFileList().then((recent) => {
             const recentPlans = recent.filter(({name}) => name.toLowerCase().endsWith('.json'));
             const element = this.document.getElementById('roadie-recent');
-            if (routeCount === this.routeCount && element !== null && recentPlans.length > 0) {
+            if (element !== null && recentPlans.length > 0) {
                 const items = recentPlans.map(({name}) => `<li><p>${argsLink(globals, name, {'file': `${localPrefix}${name}`})}</p></li>`);
                 element.innerHTML = `<h2 id="recent-plans">Recent Plans</h2><ul>${items.join('')}</ul>`;
             }
         });
     }
-}
-
-
-// Render a "**bold:** text" error message as HTML
-function markdownStrong(message) {
-    const match = message.match(/^\*\*(.*?)\*\*(.*)$/);
-    return match !== null ? `<strong>${escapeHtml(match[1])}</strong>${escapeHtml(match[2])}` : escapeHtml(message);
 }
 
 

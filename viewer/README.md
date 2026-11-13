@@ -3,7 +3,7 @@
 The Roadie viewer is a web application that views Roadie road plan models - the plan's options, plan view, profile, 3D
 views, cost breakdown, design warnings, and structures, and a full-window 3D explorer. It also holds the road plan
 model itself (its schema, validation, and the earthwork and cost analysis) and the command line behind the project's
-`make evaluate` and `make doc`. See the project's [README](../README.md) for what the viewer shows, how to view a
+`make evaluate` and `make doc`. See the project's [README](#url=../README.md) for what the viewer shows, how to view a
 plan, and the 3D explorer's keys.
 
 The viewer is plain JavaScript modules (`index.html`, `app.css`, and `lib/`), served as they are - there's no bundler.
@@ -71,21 +71,21 @@ headless Chrome on an Apple Silicon Mac (`tools/bench.js`), from navigation unti
 | Plan | MarkdownUp viewer | Roadie viewer |
 | --- | --- | --- |
 | Example (1,200 ft site, 3 options) | 377 ms | 74 ms |
-| test1 (2 options) | 910 ms | 201 ms |
-| tyler-2 (4 mile road, 13 MB of SVG) | 2,468 ms (first content: 2,396 ms) | 418 ms (first content: 126 ms) |
+| A small site (2 options) | 910 ms | 201 ms |
+| A 4 mile road (13 MB of SVG) | 2,468 ms (first content: 2,396 ms) | 418 ms (first content: 126 ms) |
 | 3D explorer key press, example | 110 ms | 27 ms |
-| 3D explorer key press, tyler-2 | 375 ms | 40 ms |
+| 3D explorer key press, the 4 mile road | 375 ms | 40 ms |
 
 Those measurements were of the viewer bundled into a single file. Serving its modules as they are loads within about
 5% of the bundle (the page preloads every module).
 
 Where the time goes:
 
-- **The model and drawings** are plain JavaScript - for tyler-2, the analysis and every report drawing take about 110 ms
-  in Node, versus about 3.3 seconds for the BareScript runtime.
+- **The model and drawings** are plain JavaScript - for the 4 mile road, the analysis and every report drawing take
+  about 110 ms in Node, versus about 3.3 seconds for the BareScript runtime.
 - **The report** renders its text, tables, plan view, and profile first, then draws the 3D views one per task (the
-  visible ones first), so the page is readable at once and stays responsive. With canvas 3D views, tyler-2's whole
-  report is drawn in about 150 ms in headless Chrome.
+  visible ones first), so the page is readable at once and stays responsive. With canvas 3D views, the 4 mile road's
+  whole report is drawn in about 150 ms in headless Chrome.
 - **Each plan's analyses, finished grade, report views, and drawings are cached**, so switching options and returning
   from the explorer don't recompute them.
 - **The 3D drawings are canvases.** An SVG drawing of a large plan is tens of thousands of elements - most of its time
