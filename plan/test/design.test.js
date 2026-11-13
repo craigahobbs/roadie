@@ -21,6 +21,9 @@ function pythonDesign(design) {
         'surface': design.surface,
         'cutSlope': design.cut_slope,
         'fillSlope': design.fill_slope,
+
+        // The planning tools' stations are at least 5 feet (1.5 meters) apart - the Python tools' had no least interval
+        'stationInterval': design.feet ? 5 : 1.5,
         'costCut': design.cost_cut,
         'costRock': design.cost_rock,
         'costFill': design.cost_fill,

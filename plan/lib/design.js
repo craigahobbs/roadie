@@ -31,6 +31,9 @@ export function createDesign(plan, args) {
         'cutSlope': args.cutSlope,
         'fillSlope': args.fillSlope,
 
+        // The least distance between an alignment's stations - a fine topography grid's alignment isn't finer
+        'stationInterval': feet ? 5 : 1.5,
+
         // Unit costs per plan unit
         'costCut': rates.excavation * scale3,
         'costRock': rates.rockExcavation * scale3,

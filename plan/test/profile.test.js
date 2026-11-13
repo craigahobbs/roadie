@@ -1,4 +1,4 @@
-import {alignmentFixture, alignments, expected, plain} from './roadFixtures.js';
+import {alignmentFixture, alignments, designArgs, expected, plain, planePlan} from './roadFixtures.js';
 import assert from 'node:assert/strict';
 import {designProfile} from '../lib/profile.js';
 import test from 'node:test';
@@ -37,6 +37,20 @@ test('designProfile, the grade limit', () => {
     assert.deepEqual(plain(ground.slice(0, 3)), [100, 101.5, 103]);
     assert.equal(profile[20], 110.9958333333348);
     assert.ok(sideSlope.every((slope) => Math.abs(slope) < 1e-12));
+});
+
+
+test('designProfile, the depth limit', () => {
+    // A profile is designed within 60 feet of the ground - or, where the grade limit can't keep it there, within 240
+    // feet, or without a limit. A road straight up a plane climbs 11 feet in 100 at the design grade - so at its end
+    // it's the plane's rise less 11 feet below the ground.
+    for (const [rise, endDepth] of [[0.3, 19], [0.7, 59], [0.75, 64], [2.5, 239], [2.6, 249], [8, 789]]) {
+        const {topo, design, x, y, stations} = alignmentFixture(planePlan({rise}), designArgs(), [[50, 0], [50, 100]], 5);
+        const {profile, ground} = designProfile(topo, design, x, y, stations, null);
+        assert.ok(Math.max(...grades(profile, 5)) <= design.grade + 1e-9, `${rise}`);
+        assert.ok(Math.abs(profile[0] - ground[0]) <= 1, `${rise}`);
+        assert.ok(Math.abs(ground[20] - profile[20] - endDepth) < 0.1, `${rise}: ${ground[20] - profile[20]}`);
+    }
 });
 
 

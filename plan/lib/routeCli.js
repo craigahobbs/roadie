@@ -173,7 +173,7 @@ function routeCommand(command, args, io) {
                 ({heading, lattice} = leg);
                 path.push(...(path.length === 0 ? leg.path : leg.path.slice(1)));
             }
-            const interval = Math.min(lattice, topo.spacing) * 0.5;
+            const interval = Math.max(design.stationInterval, Math.min(lattice, topo.spacing) * 0.5);
             const smooth = smoothCurves(path, interval, design.minRadius);
             alignment = resamplePolyline(smooth.x, smooth.y, interval);
             designed = designProfile(
@@ -190,7 +190,8 @@ function routeCommand(command, args, io) {
             return {'code': 1, 'lines': [`error: no option named "${commandArgs.name}"`]};
         }
         const points = existingOption.alignment;
-        alignment = resamplePolyline(points.map((point) => point.x), points.map((point) => point.y), topo.spacing * 0.5);
+        const interval = Math.max(design.stationInterval, topo.spacing * 0.5);
+        alignment = resamplePolyline(points.map((point) => point.x), points.map((point) => point.y), interval);
         designed = designProfile(
             topo, design, alignment.x, alignment.y, alignment.stations, existingMask(alignment.stations, existingRoads)
         );
