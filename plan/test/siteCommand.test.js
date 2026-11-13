@@ -1,20 +1,23 @@
-import {gridUtm, plane, siteEast, siteNorth, testImage, testIo, testItem, testSite} from './terrainHelpers.js';
-import {layoutGeoreference, siteLayout} from '../lib/terrain.js';
+import {gridUtm, plane, siteEast, siteNorth, testImage, testIo, testItem, testLine, testPages, testSite} from './terrainHelpers.js';
+import {layoutGeoreference, layoutLatLong, siteLayout} from '../lib/terrain.js';
 import assert from 'node:assert/strict';
 import {cliMain} from '../lib/cli.js';
 import test from 'node:test';
 import {validatePlan} from '../../viewer/lib/model.js';
 
 
-// The test site's elevation model, and its product service response
+// The test site's elevation model, and the topographic map image's bytes
 const item = testItem('CO_New_2020', 'x47y443', '2022-02-10');
-const page = {'total': 1, 'items': [item]};
+const mapBytes = Uint8Array.from([137, 80, 78, 71]);
 
 
 // Run the "site" command for a site and the tools' input and output function arguments (testIo) - returns the
 // functions object, with the command's exit "code"
-async function runSite(site, {files = {}, images = {[item.downloadURL]: testImage()}, pages = [page]} = {}, planPath = 'plans/road.json') {
-    const io = testIo({'files': {...files, 'site.json': JSON.stringify(site)}, images, pages});
+async function runSite(
+    site, {files = {}, images = {[item.downloadURL]: testImage()}, pages = testPages({'items': [item]}), mapImage = mapBytes} = {},
+    planPath = 'plans/road.json'
+) {
+    const io = testIo({'files': {...files, 'site.json': JSON.stringify(site)}, images, pages, mapImage});
     io.code = await cliMain(['site', 'site.json', planPath], io);
     return io;
 }
@@ -33,28 +36,45 @@ test('site', async () => {
 Grid: 8 x 7 at 50 meters spacing (350 x 300 meters)
 Elevations: 1676.7 to 1726.7 meters, contours every 2 meters
 Elevation model: CO_New_2020 (2022-02-10)
+Features: 0 streams, 0 roads, 0 exclusion areas
+Topographic map image: plans/road.png
 start: "Start" (20, 20) at 40.00000, -105.28000, ground 1679.7
 end: "End" (318.87, 242.07) at 40.00200, -105.27650, ground 1720.7
 Wrote plans/road.json
 `);
 
-    // The elevation models are the site's box's, and their tiles are cached in the plan's work directory
+    // The elevation models, streams, and roads are the site's box's - and the topographic map image is the site's grid's
+    const box = '-105.280234,39.99982,-105.276135,40.002522';
+    const query = `/query?where=1%3D1&geometry=${box}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects`;
     assert.deepEqual(io.urls, [
-        'https://tnmaccess.nationalmap.gov/api/v1/products?datasets=Digital%20Elevation%20Model%20(DEM)%201%20meter' +
-            '&bbox=-105.280234,39.99982,-105.276135,40.002522&max=100&offset=0'
+        `https://tnmaccess.nationalmap.gov/api/v1/products?datasets=Digital%20Elevation%20Model%20(DEM)%201%20meter&bbox=${box}` +
+            '&max=100&offset=0',
+        `https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer/6${query}&outFields=gnis_name,ftype&outSR=4326&f=geojson` +
+            '&resultOffset=0',
+        ...[29, 30, 31, 32, 35, 37].map((layer) => (
+            `https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer/${layer}${query}&outFields=name&outSR=4326` +
+                '&f=geojson&resultOffset=0'
+        )),
+        'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/export?bbox=-105.280234,39.99982,-105.276135,40.002522' +
+            '&bboxSR=4326&imageSR=4326&size=2000,1714&format=png&f=image'
     ]);
+
+    // The elevation models' tiles are cached in the plan's work directory, and the image is beside the plan
     assert.deepEqual(io.opened, [item.downloadURL]);
     assert.deepEqual(io.written, [
         'plans/road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json',
         'plans/road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.f32',
+        'plans/road.png',
         'plans/road.json'
     ]);
+    assert.deepEqual(io.files['plans/road.png'], mapBytes);
 
     // The plan - the elevation model is a plane that rises 5 meters per grid column to the east and 2.5 meters per grid
     // row to the north
     assert.equal(io.files['plans/road.json'], `\
 {
   "title": "Test Site",
+  "image": "road.png",
   "units": "meters",
   "georeference": {
     "latitude": 40.001,
@@ -80,7 +100,8 @@ Wrote plans/road.json
         "date": "2022-02-10",
         "url": "https://example.com/Elevation/1m/Projects/CO_New_2020/TIFF/USGS_1M_13_x47y443_CO_New_2020.tif"
       }
-    ]
+    ],
+    "features": []
   },
   "start": {
     "x": 20,
@@ -132,7 +153,7 @@ test('site, a site in feet', async () => {
     const undated = {...item, 'publicationDate': undefined};
     const io = await runSite(site, {
         'images': {[item.downloadURL]: testImage({'holes': (x, y) => Math.abs(x - holeX) < 10 && Math.abs(y - holeY) < 10})},
-        'pages': [{'total': 1, 'items': [undated]}]
+        'pages': testPages({'items': [undated]})
     }, 'road.JSON');
     assert.equal(io.code, 0);
     assert.equal(io.output.join(''), `\
@@ -140,14 +161,19 @@ Grid: 24 x 18 at 50 feet spacing (1150 x 850 feet)
 Elevations: 5501.7 to 5659.2 feet, contours every 5 feet
 Elevation model: CO_New_2020
 Grid points without an elevation, filled from the points around them: 1
+Features: 0 streams, 0 roads, 0 exclusion areas
+Topographic map image: road.png
 start: "Gate" (60, 60) at 40.00000, -105.28000, ground 5510.7
 end: "House" (1040.56, 788.57) at 40.00200, -105.27650, ground 5645.2
 Wrote road.JSON
 `);
-    assert.equal(io.written.at(-3), 'road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json');
+    assert.deepEqual(io.written.slice(-4, -2), [
+        'road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json', 'road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.f32'
+    ]);
+    assert.deepEqual(io.written.slice(-2), ['road.png', 'road.JSON']);
     const plan = JSON.parse(io.files['road.JSON']);
     assert.deepEqual(Object.keys(plan), [
-        'title', 'units', 'georeference', 'topography', 'start', 'end', 'criteria', 'costRates', 'options'
+        'title', 'image', 'units', 'georeference', 'topography', 'start', 'end', 'criteria', 'costRates', 'options'
     ]);
     assert.deepEqual([plan.units, plan.georeference], ['feet', layoutGeoreference(layout)]);
     assert.deepEqual([plan.start, plan.end], [{'x': 60, 'y': 60, 'label': 'Gate'}, {'x': 1040.56, 'y': 788.57, 'label': 'House'}]);
@@ -184,34 +210,122 @@ test('site, the contour interval', async () => {
 });
 
 
+test('site, the features', async () => {
+    // The site's streams, roads and trails, and exclusion areas, in the plan's coordinates
+    const site = coarseSite();
+    const layout = siteLayout(site);
+    const lonLat = (x, y) => {
+        const [latitude, longitude] = layoutLatLong(layout, x, y);
+        return [longitude, latitude];
+    };
+    site.exclusions = [{'points': [[100, 50], [150, 50], [150, 100]].map(([x, y]) => {
+        const [longitude, latitude] = lonLat(x, y);
+        return {latitude, longitude};
+    })}];
+    const io = await runSite(site, {'pages': testPages({
+        'items': [item],
+        'streams': [
+            testLine({'gnis_name': 'Mill Creek', 'ftype': 460}, [lonLat(-50, 200), lonLat(100, 200)]),
+            testLine({'gnis_name': 'Mill Creek', 'ftype': 460}, [lonLat(100, 200), lonLat(200, 100), lonLat(200, -50)]),
+            testLine({'gnis_name': 'Pipe', 'ftype': 428}, [lonLat(0, 0), lonLat(100, 100)])
+        ],
+        'roads': [testLine({'name': 'Ridge Rd'}, [lonLat(0, 250), lonLat(350, 250)])]
+    })});
+    assert.equal(io.code, 0);
+    assert.equal(io.output.join('').split('\n')[3], 'Features: 1 stream, 1 road, 1 exclusion area');
+    assert.deepEqual(JSON.parse(io.files['plans/road.json']).topography.features, [
+        {
+            'type': 'stream',
+            'name': 'Mill Creek',
+            'points': [{'x': 0, 'y': 200}, {'x': 100, 'y': 200}, {'x': 200, 'y': 100}, {'x': 200, 'y': 0}]
+        },
+        {'type': 'road', 'name': 'Ridge Rd', 'points': [{'x': 0, 'y': 250}, {'x': 350, 'y': 250}]},
+        {'type': 'exclusion', 'name': 'Exclusion 1', 'points': [{'x': 100, 'y': 50}, {'x': 150, 'y': 50}, {'x': 150, 'y': 100}]}
+    ]);
+});
+
+
+test('site, a site without roads or a topographic map image', async () => {
+    // The roads and the image are for reference - the plan is made without them
+    const failed = new Error('Could not fetch "https://example.com/roads" (status 503)');
+    const io = await runSite(coarseSite(), {'pages': testPages({'items': [item], 'roads': failed}), 'mapImage': null});
+    assert.equal(io.code, 0);
+    assert.deepEqual(io.output.join('').split('\n').slice(3, 6), [
+        'Features: 0 streams, 0 roads, 0 exclusion areas',
+        'warning: The site has no roads - Could not fetch "https://example.com/roads" (status 503)',
+        'warning: The site has no topographic map image - Could not fetch "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/' +
+            'MapServer/export?bbox=-105.280234,39.99982,-105.276135,40.002522&bboxSR=4326&imageSR=4326&size=2000,1714&format=png' +
+            '&f=image" (status 500)'
+    ]);
+    const plan = JSON.parse(io.files['plans/road.json']);
+    assert.deepEqual(['image' in plan, plan.topography.features, io.written.includes('plans/road.png')], [false, [], false]);
+
+    // An existing plan's image is kept
+    plan.image = 'old.png';
+    const io2 = await runSite(coarseSite(), {'files': {...io.files, 'plans/road.json': JSON.stringify(plan)}, 'mapImage': null});
+    assert.equal(JSON.parse(io2.files['plans/road.json']).image, 'old.png');
+
+    // A tall site's image - its grid is 150 x 500 meters
+    const tall = await runSite(coarseSite({'end': {'latitude': 40.004, 'longitude': -105.279}}));
+    assert.ok(tall.urls.at(-1).endsWith('&size=600,2000&format=png&f=image'), tall.urls.at(-1));
+});
+
+
 test('site, an existing plan', async () => {
     // Plan the site, then add a description, a feature, and an option to the plan
     const first = await runSite(coarseSite());
     const plan = JSON.parse(first.files['plans/road.json']);
     plan.description = ['A road.'];
     plan.criteria = {'maxGrade': 8};
-    plan.topography.features = [{'type': 'stream', 'name': 'Creek', 'points': [{'x': 100, 'y': 0}, {'x': 120.5, 'y': 300}]}];
+    plan.topography.features = [
+        {'type': 'stream', 'name': 'Old Creek', 'points': [{'x': 100, 'y': 0}, {'x': 120.5, 'y': 300}]},
+        {'type': 'road', 'name': 'Old Rd', 'points': [{'x': 0, 'y': 100}, {'x': 300, 'y': 100}]},
+        {'type': 'rock', 'name': 'Outcrop', 'points': [{'x': 100, 'y': 100}, {'x': 120.5, 'y': 100}, {'x': 120, 'y': 130}]},
+        {'type': 'exclusion', 'name': 'Barn', 'points': [{'x': 10, 'y': 10}, {'x': 20, 'y': 10}, {'x': 20, 'y': 20}]},
+        {'type': 'exclusion', 'name': 'Pond', 'points': [{'x': 200, 'y': 200}, {'x': 220, 'y': 200}, {'x': 220, 'y': 220}]},
+        {'type': 'exclusion', 'points': [{'x': 300, 'y': 200}, {'x': 320, 'y': 200}, {'x': 320, 'y': 220}]}
+    ];
     plan.options = [
         {'name': 'Road', 'section': {'width': 4}, 'alignment': [{'x': 20, 'y': 20, 'z': 1680}, {'x': 318.87, 'y': 242.07}]}
     ];
 
-    // The site, with a wider margin - the plan's topography is the new grid's, and its features and options are moved
-    // to its coordinates (20 meters to the east and north). The plan's description and criteria are kept.
+    // The site, with a wider margin and an exclusion area - the plan's topography is the new grid's, and its features
+    // and options are moved to its coordinates (20 meters to the east and north). The plan's description and criteria
+    // are kept.
     const files = {...first.files, 'plans/road.json': JSON.stringify(plan)};
-    const io = await runSite(coarseSite({'margin': 40, 'title': 'Wider Site'}), {files});
+    const widerLayout = siteLayout(coarseSite({'margin': 40}));
+    const barn = [[25, 25], [45, 25], [45, 45]].map(([x, y]) => {
+        const [latitude, longitude] = layoutLatLong(widerLayout, x, y);
+        return {latitude, longitude};
+    });
+    const [creekLatitude, creekLongitude] = layoutLatLong(widerLayout, 150, 100);
+    const [creekLatitude2, creekLongitude2] = layoutLatLong(widerLayout, 150, 200);
+    const io = await runSite(coarseSite({'margin': 40, 'title': 'Wider Site', 'exclusions': [{'name': 'Barn', 'points': barn}]}), {
+        files,
+        'pages': testPages({'items': [item], 'streams': [
+            testLine({'gnis_name': 'New Creek', 'ftype': 460}, [[creekLongitude, creekLatitude], [creekLongitude2, creekLatitude2]])
+        ]})
+    });
     assert.equal(io.code, 0);
     assert.deepEqual(io.output.join('').split('\n').slice(0, 1), ['Grid: 9 x 8 at 50 meters spacing (400 x 350 meters)']);
     const wider = JSON.parse(io.files['plans/road.json']);
     assert.deepEqual(Object.keys(wider), [
-        'title', 'description', 'units', 'georeference', 'topography', 'start', 'end', 'criteria', 'options'
+        'title', 'description', 'image', 'units', 'georeference', 'topography', 'start', 'end', 'criteria', 'options'
     ]);
     assert.deepEqual([wider.title, wider.description, wider.criteria], ['Wider Site', ['A road.'], {'maxGrade': 8}]);
     assert.deepEqual(wider.georeference, {'latitude': 40.001, 'longitude': -105.27825, 'x': 189.439, 'y': 151.033});
     assert.deepEqual([wider.start, wider.end], [{'x': 40, 'y': 40, 'label': 'Start'}, {'x': 338.87, 'y': 262.07, 'label': 'End'}]);
     assert.deepEqual(Object.keys(wider.topography), ['spacing', 'elevations', 'contourInterval', 'sources', 'features']);
     assert.deepEqual([wider.topography.elevations.length, wider.topography.elevations[0].length], [8, 9]);
+
+    // The streams, roads, and the site's exclusion areas are the site's - the plan's rock outcrops and its other
+    // exclusion areas are kept, in the new grid's coordinates
     assert.deepEqual(wider.topography.features, [
-        {'type': 'stream', 'name': 'Creek', 'points': [{'x': 120, 'y': 20}, {'x': 140.5, 'y': 320}]}
+        {'type': 'stream', 'name': 'New Creek', 'points': [{'x': 150, 'y': 100}, {'x': 150, 'y': 200}]},
+        {'type': 'exclusion', 'name': 'Barn', 'points': [{'x': 25, 'y': 25}, {'x': 45, 'y': 25}, {'x': 45, 'y': 45}]},
+        {'type': 'rock', 'name': 'Outcrop', 'points': [{'x': 120, 'y': 120}, {'x': 140.5, 'y': 120}, {'x': 140, 'y': 150}]},
+        {'type': 'exclusion', 'name': 'Pond', 'points': [{'x': 220, 'y': 220}, {'x': 240, 'y': 220}, {'x': 240, 'y': 240}]},
+        {'type': 'exclusion', 'points': [{'x': 320, 'y': 220}, {'x': 340, 'y': 220}, {'x': 340, 'y': 240}]}
     ]);
     assert.deepEqual(wider.options, [
         {'name': 'Road', 'section': {'width': 4}, 'alignment': [{'x': 40, 'y': 40, 'z': 1680}, {'x': 338.87, 'y': 262.07}]}
@@ -220,17 +334,14 @@ test('site, an existing plan', async () => {
     // The cached tile is too small for the wider site - the elevation model is read again
     assert.deepEqual(io.opened, [item.downloadURL]);
 
-    // The site's design criteria replace the plan's - and a plan without features or options has none
+    // The site's design criteria replace the plan's - and a plan without features or options has only the site's
     delete wider.topography.features;
     delete wider.options;
     const io2 = await runSite(coarseSite({'margin': 40, 'criteria': {'maxGrade': 12}}), {
         'files': {...io.files, 'plans/road.json': JSON.stringify(wider)}
     });
     const plan2 = JSON.parse(io2.files['plans/road.json']);
-    assert.deepEqual(
-        [io2.code, io2.opened, plan2.criteria, plan2.options, 'features' in plan2.topography],
-        [0, [], {'maxGrade': 12}, [], false]
-    );
+    assert.deepEqual([io2.code, io2.opened, plan2.criteria, plan2.options, plan2.topography.features], [0, [], {'maxGrade': 12}, [], []]);
 
     // A plan file that isn't a plan yet
     const io3 = await runSite(coarseSite(), {'files': {'plans/road.json': '{"description": ["A new road."]}'}});
@@ -284,7 +395,7 @@ test('site, a site that cannot be loaded or is invalid', async () => {
 
 test('site, a site without elevation models', async () => {
     // The USGS has no elevation models of the site
-    let io = await runSite(coarseSite(), {'pages': [{'total': 0, 'items': []}]});
+    let io = await runSite(coarseSite(), {'pages': testPages()});
     assert.deepEqual([io.code, io.output.join(''), io.written], [1, 'error: The USGS has no 1 meter elevation models of the site\n', []]);
 
     // The site is outside its elevation models
@@ -294,11 +405,17 @@ test('site, a site without elevation models', async () => {
     ]);
     assert.deepEqual(io.written, ['plans/road.work/terrain/USGS_1M_13_x47y443_CO_New_2020.json']);
 
-    // The product service, or an elevation model, fails
-    io = await runSite(coarseSite(), {'pages': [() => Promise.reject(new Error('Could not fetch "https://example.com" (status 503)'))]});
+    // The product service, an elevation model, or the stream service fails - a road crosses streams, so the plan needs
+    // them
+    const failed = new Error('Could not fetch "https://example.com" (status 503)');
+    io = await runSite(coarseSite(), {'pages': testPages({'items': failed})});
     assert.deepEqual([io.code, io.output.join('')], [1, 'error: Could not fetch "https://example.com" (status 503)\n']);
     io = await runSite(coarseSite(), {'images': {}});
     assert.deepEqual([io.code, io.output.join('')], [1, `error: Could not open "${item.downloadURL}"\n`]);
+    io = await runSite(coarseSite(), {'pages': testPages({'items': [item], 'streams': failed})});
+    assert.deepEqual([io.code, io.output.join(''), io.written.includes('plans/road.json')], [
+        1, 'error: Could not fetch "https://example.com" (status 503)\n', false
+    ]);
 });
 
 
@@ -307,7 +424,8 @@ test('site, usage', async () => {
 usage: plan site <site.json> <plan.json>
 
   Create a road plan model's site from a road site model - its topography, from the USGS 3D Elevation Program's
-  1 meter elevation models, its georeference, and its start and end points. An existing plan's options are kept.
+  1 meter elevation models, its georeference, its start and end points, its streams, roads, and exclusion areas,
+  and its topographic map image ("<plan>.png"). An existing plan's options are kept.
 `;
     for (const args of [[], ['site.json'], ['site.json', 'road.json', 'extra'], ['-h', 'road.json'], ['site.json', '--plan']]) {
         const io = testIo();

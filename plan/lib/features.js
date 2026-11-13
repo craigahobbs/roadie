@@ -1,0 +1,153 @@
+// features.js - a road site's topographic features - its streams, its existing roads and trails, and its exclusion
+// areas, in the plan's coordinates
+
+import {layoutPoint, round} from './terrain.js';
+
+
+// The distance, in meters, that a line's points are simplified within, and that lines' ends are joined within
+const simplifyDistance = 0.5;
+const joinDistance = 0.5;
+
+
+// Create a site's line features - "type" is the features' type ("stream" or "road") and "lines" are the line objects
+// (usgs.js - an optional "name" and "points", [longitude, latitude] arrays). The lines are clipped to the layout's
+// grid and simplified, and the lines of a name that meet end to end are joined - a stream's or a road's reaches
+// are one feature.
+export function lineFeatures(layout, type, lines) {
+    const width = (layout.nCols - 1) * layout.spacing;
+    const height = (layout.nRows - 1) * layout.spacing;
+    const tolerance = simplifyDistance / layout.scale;
+    const joinTolerance = joinDistance / layout.scale;
+
+    // The lines' parts within the grid, in plan coordinates
+    const parts = [];
+    for (const line of lines) {
+        const points = line.points.map(([longitude, latitude]) => layoutPoint(layout, latitude, longitude));
+        for (const part of clipLine(points, width, height)) {
+            const simple = simplifyLine(part, tolerance);
+            if (simple.length > 1) {
+                parts.push({'name': line.name ?? null, 'points': simple});
+            }
+        }
+    }
+
+    // Join the parts of a name that meet - a part's end at another's start
+    const joined = [];
+    for (const part of parts) {
+        joined.push(part);
+        for (let merged = true; merged;) {
+            merged = false;
+            for (let ix = 0; ix < joined.length && !merged; ix++) {
+                for (let ix2 = 0; ix2 < joined.length && !merged; ix2++) {
+                    const first = joined[ix];
+                    const second = joined[ix2];
+                    if (ix !== ix2 && first.name === second.name && pointsMeet(first.points.at(-1), second.points[0], joinTolerance)) {
+                        first.points = [...first.points, ...second.points.slice(1)];
+                        joined.splice(ix2, 1);
+                        merged = true;
+                    }
+                }
+            }
+        }
+    }
+
+    return joined.map(({name, points}) => ({
+        type,
+        ...(name !== null ? {name} : {}),
+        'points': points.map(([x, y]) => ({'x': round(x, 1), 'y': round(y, 1)}))
+    }));
+}
+
+
+// Determine if two points are within a distance of each other
+function pointsMeet(point1, point2, distance) {
+    return Math.hypot(point1[0] - point2[0], point1[1] - point2[1]) <= distance;
+}
+
+
+// Clip a line ([x, y] point arrays) to the box from the origin to (width, height) - returns its parts within the box
+function clipLine(points, width, height) {
+    const parts = [];
+    let part = null;
+    for (let ix = 1; ix < points.length; ix++) {
+        const [x1, y1] = points[ix - 1];
+        const [x2, y2] = points[ix];
+
+        // The segment's part within the box - from "start" to "end", as fractions of the segment (Liang-Barsky)
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        let start = 0;
+        let end = 1;
+        for (const [delta, distance] of [[-dx, x1], [dx, width - x1], [-dy, y1], [dy, height - y1]]) {
+            if (delta === 0) {
+                if (distance < 0) {
+                    start = 2;
+                }
+            } else if (delta < 0) {
+                start = Math.max(start, distance / delta);
+            } else {
+                end = Math.min(end, distance / delta);
+            }
+        }
+        if (start > end) {
+            part = null;
+            continue;
+        }
+        const point1 = [x1 + start * dx, y1 + start * dy];
+        const point2 = [x1 + end * dx, y1 + end * dy];
+        if (part === null || start > 0) {
+            part = [point1];
+            parts.push(part);
+        }
+        part.push(point2);
+        if (end < 1) {
+            part = null;
+        }
+    }
+    return parts;
+}
+
+
+// Simplify a line - remove its points that are within a distance of the line between the points kept
+// (Douglas-Peucker), and its repeated points
+function simplifyLine(points, tolerance) {
+    const keep = new Array(points.length).fill(false);
+    keep[0] = true;
+    keep[points.length - 1] = true;
+    const ranges = [[0, points.length - 1]];
+    while (ranges.length > 0) {
+        const [first, last] = ranges.pop();
+        const [x1, y1] = points[first];
+        const [x2, y2] = points[last];
+        const length = Math.hypot(x2 - x1, y2 - y1);
+        let farthest = -1;
+        let farthestDistance = tolerance;
+        for (let ix = first + 1; ix < last; ix++) {
+            const [x, y] = points[ix];
+            const distance = length > 0 ? Math.abs((x2 - x1) * (y1 - y) - (x1 - x) * (y2 - y1)) / length : Math.hypot(x - x1, y - y1);
+            if (distance > farthestDistance) {
+                farthest = ix;
+                farthestDistance = distance;
+            }
+        }
+        if (farthest !== -1) {
+            keep[farthest] = true;
+            ranges.push([first, farthest], [farthest, last]);
+        }
+    }
+    const simple = points.filter((point, ix) => keep[ix]);
+    return simple.length === 2 && pointsMeet(simple[0], simple[1], tolerance) ? [] : simple;
+}
+
+
+// Create a site's exclusion area features - an area without a name is named for its place in the site's areas
+export function exclusionFeatures(layout, site) {
+    return (site.exclusions ?? []).map((area, ixArea) => ({
+        'type': 'exclusion',
+        'name': area.name ?? `Exclusion ${ixArea + 1}`,
+        'points': area.points.map(({latitude, longitude}) => {
+            const [x, y] = layoutPoint(layout, latitude, longitude);
+            return {'x': round(x, 1), 'y': round(y, 1)};
+        })
+    }));
+}

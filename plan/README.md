@@ -17,4 +17,6 @@ A road site model (`<name>.site.json`) is a road's start and end points, as lati
 planning instructions. `site` finds the USGS 3D Elevation Program's 1 meter elevation models of the site (lidar
 ground elevations), reads the site's part of them (it's cached in the plan's work directory,
 `<plan>.work/terrain/`), and grids them in the plan's coordinates - a transverse Mercator projection centered on
-the site. The newest survey's elevations are used, and an older survey's where the newer have none.
+the site. The newest survey's elevations are used, and an older survey's where the newer have none. The site's
+features are the USGS National Map's streams, roads, and trails, and the site's exclusion areas, and its
+topographic map image (`<plan>.png`) is the National Map's.

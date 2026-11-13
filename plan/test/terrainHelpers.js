@@ -65,10 +65,11 @@ export function testImage({
 
 
 // Create the tools' input and output functions - "files" is an object of the files' text (or bytes) by path,
-// "images" is an object of the elevation images by URL, and "pages" is an array of the product service's responses
-// (a function of the request's URL, or the response). The functions record the "output" text, the "written" paths,
-// the "opened" image URLs, and the requested "urls".
-export function testIo({files = {}, images = {}, pages = []} = {}) {
+// "images" is an object of the elevation images by URL, "pages" is the services' JSON responses - an array of each
+// request's (a function of the request's URL, or the response), or a function of a request's URL - and "mapImage" is
+// the topographic map image's bytes (null if it can't be fetched). The functions record the "output" text, the
+// "written" paths, the "opened" image URLs, and the requested "urls".
+export function testIo({files = {}, images = {}, pages = [], mapImage = null} = {}) {
     const io = {
         files,
         'output': [],
@@ -97,9 +98,13 @@ export function testIo({files = {}, images = {}, pages = []} = {}) {
         },
         'write': (text) => io.output.push(text),
         'getJson': (url) => {
-            const page = pages[io.urls.length];
+            const page = typeof pages === 'function' ? pages : pages[io.urls.length];
             io.urls.push(url);
             return Promise.resolve(typeof page === 'function' ? page(url) : page);
+        },
+        'getBytes': (url) => {
+            io.urls.push(url);
+            return mapImage !== null ? Promise.resolve(mapImage) : Promise.reject(new Error(`Could not fetch "${url}" (status 500)`));
         },
         'openImage': (url) => {
             io.opened.push(url);
@@ -121,4 +126,29 @@ export function testItem(survey, tile, date, format = 'GeoTIFF') {
         format,
         'downloadURL': `https://example.com/Elevation/1m/Projects/${survey}/TIFF/USGS_1M_13_${tile}_${survey}.tif`
     };
+}
+
+
+// Create the services' JSON responses function (testIo's "pages") - "items" are the product service's elevation model
+// items, and "streams" and "roads" are the hydrography and transportation services' GeoJSON features (the roads are
+// the local roads layer's). A service whose response is an Error fails.
+export function testPages({items = [], streams = [], roads = []} = {}) {
+    return (url) => {
+        let response;
+        if (url.startsWith('https://tnmaccess.nationalmap.gov/')) {
+            response = Array.isArray(items) ? {'total': items.length, items} : items;
+        } else if (url.startsWith('https://hydro.nationalmap.gov/')) {
+            response = Array.isArray(streams) ? {'type': 'FeatureCollection', 'features': streams} : streams;
+        } else {
+            const features = url.includes('/MapServer/32/') ? roads : [];
+            response = Array.isArray(roads) ? {'type': 'FeatureCollection', features} : roads;
+        }
+        return response instanceof Error ? Promise.reject(response) : response;
+    };
+}
+
+
+// Create a GeoJSON line feature - "points" are [longitude, latitude] arrays
+export function testLine(properties, points) {
+    return {'type': 'Feature', properties, 'geometry': {'type': 'LineString', 'coordinates': points}};
 }

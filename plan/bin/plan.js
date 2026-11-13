@@ -4,11 +4,11 @@
 // usage: node bin/plan.js site <site.json> <plan.json>
 //        node bin/plan.js doc
 
+import {fetchBytes, fetchJson} from '../lib/usgs.js';
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {cliMain} from '../lib/cli.js';
 import {dirname} from 'node:path';
 import {elevationImage} from '../lib/elevationImage.js';
-import {fetchJson} from '../lib/usgs.js';
 import {fromUrl} from 'geotiff';
 import process from 'node:process';
 import {setTimeout as sleep} from 'node:timers/promises';
@@ -36,5 +36,6 @@ process.exitCode = await cliMain(process.argv.slice(2), {
     'writeBytes': writeFile,
     'write': (text) => process.stdout.write(text),
     'getJson': (url) => fetchJson(fetch, sleep, url),
+    'getBytes': (url) => fetchBytes(fetch, sleep, url),
     openImage
 });

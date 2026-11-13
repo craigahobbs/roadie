@@ -1,7 +1,10 @@
-import {elevationDataset, elevationModels, fetchJson, productsUrl} from '../lib/usgs.js';
+import {
+    elevationDataset, elevationModels, fetchBytes, fetchJson, productsUrl, roadLines, roadsUrl, streamLines, streamsUrl, topoMapImageUrl,
+    topoMapUrl
+} from '../lib/usgs.js';
+import {testItem, testLine} from './terrainHelpers.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {testItem} from './terrainHelpers.js';
 
 
 // Create a fetch function that responds with each of the responses, in order - a response is an HTTP status (its JSON
@@ -136,4 +139,140 @@ test('elevationModels, a response that is not a product list', async () => {
             {'message': 'The USGS National Map product service\'s response is not a product list'}
         );
     }
+});
+
+
+test('fetchBytes', async () => {
+    // An image's bytes
+    const image = (type, bytes = [1, 2, 3]) => ({
+        'ok': true,
+        'headers': {'get': (name) => (name === 'content-type' ? type : null)},
+        'arrayBuffer': () => Promise.resolve(Uint8Array.from(bytes).buffer)
+    });
+    const sleeps = [];
+    const sleep = (milliseconds) => {
+        sleeps.push(milliseconds);
+        return Promise.resolve();
+    };
+    const bytes = await fetchBytes(() => Promise.resolve(image('image/png')), sleep, 'https://example.com/map');
+    assert.deepEqual([bytes.constructor, [...bytes], sleeps], [Uint8Array, [1, 2, 3], []]);
+
+    // A response that isn't an image is a failed request - the map service's errors are JSON, with an OK status
+    const responses = [image('application/json'), {'ok': false, 'status': 500}, image('image/png', [4, 5])];
+    assert.deepEqual([...await fetchBytes(() => Promise.resolve(responses.shift()), sleep, 'https://example.com/map')], [4, 5]);
+    assert.deepEqual(sleeps, [1000, 2000]);
+    await assert.rejects(
+        fetchBytes(() => Promise.resolve(image(null)), sleep, 'https://example.com/map', 1),
+        {'message': 'Could not fetch "https://example.com/map" (content type "")'}
+    );
+});
+
+
+test('streamLines', async () => {
+    assert.equal(streamsUrl, 'https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer/6');
+
+    // The streams are the box's streams and rivers (460), canals and ditches (336), and paths through water (558) -
+    // not its pipelines (428) or underground conduits (420)
+    const urls = [];
+    const features = [
+        testLine({'gnis_name': 'Mill Creek', 'ftype': 460}, [[-105.28, 40], [-105.279, 40.001]]),
+        testLine({'gnis_name': ' ', 'ftype': 460}, [[-105.27, 40], [-105.269, 40.001]]),
+        testLine({'gnis_name': null, 'ftype': 336}, [[-105.26, 40], [-105.259, 40.001]]),
+        testLine({'gnis_name': 'Aqueduct', 'ftype': 428}, [[-105.25, 40], [-105.249, 40.001]]),
+        testLine({'gnis_name': 'Culvert', 'ftype': 420}, [[-105.25, 40], [-105.249, 40.001]]),
+        testLine({'gnis_name': ' Long Lake ', 'ftype': 558}, [[-105.24, 40], [-105.239, 40.001]]),
+        {'type': 'Feature', 'properties': {'gnis_name': 'Braided', 'ftype': 460}, 'geometry': {
+            'type': 'MultiLineString', 'coordinates': [[[-105.23, 40], [-105.229, 40.001]], [[-105.22, 40], [-105.219, 40.001]]]
+        }},
+        {'type': 'Feature', 'properties': {'ftype': 460}, 'geometry': {'type': 'Point', 'coordinates': [-105.2, 40]}},
+        {'type': 'Feature', 'properties': {'ftype': 460}, 'geometry': null},
+        {'type': 'Feature', 'geometry': {'type': 'LineString', 'coordinates': [[-105.21, 40], [-105.209, 40.001]]}}
+    ];
+    const lines = await streamLines((url) => {
+        urls.push(url);
+        return Promise.resolve({'type': 'FeatureCollection', features});
+    }, [-105.29, 39.99, -105.2, 40.01]);
+    assert.deepEqual(urls, [
+        'https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer/6/query?where=1%3D1&geometry=-105.29,39.99,-105.2,40.01' +
+            '&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=gnis_name,ftype&outSR=4326' +
+            '&f=geojson&resultOffset=0'
+    ]);
+    assert.deepEqual(lines, [
+        {'name': 'Mill Creek', 'points': [[-105.28, 40], [-105.279, 40.001]]},
+        {'points': [[-105.27, 40], [-105.269, 40.001]]},
+        {'points': [[-105.26, 40], [-105.259, 40.001]]},
+        {'name': 'Long Lake', 'points': [[-105.24, 40], [-105.239, 40.001]]},
+        {'name': 'Braided', 'points': [[-105.23, 40], [-105.229, 40.001]]},
+        {'name': 'Braided', 'points': [[-105.22, 40], [-105.219, 40.001]]}
+    ]);
+});
+
+
+test('streamLines, pages', async () => {
+    // The service's features are requested until it has no more
+    const offsets = [];
+    const page = (count, exceededTransferLimit) => (url) => {
+        offsets.push(Number(url.match(/&resultOffset=(\d+)$/)[1]));
+        const features = [];
+        for (let ix = 0; ix < count; ix++) {
+            features.push(testLine({'gnis_name': `Creek ${offsets.at(-1) + ix}`, 'ftype': 460}, [[-105, 40], [-105, 40.1]]));
+        }
+        return Promise.resolve({features, exceededTransferLimit});
+    };
+    const pages = [page(3, true), page(3, true), page(2, false)];
+    const lines = await streamLines((url) => pages.shift()(url), [0, 0, 1, 1]);
+    assert.deepEqual([offsets, lines.map(({name}) => name).join(', ')], [
+        [0, 3, 6], 'Creek 0, Creek 1, Creek 2, Creek 3, Creek 4, Creek 5, Creek 6, Creek 7'
+    ]);
+
+    // A page without features is the last
+    offsets.length = 0;
+    const empty = [page(2, true), page(0, true), page(2, true)];
+    assert.equal((await streamLines((url) => empty.shift()(url), [0, 0, 1, 1])).length, 2);
+    assert.deepEqual(offsets, [0, 2]);
+
+    // A response that isn't a feature list
+    await assert.rejects(streamLines(() => Promise.resolve({'error': {'code': 400}}), [0, 0, 1, 1]), {
+        'message': 'The USGS National Map service\'s response is not a feature list ' +
+            '("https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer/6")'
+    });
+});
+
+
+test('roadLines', async () => {
+    assert.equal(roadsUrl, 'https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer');
+
+    // The roads are the box's highways, local roads, four-wheel-drive roads, and trails - a layer at a time
+    const layers = [];
+    const lines = await roadLines((url) => {
+        const [, layer] = url.match(/\/MapServer\/(\d+)\/query\?/);
+        layers.push(layer);
+        assert.ok(url.endsWith(
+            '/query?where=1%3D1&geometry=-105.29,39.99,-105.2,40.01&geometryType=esriGeometryEnvelope&inSR=4326' +
+                '&spatialRel=esriSpatialRelIntersects&outFields=name&outSR=4326&f=geojson&resultOffset=0'
+        ));
+        return Promise.resolve({'features': layer === '31' ? [] : [
+            testLine({'name': `Road ${layer}`}, [[-105.28, 40], [-105.279, 40.001]]),
+            ...(layer === '37' ? [testLine({'name': null}, [[-105.27, 40], [-105.269, 40.001]])] : [])
+        ]});
+    }, [-105.29, 39.99, -105.2, 40.01]);
+    assert.deepEqual(layers, ['29', '30', '31', '32', '35', '37']);
+    assert.deepEqual(lines, [
+        {'name': 'Road 29', 'points': [[-105.28, 40], [-105.279, 40.001]]},
+        {'name': 'Road 30', 'points': [[-105.28, 40], [-105.279, 40.001]]},
+        {'name': 'Road 32', 'points': [[-105.28, 40], [-105.279, 40.001]]},
+        {'name': 'Road 35', 'points': [[-105.28, 40], [-105.279, 40.001]]},
+        {'name': 'Road 37', 'points': [[-105.28, 40], [-105.279, 40.001]]},
+        {'points': [[-105.27, 40], [-105.269, 40.001]]}
+    ]);
+});
+
+
+test('topoMapImageUrl', () => {
+    assert.equal(topoMapUrl, 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/export');
+    assert.equal(
+        topoMapImageUrl([-105.29, 39.99, -105.27, 40.01], 2000, 1500),
+        'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/export?bbox=-105.29,39.99,-105.27,40.01' +
+            '&bboxSR=4326&imageSR=4326&size=2000,1500&format=png&f=image'
+    );
 });
