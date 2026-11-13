@@ -58,7 +58,7 @@ Stage and serve the application with a plan's directory, and screenshot it with 
 ```sh
 make -C viewer app
 mkdir -p build/check && cp -R viewer/build/app/. build/check/ && ln -sfn "$PWD/example" build/check/plan
-python3 -m http.server 8931 --bind 127.0.0.1 --directory build/check &
+node viewer/tools/serve.js build/check 8931 &
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
     --virtual-time-budget=15000 --screenshot=build/report.png --window-size=1100,3000 \
     "http://127.0.0.1:8931/#var.vFile='plan%2Fexample.json'"

@@ -70,7 +70,7 @@ else
 	ln -s "$(abspath $(dir $(FILE)))" build/run/plan
 	(sleep 1 && open "http://127.0.0.1:$(PORT)/#var.vFile='plan%2F$(notdir $(FILE))'") &
 endif
-	python3 -m http.server $(PORT) --bind 127.0.0.1 --directory build/run
+	node tools/serve.js build/run $(PORT)
 
 
 # Check the canvas 3D drawings' operations (the explorer's and the report's) against the SVG drawing
