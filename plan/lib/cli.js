@@ -2,7 +2,9 @@
 
 import {locateCommand, locateUsage} from './locate.js';
 import {plotCommand, plotUsage} from './plot.js';
+import {routeCommands, routeUsage} from './routeCli.js';
 import {siteCommand, siteUsage} from './siteCommand.js';
+import {roadieTypes} from '../../viewer/lib/model.js';
 import {schemaDocMarkdown} from '../../viewer/lib/schemaDoc.js';
 import {siteTypes} from './site.js';
 
@@ -12,14 +14,28 @@ const usage = [
     'usage: plan site <site.json> <plan.json>',
     '       plan plot <plan.json> <plot.png>',
     '       plan locate <plan.json> [--xy] <latitude,longitude | x,y>...',
-    '       plan doc',
+    '       plan route <plan.json> -n NAME [-v X,Y]... [options]',
+    '       plan profile <plan.json> -n NAME [options]',
+    '       plan doc [site | plan]',
     '',
     '  site    Create a road plan model\'s site from a road site model - its topography (USGS lidar terrain),',
     '          georeference, start and end points, features, and topographic map image',
     '  plot    Plot a road plan model - its terrain, features, and options',
     '  locate  Convert latitudes and longitudes to a road plan model\'s coordinates, and back',
-    '  doc     Print the road site model documentation'
+    '  route   Engineer a road option - its alignment, profile, and structures',
+    '  profile Re-design an existing option\'s profile and structures',
+    '  doc     Print the road site model documentation - or the road plan model documentation'
 ];
+
+
+// The "doc" command - the road site model's documentation, or the road plan model's
+function docCommand(args) {
+    const [model = 'site'] = args;
+    if (args.length > 1 || (model !== 'site' && model !== 'plan')) {
+        return null;
+    }
+    return {'code': 0, 'lines': model === 'site' ? schemaDocMarkdown(siteTypes, 'RoadSite') : schemaDocMarkdown(roadieTypes, 'RoadPlan')};
+}
 
 
 // The commands - each is a function of the command's arguments and the command line's input and output functions
@@ -29,7 +45,9 @@ const commands = {
     'site': [siteCommand, siteUsage],
     'plot': [plotCommand, plotUsage],
     'locate': [locateCommand, locateUsage],
-    'doc': [(args) => (args.length === 0 ? {'code': 0, 'lines': schemaDocMarkdown(siteTypes, 'RoadSite')} : null), usage]
+    'route': [routeCommands.route, routeUsage],
+    'profile': [routeCommands.profile, routeUsage],
+    'doc': [docCommand, usage]
 };
 
 

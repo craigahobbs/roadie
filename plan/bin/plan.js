@@ -4,7 +4,9 @@
 // usage: node bin/plan.js site <site.json> <plan.json>
 //        node bin/plan.js plot <plan.json> <plot.png>
 //        node bin/plan.js locate <plan.json> [--xy] <latitude,longitude | x,y>...
-//        node bin/plan.js doc
+//        node bin/plan.js route <plan.json> -n NAME [-v X,Y]... [options]
+//        node bin/plan.js profile <plan.json> -n NAME [options]
+//        node bin/plan.js doc [site | plan]
 
 import {fetchBytes, fetchJson} from '../lib/usgs.js';
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
