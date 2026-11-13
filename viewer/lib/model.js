@@ -348,7 +348,7 @@ export const roadieTypes = parseSchemaMarkdown([
 
 
 // The default cost rates, in nominal US dollars per metric unit
-const defaultRates = {
+export const defaultRates = {
     'clearing': 2,
     'excavation': 20,
     'rockExcavation': 100,
@@ -379,7 +379,7 @@ const metersPerFoot = 0.3048
 
 
 // Get the meters per plan unit
-function unitScale(plan) {
+export function unitScale(plan) {
     return plan.units === 'feet' ? metersPerFoot : 1;
 }
 
@@ -541,7 +541,7 @@ const polygonBands = 32;
 
 // Create a polygon index for repeated point-in-polygon tests - the polygon's edges, as flat [x1, y1, x2, y2, ...]
 // arrays, in the horizontal bands they span
-function polygonIndex(points) {
+export function polygonIndex(points) {
     let minY = points[0].y;
     let maxY = minY;
     for (const point of points) {
@@ -573,7 +573,7 @@ function polygonIndex(points) {
 
 // Determine if a point is inside an indexed polygon (polygonIndex) by the even-odd rule - only the edges in the
 // point's band can cross its horizontal ray
-function pointInPolygon(x, y, index) {
+export function pointInPolygon(x, y, index) {
     const {minY} = index;
     if (y < minY || y >= index.maxY) {
         return false;
@@ -638,7 +638,7 @@ export function outsideBox(box, xMin, xMax, yMin, yMax) {
 
 
 // Compute the positive and negative areas of a linearly-varying depth over a length
-function linearAreas(v1, v2, length) {
+export function linearAreas(v1, v2, length) {
     if (v1 >= 0 && v2 >= 0) {
         return [(v1 + v2) * 0.5 * length, 0];
     } else if (v1 <= 0 && v2 <= 0) {
