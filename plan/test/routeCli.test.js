@@ -152,8 +152,10 @@ test('route, the design arguments', () => {
     assert.deepEqual(option.section, {'width': 6, 'cutSlope': 0.75, 'fillSlope': 2, 'surface': 'asphalt'});
     assert.deepEqual(option.structures[0], {'type': 'existingRoad', 'station': 0, 'endStation': 30, 'name': 'Existing road'});
     assert.ok(option.structures.every(({type}) => type !== 'turnout'));
+    // (The Python planning tools broke grade where this road leaves its existing road - their vertical curves weren't
+    // held to the existing road's ground - so its maximum grade was 7.7%)
     assert.deepEqual(lines, [
-        'Option "Wide": 304 meters long, 83 alignment points, max grade 7.7%, max cut 1.9, max fill 3.0',
+        'Option "Wide": 304 meters long, 83 alignment points, max grade 7.0%, max cut 1.9, max fill 3.0',
         'Structures: existingRoad at 0.0, culvert at 46.7, culvert at 70.4, culvert at 269.8',
         'Wrote plan.json - run "make evaluate FILE=plan.json" for the full analysis and cost'
     ]);

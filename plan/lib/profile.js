@@ -240,19 +240,35 @@ function designProfileDepth(topo, design, x, y, stations, existing, depthLimit) 
             best = result;
         }
     }
-    let profile = Float64Array.from(best[1], (level) => levels[level]);
+    const profile = Float64Array.from(best[1], (level) => levels[level]);
+    for (let ix = 0; ix < count; ix++) {
+        if (isExisting[ix]) {
+            profile[ix] = ground[ix];
+        }
+    }
 
     // Vertical curves - a moving average preserves the grade limits (an odd reflection at the ends keeps the end
-    // elevations and the grades)
+    // elevations and the grades). Each new section of the road is smoothed by itself, from the existing road's station
+    // before it to the existing road's station after it - so it meets the existing road's ground at its junctions.
     const half = pyRound((design.feet ? 50 : 15) / ds);
-    if (half > 0 && count > 2 * half + 1) {
-        const padded = new Float64Array(count + 2 * half);
-        for (let ix = 0; ix < half; ix++) {
-            padded[ix] = 2 * profile[0] - profile[half - ix];
-            padded[half + count + ix] = 2 * profile[last] - profile[last - 1 - ix];
+    for (let first = 0, end = 1; first < count; first = end, end += 1) {
+        if (!isExisting[first]) {
+            while (end < count && !isExisting[end]) {
+                end += 1;
+            }
+            const curveFirst = Math.max(0, first - 1);
+            const curve = profile.subarray(curveFirst, Math.min(count, end + 1));
+            const curveLast = curve.length - 1;
+            if (half > 0 && curveLast > 2 * half) {
+                const padded = new Float64Array(curve.length + 2 * half);
+                for (let ix = 0; ix < half; ix++) {
+                    padded[ix] = 2 * curve[0] - curve[half - ix];
+                    padded[half + curve.length + ix] = 2 * curve[curveLast] - curve[curveLast - 1 - ix];
+                }
+                padded.set(curve, half);
+                profile.set(movingAverage(padded, half), curveFirst);
+            }
         }
-        padded.set(profile, half);
-        profile = movingAverage(padded, half);
     }
     for (let ix = 0; ix < count; ix++) {
         if (isExisting[ix]) {

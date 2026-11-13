@@ -200,16 +200,15 @@ function routeCommand(command, args, io) {
     const {profile, ground, sideSlope} = designed;
     const last = x.length - 1;
 
-    // Structures (the existing roads within the road's length, measured along the alignment points as the viewer does)
+    // Structures (the existing roads within the road's length, measured along the alignment points as the viewer does -
+    // an existing road to the road's end is to its last station, so nothing is placed between them)
     const lengths = new Float64Array(last);
     for (let ix = 0; ix < last; ix++) {
         lengths[ix] = hypot(x[ix + 1] - x[ix], y[ix + 1] - y[ix]);
     }
     const alignmentLength = Math.floor(pairwiseSum(lengths) * 10) / 10;
-    existingRoads = existingRoads.filter(([start]) => start < alignmentLength).map(
-        ([start, end]) => [start, Math.min(end, alignmentLength)]
-    );
-    const structures = designStructures(topo, design, x, y, stations, profile, sideSlope, existingRoads);
+    existingRoads = existingRoads.filter(([start]) => start < alignmentLength);
+    const structures = designStructures(topo, design, x, y, stations, profile, sideSlope, existingRoads, alignmentLength);
 
     // Create the option
     const description = commandArgs.description ?? existingOption?.description ?? null;

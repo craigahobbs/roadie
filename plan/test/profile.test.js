@@ -1,4 +1,4 @@
-import {alignmentFixture, alignments, designArgs, expected, plain, planePlan} from './roadFixtures.js';
+import {alignmentFixture, alignments, designArgs, expected, plain, planePlan, valleyPlan} from './roadFixtures.js';
 import assert from 'node:assert/strict';
 import {designProfile} from '../lib/profile.js';
 import test from 'node:test';
@@ -73,6 +73,25 @@ test('designProfile, an existing road', () => {
     // All of the road is an existing road
     const all = profileFixture('profile-existing-all').designed;
     assert.deepEqual(plain(all.profile), plain(all.ground));
+});
+
+
+test('designProfile, a new section between existing roads', () => {
+    // The road's ends are existing roads - the new section between them has vertical curves of its own, so it meets
+    // the existing roads' ground within the grade limit
+    const alignment = alignmentFixture(valleyPlan(), designArgs(), [[60, 100], [200, 180], [340, 300]], 10, [[0, 60], [250, 400]]);
+    const {topo, design, x, y, stations, existing} = alignment;
+    const {profile, ground} = designProfile(topo, design, x, y, stations, existing);
+    assert.equal(plain(existing).join(''), '111111100000000000000000001111111111');
+    assert.deepEqual(plain(profile.slice(0, 7)), plain(ground.slice(0, 7)));
+    assert.deepEqual(plain(profile.slice(26)), plain(ground.slice(26)));
+    const newGrades = grades(profile.slice(6, 27), 10);
+    assert.equal(newGrades.length, 20);
+    assert.ok(Math.max(...newGrades) <= design.grade + 1e-9);
+    assert.ok(newGrades[0] > 0.1 && newGrades[19] > 0.1);
+
+    // The section's elevations aren't its ground's - it's a designed profile
+    assert.ok(profile.slice(7, 26).some((z, ix) => Math.abs(z - ground[7 + ix]) > 1));
 });
 
 

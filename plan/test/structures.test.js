@@ -69,6 +69,22 @@ test('designStructures, culverts and turnouts', () => {
         {'type': 'existingRoad', 'station': 200, 'endStation': 400, 'name': 'Existing road'}
     ]);
 
+    // The road's length, measured along its points, is less than its last station - the existing road ends at the
+    // road's end, and there's no culvert where it crosses the stream beyond it
+    const level = stations.map(() => 100);
+    const flat = stations.map(() => 0);
+    assert.deepEqual(designStructures(topo, design, x, y, stations, level, flat, [[200, 400]], 300), [
+        {'type': 'culvert', 'station': 102, 'diameter': 3, 'name': 'stream culvert'},
+        {'type': 'existingRoad', 'station': 200, 'endStation': 300, 'name': 'Existing road'}
+    ]);
+
+    // A new road's culvert beyond the road's end is at its end
+    assert.deepEqual(designStructures(topo, design, x, y, stations, level, flat, [], 300), [
+        {'type': 'culvert', 'station': 102, 'diameter': 3, 'name': 'stream culvert'},
+        {'type': 'turnout', 'station': 175, 'endStation': 225, 'side': 'right'},
+        {'type': 'culvert', 'station': 300, 'diameter': 3, 'name': 'stream culvert'}
+    ]);
+
     // Without the existing road - a turnout at the road's middle, on the right of level ground
     assert.deepEqual(levelStructures('none'), [
         {'type': 'culvert', 'station': 102, 'diameter': 3, 'name': 'stream culvert'},

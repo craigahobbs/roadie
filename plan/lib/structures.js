@@ -23,8 +23,10 @@ export function existingMask(stations, existingRoads) {
 // profile sags), bridges (over deep stream crossing fills), and turnouts. None are within the existing roads ([station,
 // end station] ranges), which are added as existing road structures. The alignment is its "x" and "y" coordinate arrays,
 // their evenly-spaced "stations", its "profile" (the grade elevations), and the ground's "sideSlope" at the stations.
-// Returns the array of structure models, in station order.
-export function designStructures(topo, design, x, y, stations, profile, sideSlope, existingRoads) {
+// "roadLength" is the road's length, measured along the alignment's points as the viewer does - it's a little less
+// than the last station on a curved road, and no structure is beyond it. Returns the array of structure models, in
+// station order.
+export function designStructures(topo, design, x, y, stations, profile, sideSlope, existingRoads, roadLength = stations.at(-1)) {
     const count = x.length;
     const ds = stations[1] - stations[0];
     const length = stations[count - 1];
@@ -87,7 +89,7 @@ export function designStructures(topo, design, x, y, stations, profile, sideSlop
                 structures.push({
                     'type': 'bridge',
                     'station': npRound(stations[ixStart], 1),
-                    'endStation': npRound(stations[ixEnd], 1),
+                    'endStation': npRound(Math.min(roadLength, stations[ixEnd]), 1),
                     'name': `${name} bridge`
                 });
             }
@@ -102,7 +104,7 @@ export function designStructures(topo, design, x, y, stations, profile, sideSlop
             culvertStations.push(stationValue);
             structures.push({
                 'type': 'culvert',
-                'station': npRound(stationValue, 1),
+                'station': npRound(Math.min(roadLength, stationValue), 1),
                 'diameter': design.feet ? 3 : 0.9,
                 'name': `${name} culvert`
             });
@@ -131,7 +133,7 @@ export function designStructures(topo, design, x, y, stations, profile, sideSlop
                 structures.push({
                     'type': 'retainingWall',
                     'station': npRound(Math.max(0, stations[ix] - ds), 1),
-                    'endStation': npRound(Math.min(length, stations[ixEnd] + ds), 1),
+                    'endStation': npRound(Math.min(roadLength, stations[ixEnd] + ds), 1),
                     side
                 });
                 ix = ixEnd;
@@ -160,7 +162,12 @@ export function designStructures(topo, design, x, y, stations, profile, sideSlop
     // Existing roads (their stations are the command's arguments, rounded as Python rounds - the structures' stations
     // above are the alignment's, rounded as numpy rounds)
     for (const [start, end] of existingRoads) {
-        structures.push({'type': 'existingRoad', 'station': pyRound(start, 1), 'endStation': pyRound(end, 1), 'name': 'Existing road'});
+        structures.push({
+            'type': 'existingRoad',
+            'station': pyRound(start, 1),
+            'endStation': pyRound(Math.min(roadLength, end), 1),
+            'name': 'Existing road'
+        });
     }
 
     return structures.sort((structure1, structure2) => structure1.station - structure2.station);
