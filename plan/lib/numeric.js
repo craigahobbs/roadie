@@ -190,8 +190,3 @@ export function pyFixed(value, digits) {
     return value.toFixed(digits);
 }
 
-
-// Format a number as Python's "repr" does a float - a whole number has a decimal place
-export function pyRepr(value) {
-    return Number.isInteger(value) ? `${value}.0` : `${value}`;
-}

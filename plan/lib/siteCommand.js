@@ -2,12 +2,13 @@
 // USGS 3D Elevation Program's 1 meter elevation models, its georeference, its start and end points, its features
 // (the USGS National Map's streams, roads, and trails, and the site's exclusion areas), and its topographic map image
 
-import {elevationModels, roadLines, streamLines, topoMapImageUrl} from './usgs.js';
+import {elevationModels, roadLines, streamLines, topoMapImageUrl, trailLines} from './usgs.js';
 import {exclusionFeatures, lineFeatures, snapStreams} from './features.js';
 import {layoutBox, layoutGeoreference, layoutLatLong, readTile, round, siteLayout, siteTerrain} from './terrain.js';
 import {orderPlan, planText} from './planFile.js';
 import {elevation as planElevation, planTopo} from '../../viewer/lib/model.js';
 import {latLongText} from '../../viewer/lib/geo.js';
+import {nearestText} from './roads.js';
 import {validateSite} from './site.js';
 
 
@@ -83,13 +84,16 @@ export async function siteCommand(args, io) {
         return error([`error: ${message}`]);
     }
 
-    // The roads and trails, and the topographic map image, are for reference - the plan is made without them
+    // The roads and trails, and the topographic map image - the plan is made without them. The roads are existing
+    // roads that a road option may follow, and the trails are for reference.
     const warnings = [];
     let roads = [];
+    let trails = [];
     try {
         roads = lineFeatures(layout, 'road', await roadLines(io.getJson, box));
+        trails = lineFeatures(layout, 'trail', await trailLines(io.getJson, box));
     } catch ({message}) {
-        warnings.push(`warning: The site has no roads - ${message}`);
+        warnings.push(`warning: The site has no roads or trails - ${message}`);
     }
     const {nCols, nRows, spacing} = layout;
     const imagePath = `${planBase}.png`;
@@ -140,12 +144,13 @@ export async function siteCommand(args, io) {
     const snapped = snapStreams(layout, streams, (x, y) => planElevation(streamTopo, x, y));
     ({streams} = snapped);
 
-    // The features - the site's streams, roads, and exclusion areas, and the plan's other features
+    // The features - the site's streams, roads, trails, and exclusion areas, and the plan's other features
     const exclusions = exclusionFeatures(layout, site);
     const exclusionNames = new Set(exclusions.map(({name}) => name));
     const features = [
         ...streams,
         ...roads,
+        ...trails,
         ...exclusions,
         ...(shifted.topography?.features ?? []).filter(
             ({type, name}) => type === 'rock' || (type === 'exclusion' && !exclusionNames.has(name))
@@ -192,7 +197,8 @@ export async function siteCommand(args, io) {
         lines.push(`Grid points without an elevation, filled from the points around them: ${terrain.filled}`);
     }
     lines.push(
-        `Features: ${featureCount(streams, 'stream')}, ${featureCount(roads, 'road')}, ${featureCount(exclusions, 'exclusion area')}`
+        `Features: ${featureCount(streams, 'stream')}, ${featureCount(roads, 'road')}, ${featureCount(trails, 'trail')}, ` +
+            `${featureCount(exclusions, 'exclusion area')}`
     );
     if (streams.length > 0) {
         lines.push(`Streams: moved to the lowest ground within ${Math.round(30 / layout.scale)} ${units} across them - ` +
@@ -206,7 +212,7 @@ export async function siteCommand(args, io) {
     for (const [name, point] of [['start', start], ['end', end]]) {
         const ground = planElevation(topo, point.x, point.y);
         lines.push(`${name}: "${point.label}" (${point.x}, ${point.y}) at ${latLongText(layoutLatLong(layout, point.x, point.y))}, ` +
-            `ground ${ground.toFixed(1)}`);
+            `ground ${ground.toFixed(1)}${nearestText(features, units, point.x, point.y)}`);
     }
     lines.push(`Wrote ${planPath}`);
     return {'code': 0, lines};

@@ -1,6 +1,7 @@
 // roadFixtures.js - the road engineering tests' plans, and the Python planning tools' results for them. The road
 // engineering is a port of the Python planning tools': "expected/pythonTools.json" is what they computed for these
-// plans, and the port computes the same.
+// plans, and the port computes the same. (The commands' report lines are the JavaScript tools' - they report the
+// structures' counts, the existing roads, and the option's cost score.)
 
 import {createDesign} from '../lib/design.js';
 import {existingMask} from '../lib/structures.js';
@@ -101,6 +102,20 @@ export function blockedPlan() {
     ];
     plan.start = {'x': 20, 'y': 20};
     plan.end = {'x': 180, 'y': 180};
+    return plan;
+}
+
+
+// Create a plan of a gentle plane with an existing road and an existing trail - the road's lines are on its route
+// search's lattice (it's 23.5 feet)
+export function roadPlan(roadPoints = [[141, 47], [329, 47], [329, 352.5]]) {
+    const plan = planePlan({'rise': 0.05, 'size': 41});
+    plan.topography.features = [
+        {'type': 'road', 'name': 'Mill Rd', 'points': roadPoints.map(([x, y]) => ({x, y}))},
+        {'type': 'trail', 'name': 'Mill Trail', 'points': [{'x': 47, 'y': 47}, {'x': 329, 'y': 352.5}]}
+    ];
+    plan.start = {'x': 47, 'y': 47};
+    plan.end = {'x': 329, 'y': 352.5};
     return plan;
 }
 

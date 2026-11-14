@@ -1,14 +1,16 @@
 // routeCli.js - the "route" and "profile" commands: engineer a road option, or re-design an existing option's profile
-// and structures (a port of the Python planning tools')
+// and structures (a port of the Python planning tools', but for the existing roads the route follows)
 
+import {analyzeOption, planTopo} from '../../viewer/lib/model.js';
 import {designStructures, existingMask} from './structures.js';
-import {hypot, pairwiseSum, pyFixed, pyRepr, pyRound} from './numeric.js';
+import {followRoads, resamplePolyline, routeSearch, smoothCurves} from './route.js';
+import {lineIndex, nearestLine} from './roads.js';
 import {orderPlan, planText} from './planFile.js';
-import {resamplePolyline, routeSearch, smoothCurves} from './route.js';
+import {pyFixed, pyRound} from './numeric.js';
 import {createDesign} from './design.js';
 import {designProfile} from './profile.js';
+import {number as formatNumber} from '../../viewer/lib/format.js';
 import {parseArgs} from 'node:util';
-import {planTopo} from '../../viewer/lib/model.js';
 
 
 // The route and profile commands' usage text lines
@@ -17,7 +19,8 @@ export const routeUsage = [
     '       plan profile <plan.json> -n NAME [options]',
     '',
     '  route      Engineer a road option - a least-cost horizontal alignment search (through the via points), a',
-    '             vertical profile design, and structures - and add it to the road plan model (or replace it)',
+    '             vertical profile design, and structures - and add it to the road plan model (or replace it). The',
+    '             route follows the plan\'s existing roads where that costs less than a new road.',
     '  profile    Re-design an existing option\'s vertical profile and structures (after its alignment is edited)',
     '',
     'options:',
@@ -35,8 +38,10 @@ export const routeUsage = [
     '                                 45 meters long (default is no bridges)',
     '  --existing-road STATION,END    a station range where the road follows an existing road - its grade follows',
     '                                 the ground, with no earthwork or structures (may be repeated; profile keeps',
-    '                                 the option\'s existing roads by default)',
+    '                                 the option\'s existing roads by default, and route finds them)',
     '  -v, --via X,Y                  a via point (route only; may be repeated)',
+    '  --all-new                      an all-new road - the route doesn\'t follow the plan\'s existing roads (route',
+    '                                 only)',
     '  --grade-weight WEIGHT          the excess grade penalty weight (route only; default is 1)',
     '  --slope-weight WEIGHT          the side slope earthwork weight (route only; default is 1)'
 ];
@@ -66,6 +71,7 @@ const commandOptions = {
 };
 const routeOptions = {
     'via': {'type': 'string', 'short': 'v', 'multiple': true},
+    'all-new': {'type': 'boolean', 'default': false},
     'grade-weight': {'type': 'string', 'default': '1'},
     'slope-weight': {'type': 'string', 'default': '1'}
 };
@@ -101,6 +107,7 @@ function parseCommandArgs(command, args) {
         'bridgeFill': number('bridge-fill'),
         'existingRoads': 'existing-road' in values ? numbers('existing-road') : null,
         'via': numbers('via'),
+        'allNew': values['all-new'] ?? false,
         'gradeWeight': number('grade-weight'),
         'slopeWeight': number('slope-weight')
     };
@@ -142,7 +149,10 @@ function routeCommand(command, args, io) {
     const existingOption = ixOption === -1 ? null : options[ixOption];
     const lines = [];
 
-    // The existing roads - the argument ranges, or for profile, the option's existing road structures
+    // The existing roads - the argument ranges, or for profile, the option's existing road structures, or for route,
+    // the plan's existing roads that the route follows
+    const roads = lineIndex(topo.features, 'road', Math.max(topo.spacing, design.minRadius) * 2);
+    const followsRoads = command === 'route' && !commandArgs.allNew && commandArgs.existingRoads === null;
     let existingRoads = [];
     if (commandArgs.existingRoads !== null) {
         ({existingRoads} = commandArgs);
@@ -160,22 +170,30 @@ function routeCommand(command, args, io) {
         const waypoints = [[plan.start.x, plan.start.y], ...commandArgs.via, [plan.end.x, plan.end.y]];
         for (const [softBand, gradeMargin] of routeSearches) {
             const path = [];
+            const existing = [];
             let heading = null;
             let lattice;
             for (let ixWaypoint = 1; ixWaypoint < waypoints.length; ixWaypoint++) {
                 const leg = routeSearch(
                     topo, design, waypoints[ixWaypoint - 1], waypoints[ixWaypoint], commandArgs.gradeWeight, commandArgs.slopeWeight,
-                    heading, softBand, gradeMargin
+                    heading, softBand, gradeMargin, followsRoads ? roads : null
                 );
                 if (leg === null) {
                     return {'code': 1, 'lines': ['error: no route found (blocked by exclusion areas or the topography boundary?)']};
                 }
                 ({heading, lattice} = leg);
                 path.push(...(path.length === 0 ? leg.path : leg.path.slice(1)));
+                existing.push(...(existing.length === 0 ? leg.existing : leg.existing.slice(1)));
             }
+
+            // The route's runs along existing roads are the roads' lines - the rest is smoothed to the minimum radius
             const interval = Math.max(design.stationInterval, Math.min(lattice, topo.spacing) * 0.5);
-            const smooth = smoothCurves(path, interval, design.minRadius);
+            const followed = followRoads(path, existing, roads, lattice, 2 * design.minRadius, design.minRadius);
+            const smooth = smoothCurves(followed.points, interval, design.minRadius, followed.ranges);
             alignment = resamplePolyline(smooth.x, smooth.y, interval);
+            if (followsRoads) {
+                existingRoads = smooth.ranges;
+            }
             designed = designProfile(
                 topo, design, alignment.x, alignment.y, alignment.stations, existingMask(alignment.stations, existingRoads)
             );
@@ -200,13 +218,15 @@ function routeCommand(command, args, io) {
     const {profile, ground, sideSlope} = designed;
     const last = x.length - 1;
 
-    // Structures (the existing roads within the road's length, measured along the alignment points as the viewer does -
-    // an existing road to the road's end is to its last station, so nothing is placed between them)
-    const lengths = new Float64Array(last);
+    // Structures (the existing roads within the road's length, measured along the option's alignment points as the
+    // viewer does - an existing road to the road's end is to its last station, so nothing is placed between them)
+    const pointsX = Array.from(x, (value) => pyRound(value, 2));
+    const pointsY = Array.from(y, (value) => pyRound(value, 2));
+    let length = 0;
     for (let ix = 0; ix < last; ix++) {
-        lengths[ix] = hypot(x[ix + 1] - x[ix], y[ix + 1] - y[ix]);
+        length += Math.sqrt((pointsX[ix + 1] - pointsX[ix]) ** 2 + (pointsY[ix + 1] - pointsY[ix]) ** 2);
     }
-    const alignmentLength = Math.floor(pairwiseSum(lengths) * 10) / 10;
+    const alignmentLength = Math.floor(length * 10) / 10;
     existingRoads = existingRoads.filter(([start]) => start < alignmentLength);
     const structures = designStructures(topo, design, x, y, stations, profile, sideSlope, existingRoads, alignmentLength);
 
@@ -216,7 +236,7 @@ function routeCommand(command, args, io) {
         'name': commandArgs.name,
         ...(description !== null && description.length > 0 ? {description} : {}),
         'section': {'width': design.width, 'cutSlope': design.cutSlope, 'fillSlope': design.fillSlope, 'surface': design.surface},
-        'alignment': Array.from(x, (px, ix) => ({'x': pyRound(px, 2), 'y': pyRound(y[ix], 2), 'z': pyRound(profile[ix], 2)})),
+        'alignment': pointsX.map((pointX, ix) => ({'x': pointX, 'y': pointsY[ix], 'z': pyRound(profile[ix], 2)})),
         structures
     };
     if (existingOption !== null) {
@@ -227,7 +247,8 @@ function routeCommand(command, args, io) {
     plan.options = options;
     io.writeFile(commandArgs.plan, planText(orderPlan(plan)));
 
-    // Report (the new road's grades)
+    // Report (the new road's grades) - the existing roads with the roads' names, the structures' counts, and the
+    // option's cost score and design warnings
     const mask = existingMask(stations, existingRoads);
     let maxGrade = -Infinity;
     let maxDepth = -Infinity;
@@ -244,7 +265,31 @@ function routeCommand(command, args, io) {
         `Option "${commandArgs.name}": ${pyFixed(stations[last], 0)} ${units} long, ${x.length} alignment points, ` +
         `max grade ${pyFixed(maxGrade, 1)}%, max cut ${pyFixed(Math.max(0, maxDepth), 1)}, max fill ${pyFixed(Math.max(0, -minDepth), 1)}`
     );
-    lines.push(`Structures: ${structures.map((structure) => `${structure.type} at ${pyRepr(structure.station)}`).join(', ') || 'none'}`);
+    for (const structure of structures.filter(({type}) => type === 'existingRoad')) {
+        const names = [];
+        for (let ix = 0; ix <= last; ix++) {
+            if (stations[ix] >= structure.station && stations[ix] <= structure.endStation) {
+                const name = nearestLine(roads, x[ix], y[ix], design.minRadius)?.name ?? null;
+                if (name !== null && !names.includes(name)) {
+                    names.push(name);
+                }
+            }
+        }
+        lines.push(
+            `Existing road: stations ${pyFixed(structure.station, 1)} to ${pyFixed(structure.endStation, 1)}` +
+            `${names.length > 0 ? ` (${names.join(', ')})` : ''}`
+        );
+    }
+    const counts = [];
+    for (const [type, name] of Object.entries(structureNames)) {
+        const count = structures.filter((structure) => structure.type === type).length;
+        if (count > 0) {
+            counts.push(`${count} ${name}${count === 1 ? '' : 's'}`);
+        }
+    }
+    lines.push(`Structures: ${counts.join(', ') || 'none'}`);
+    const analysis = analyzeOption(plan, plan.options.indexOf(option), topo);
+    lines.push(`Cost score: ${formatNumber(analysis.score, 1)}, design warnings: ${analysis.warnings.length}`);
     for (const [label, ixEnd] of [['start', 0], ['end', last]]) {
         const tie = profile[ixEnd] - ground[ixEnd];
         if (Math.abs(tie) > design.tieTolerance) {
@@ -254,6 +299,12 @@ function routeCommand(command, args, io) {
             );
         }
     }
-    lines.push(`Wrote ${commandArgs.plan} - run "make evaluate FILE=${commandArgs.plan}" for the full analysis and cost`);
+    lines.push(`Wrote ${commandArgs.plan} - run "plan evaluate ${commandArgs.plan}" for the full analysis and cost`);
     return {'code': 0, lines};
 }
+
+
+// The structure types' names, in the report's order
+const structureNames = {
+    'existingRoad': 'existing road', 'bridge': 'bridge', 'culvert': 'culvert', 'retainingWall': 'retaining wall', 'turnout': 'turnout'
+};

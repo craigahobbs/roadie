@@ -84,12 +84,15 @@ endif
 # The agent session's display name argument (the Grok CLI doesn't name sessions)
 AGENT_NAME = $(if $(GROK),,--name "$(1)")
 
+# The planning tools' command - its full path, so the agent session can run it from any directory
+PLAN_TOOL = node $(CURDIR)/bin/plan.js
+
 # The commands the agent session may run without asking - the planning tools, its own scripts, and the evaluator
-AGENT_TOOLS = Bash(node bin/plan.js *) Bash(node $(1)/scripts/*) Bash(make evaluate *)
+AGENT_TOOLS = Bash($(PLAN_TOOL) *) Bash(node bin/plan.js *) Bash(node $(1)/scripts/*) Bash(make evaluate *)
 
 # The agent session's tools - the planning tools' command line, and the modules its scripts may import
-AGENT_PROMPT = The planning tools are run with \"node bin/plan.js\" - their modules are in \"$(CURDIR)/lib/\", and the \
-viewer's are in \"$(abspath $(VIEWER))/lib/\".
+AGENT_PROMPT = The planning tools' command (\"plan.js\" in PLAN.md) is \"$(PLAN_TOOL)\" - run it as it is, from any \
+directory. Their modules are in \"$(CURDIR)/lib/\", and the viewer's are in \"$(abspath $(VIEWER))/lib/\".
 
 .PHONY: plan
 plan: build/npm.build

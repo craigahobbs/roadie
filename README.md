@@ -312,16 +312,19 @@ model. It uses these tools:
     National Map's), and its exclusion areas. A site the USGS has no 1 meter elevation models of
     can't be planned.
   - `plot` plots the plan - its shaded terrain, contours, features, and options - for the session to
-    study (all of it, or a part of it for a closer look), and `locate` converts latitudes and
-    longitudes to the plan's coordinates.
+    study (all of it, or a part of it for a closer look), `locate` converts latitudes and
+    longitudes to the plan's coordinates, and `feature` adds and removes the plan's features.
   - `route` and `profile` engineer a road option. `route` finds the least-cost horizontal alignment
     with a lattice search (radius-constrained turns, grade, side slope, stream crossing, rock, and
     exclusion costs), designs the vertical profile by dynamic programming (minimum earthwork within
     the grade limits, with flatter switchbacks), and places culverts, retaining walls, bridges, and
-    turnouts.
-- `make evaluate FILE=<plan.json> [DETAIL=1]` - the viewer's own analysis and cost score from the
-  command line (with a station-by-station table), so the planner optimizes the same cost the viewer
-  shows
+    turnouts. The route follows the site's existing roads where upgrading them costs less than a new
+    road, and joins and leaves them where that's cheapest - so the least-cost option is the tools',
+    not the session's guess.
+  - `evaluate` is the viewer's own analysis and cost score (`--detail` adds a station-by-station
+    table), so the planner optimizes the same cost the viewer shows. `keep` keeps the best options,
+    in cost score order, and `describe` sets the plan's and its options' descriptions.
+- `make evaluate FILE=<plan.json> [DETAIL=1]` - the same analysis and cost score, from `make`
 
 The session writes `driveway.json` (and the site's topographic map image, `driveway.png`), with
 intermediate files in `driveway.work/`. Use `OUTPUT` to write the model elsewhere - for example, to
@@ -348,6 +351,10 @@ it, Ollama picks the model (prompting if needed):
 ```
 make plan FILE=driveway.site.json OLLAMA=1 MODEL=qwen3.8:27b-mlx
 ```
+
+The session runs in Claude Code's "accept edits" mode, with the planning tools allowed. Leave it in that
+mode with a local model: in auto mode, Claude Code asks the session's model to classify each command
+that isn't allowed, which is slow on a local model and can time out.
 
 Use `GROK=1` to run the session with the [Grok CLI](https://docs.x.ai/build/overview) (`grok`) instead of Claude Code.
 `MODEL` then names the Grok model; without it, Grok uses its default model:
@@ -377,7 +384,7 @@ the options.
 ## The road plan model
 
 A road plan model is a JSON file containing the site topography (an elevation grid with streams,
-roads, rock outcrops, and exclusion areas, and its elevation data's sources), the plan's georeference
+roads, trails, rock outcrops, and exclusion areas, and its elevation data's sources), the plan's georeference
 (its place on the Earth), the start and end points, design criteria, cost rate overrides, and one or
 more road plan options. Each option has a road cross section, a centerline alignment (x, y,
 and grade elevation), and structures (retaining walls, bridges, culverts, turnouts, and the existing roads

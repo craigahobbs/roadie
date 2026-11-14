@@ -33,6 +33,9 @@ function pythonDesign(design) {
         'costWall': design.cost_wall,
         'costLength': design.cost_length,
         'costCulvert': design.cost_culvert,
+
+        // An existing road's upgrade - the Python tools' route search didn't follow existing roads
+        'costExisting': design.width * (design.feet ? 13 * 0.3048 * 0.3048 : 13),
         'shrink': design.shrink,
         'turnoutSpacing': design.turnout_spacing,
         'bridgeFill': design.bridge_fill,

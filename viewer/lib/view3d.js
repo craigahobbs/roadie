@@ -789,8 +789,8 @@ export function view3DParts(plan, topo, rows, ixOption, analysis, view, canvas =
     for (const feature of topo.features) {
         const {type} = feature;
         let {points} = feature;
-        // A stream or a road is a line - a rock or an exclusion area is a dashed outline
-        const line = type === 'stream' || type === 'road';
+        // A stream, a road, or a trail is a line - a rock or an exclusion area is a dashed outline
+        const line = type !== 'rock' && type !== 'exclusion';
         if (!line) {
             points = [...points, points[0]];
         }
@@ -1014,8 +1014,10 @@ function compass(view, cx, cy) {
 
 
 // The topographic features' line colors and widths, by feature type
-const featureStrokes = {'stream': '#2a6fdb', 'road': roadFeatureColor, 'rock': '#555555', 'exclusion': 'rgba(208,49,45,0.55)'};
-const featureWidths = {'stream': 2.5, 'road': 1.5, 'rock': 1, 'exclusion': 1};
+const featureStrokes = {
+    'stream': '#2a6fdb', 'road': roadFeatureColor, 'trail': roadFeatureColor, 'rock': '#555555', 'exclusion': 'rgba(208,49,45,0.55)'
+};
+const featureWidths = {'stream': 2.5, 'road': 1.5, 'trail': 1, 'rock': 1, 'exclusion': 1};
 
 
 // The report 3D views' vertical exaggeration

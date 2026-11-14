@@ -9,7 +9,7 @@ const simplifyDistance = 0.5;
 const joinDistance = 0.5;
 
 
-// Create a site's line features - "type" is the features' type ("stream" or "road") and "lines" are the line objects
+// Create a site's line features - "type" is the features' type ("stream", "road", or "trail") and "lines" are the line objects
 // (usgs.js - an optional "name" and "points", [longitude, latitude] arrays). The lines are clipped to the layout's
 // grid and simplified, and the lines of a name that meet end to end are joined - a stream's or a road's reaches
 // are one feature.

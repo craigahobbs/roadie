@@ -3,6 +3,7 @@
 import {elevation, planTopo} from '../../viewer/lib/model.js';
 import {latLongText, planLatLong, project, transverseMercator} from '../../viewer/lib/geo.js';
 import {metersPerFoot} from './terrain.js';
+import {nearestText} from './roads.js';
 import {readPlan} from './planFile.js';
 
 
@@ -11,7 +12,7 @@ export const locateUsage = [
     'usage: plan locate <plan.json> [--xy] <latitude,longitude | x,y>...',
     '',
     '  Convert latitudes and longitudes to a road plan model\'s coordinates - or, with --xy, the plan\'s coordinates to',
-    '  latitudes and longitudes - with the ground elevation there'
+    '  latitudes and longitudes - with the ground elevation there, and the nearest road and stream'
 ];
 
 
@@ -57,7 +58,8 @@ export function locateCommand(args, io) {
         }
         const ground = elevation(topo, x, y);
         lines.push(`latitude and longitude ${latLongText(latLong)} - x ${x}, y ${y} - ` +
-            `${ground !== null ? `ground elevation ${ground.toFixed(1)}` : 'outside the topography'}`);
+            `${ground !== null ? `ground elevation ${ground.toFixed(1)}` : 'outside the topography'}` +
+            `${nearestText(topo.features, plan.units, x, y)}`);
     }
     return {'code': 0, lines};
 }

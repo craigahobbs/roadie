@@ -103,12 +103,13 @@ A topographic feature
 
 A topographic feature type
 
-| Value     | Description                                                                            |
-|-----------|----------------------------------------------------------------------------------------|
-| stream    | A stream, drainage, or water course polyline - road crossings need a culvert or bridge |
-| rock      | A rock outcrop polygon - excavation within it is rock excavation                       |
-| exclusion | An area polygon the road must avoid (building, wetland, property line, etc.)           |
-| road      | An existing road or trail polyline - it's drawn, for reference                         |
+| Value     | Description                                                                                                                  |
+|-----------|------------------------------------------------------------------------------------------------------------------------------|
+| stream    | A stream, drainage, or water course polyline - road crossings need a culvert or bridge                                       |
+| rock      | A rock outcrop polygon - excavation within it is rock excavation                                                             |
+| exclusion | An area polygon the road must avoid (building, wetland, property line, etc.)                                                 |
+| road      | An existing road polyline - it's drawn, and the planning tools' route search may follow it (see the existing road structure) |
+| trail     | An existing trail polyline - it's drawn, for reference                                                                       |
 
 ### struct Georeference
 

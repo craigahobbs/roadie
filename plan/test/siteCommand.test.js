@@ -36,7 +36,7 @@ test('site', async () => {
 Grid: 8 x 7 at 50 meters spacing (350 x 300 meters)
 Elevations: 1676.7 to 1726.7 meters, contours every 2 meters
 Elevation model: CO_New_2020 (2022-02-10)
-Features: 0 streams, 0 roads, 0 exclusion areas
+Features: 0 streams, 0 roads, 0 trails, 0 exclusion areas
 Topographic map image: plans/road.png
 start: "Start" (20, 20) at 40.00000, -105.28000, ground 1679.7
 end: "End" (318.87, 242.07) at 40.00200, -105.27650, ground 1720.7
@@ -161,7 +161,7 @@ Grid: 24 x 18 at 50 feet spacing (1150 x 850 feet)
 Elevations: 5501.7 to 5659.2 feet, contours every 5 feet
 Elevation model: CO_New_2020
 Grid points without an elevation, filled from the points around them: 1
-Features: 0 streams, 0 roads, 0 exclusion areas
+Features: 0 streams, 0 roads, 0 trails, 0 exclusion areas
 Topographic map image: road.png
 start: "Gate" (60, 60) at 40.00000, -105.28000, ground 5510.7
 end: "House" (1040.56, 788.57) at 40.00200, -105.27650, ground 5645.2
@@ -229,12 +229,20 @@ test('site, the features', async () => {
             testLine({'gnis_name': 'Mill Creek', 'ftype': 460}, [lonLat(100, 200), lonLat(200, 100), lonLat(200, -50)]),
             testLine({'gnis_name': 'Pipe', 'ftype': 428}, [lonLat(0, 0), lonLat(100, 100)])
         ],
-        'roads': [testLine({'name': 'Ridge Rd'}, [lonLat(0, 250), lonLat(350, 250)])]
+        'roads': [testLine({'name': 'Ridge Rd'}, [lonLat(0, 250), lonLat(350, 250)])],
+        'trails': [testLine({'name': 'Ridge Trail'}, [lonLat(50, 0), lonLat(50, 250)])]
     })});
     assert.equal(io.code, 0);
-    assert.deepEqual(io.output.join('').split('\n').slice(3, 5), [
-        'Features: 1 stream, 1 road, 1 exclusion area',
+    const output = io.output.join('').split('\n');
+    assert.deepEqual(output.slice(3, 5), [
+        'Features: 1 stream, 1 road, 1 trail, 1 exclusion area',
         'Streams: moved to the lowest ground within 30 meters across them - a median of 0.0 meters'
+    ]);
+
+    // The start and end points' nearest road and stream
+    assert.deepEqual(output.slice(6, 8).map((line) => line.slice(line.indexOf(', nearest'))), [
+        ', nearest road "Ridge Rd" 230 meters away, nearest stream "Mill Creek" 180 meters away',
+        ', nearest road "Ridge Rd" 8 meters away, nearest stream "Mill Creek" 185 meters away'
     ]);
     assert.deepEqual(JSON.parse(io.files['plans/road.json']).topography.features, [
         {
@@ -243,6 +251,7 @@ test('site, the features', async () => {
             'points': [{'x': 0, 'y': 200}, {'x': 100, 'y': 200}, {'x': 200, 'y': 100}, {'x': 200, 'y': 0}]
         },
         {'type': 'road', 'name': 'Ridge Rd', 'points': [{'x': 0, 'y': 250}, {'x': 350, 'y': 250}]},
+        {'type': 'trail', 'name': 'Ridge Trail', 'points': [{'x': 50, 'y': 0}, {'x': 50, 'y': 250}]},
         {'type': 'exclusion', 'name': 'Exclusion 1', 'points': [{'x': 100, 'y': 50}, {'x': 150, 'y': 50}, {'x': 150, 'y': 100}]}
     ]);
 });
@@ -254,8 +263,8 @@ test('site, a site without roads or a topographic map image', async () => {
     const io = await runSite(coarseSite(), {'pages': testPages({'items': [item], 'roads': failed}), 'mapImage': null});
     assert.equal(io.code, 0);
     assert.deepEqual(io.output.join('').split('\n').slice(3, 6), [
-        'Features: 0 streams, 0 roads, 0 exclusion areas',
-        'warning: The site has no roads - Could not fetch "https://example.com/roads" (status 503)',
+        'Features: 0 streams, 0 roads, 0 trails, 0 exclusion areas',
+        'warning: The site has no roads or trails - Could not fetch "https://example.com/roads" (status 503)',
         'warning: The site has no topographic map image - Could not fetch "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/' +
             'MapServer/export?bbox=-105.280234,39.99982,-105.276135,40.002522&bboxSR=4326&imageSR=4326&size=2000,1714&format=png' +
             '&f=image" (status 500)'
@@ -283,6 +292,7 @@ test('site, an existing plan', async () => {
     plan.topography.features = [
         {'type': 'stream', 'name': 'Old Creek', 'points': [{'x': 100, 'y': 0}, {'x': 120.5, 'y': 300}]},
         {'type': 'road', 'name': 'Old Rd', 'points': [{'x': 0, 'y': 100}, {'x': 300, 'y': 100}]},
+        {'type': 'trail', 'name': 'Old Trail', 'points': [{'x': 0, 'y': 150}, {'x': 300, 'y': 150}]},
         {'type': 'rock', 'name': 'Outcrop', 'points': [{'x': 100, 'y': 100}, {'x': 120.5, 'y': 100}, {'x': 120, 'y': 130}]},
         {'type': 'exclusion', 'name': 'Barn', 'points': [{'x': 10, 'y': 10}, {'x': 20, 'y': 10}, {'x': 20, 'y': 20}]},
         {'type': 'exclusion', 'name': 'Pond', 'points': [{'x': 200, 'y': 200}, {'x': 220, 'y': 200}, {'x': 220, 'y': 220}]},
@@ -321,7 +331,7 @@ test('site, an existing plan', async () => {
     assert.deepEqual(Object.keys(wider.topography), ['spacing', 'elevations', 'contourInterval', 'sources', 'features']);
     assert.deepEqual([wider.topography.elevations.length, wider.topography.elevations[0].length], [8, 9]);
 
-    // The streams, roads, and the site's exclusion areas are the site's - the plan's rock outcrops and its other
+    // The streams, roads, trails, and the site's exclusion areas are the site's - the plan's rock outcrops and its other
     // exclusion areas are kept, in the new grid's coordinates
     assert.deepEqual(wider.topography.features, [
         {'type': 'stream', 'name': 'New Creek', 'points': [{'x': 150, 'y': 100}, {'x': 150, 'y': 200}]},
@@ -430,8 +440,14 @@ usage: plan site <site.json> <plan.json>
   1 meter elevation models, its georeference, its start and end points, its streams, roads, and exclusion areas,
   and its topographic map image ("<plan>.png"). An existing plan's options are kept.
 `;
-    for (const args of [[], ['site.json'], ['site.json', 'road.json', 'extra'], ['-h', 'road.json'], ['site.json', '--plan']]) {
+    for (const args of [[], ['site.json'], ['site.json', 'road.json', 'extra'], ['-x', 'road.json'], ['site.json', '--plan']]) {
         const io = testIo();
         assert.deepEqual([await cliMain(['site', ...args], io), io.output.join('')], [1, usage]);
+    }
+
+    // The usage, when it's asked for
+    for (const args of [['-h'], ['site.json', 'road.json', '--help']]) {
+        const io = testIo();
+        assert.deepEqual([await cliMain(['site', ...args], io), io.output.join(''), io.urls], [0, usage, []]);
     }
 });

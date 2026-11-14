@@ -176,7 +176,7 @@ test('planPlot, a fine grid', () => {
 
 
 test('planPlot, a site without options', () => {
-    // A site's plan has no options yet - its features are a stream without a name and a road
+    // A site's plan has no options yet - its features are a stream without a name, a road, and a trail
     const planValue = fixturePlan();
     planValue.topography.features = [
         {'type': 'stream', 'points': [{'x': 0, 'y': 100}, {'x': 100, 'y': 150}, {'x': 200, 'y': 150}]},
@@ -184,7 +184,8 @@ test('planPlot, a site without options', () => {
             'type': 'road',
             'name': 'Mill Rd',
             'points': [{'x': 0, 'y': 200}, {'x': 100, 'y': 250}, {'x': 200, 'y': 250}, {'x': 300, 'y': 300}]
-        }
+        },
+        {'type': 'trail', 'name': 'Mill Trail', 'points': [{'x': 0, 'y': 50}, {'x': 200, 'y': 50}]}
     ];
     delete planValue.start.label;
     planValue.end.label = 'House';
@@ -192,14 +193,16 @@ test('planPlot, a site without options', () => {
     plan.options = [];
     const {svg} = planPlot(plan, planTopo(plan), 880);
     const elements = svg.slice(svg.indexOf('>') + 1, -'</svg>'.length).replace(/></g, '>\n<').split('\n');
-    assert.deepEqual(elements.slice(12, 15), [
+    assert.deepEqual(elements.slice(12, 17), [
         `<polyline points="64,434 264,334 464,334" fill="none" stroke="#2a6fdb" stroke-width="2" ${lineAttr}/>`,
         `<polyline points="64,234 264,134 464,134 664,34" fill="none" stroke="#6e675f" stroke-width="1.2" ${lineAttr}/>`,
-        `<text x="464" y="128" font-size="9" ${textAttr} fill="#6e675f" ${textStroke}>Mill Rd</text>`
+        `<text x="464" y="128" font-size="9" ${textAttr} fill="#6e675f" ${textStroke}>Mill Rd</text>`,
+        `<polyline points="64,534 464,534" fill="none" stroke="#6e675f" stroke-width="1.2" ${lineAttr} stroke-dasharray="2 3"/>`,
+        `<text x="464" y="528" font-size="9" ${textAttr} fill="#6e675f" ${textStroke}>Mill Trail</text>`
     ]);
-    assert.deepEqual(texts(elements.slice(15, 19)), ['Start', 'House']);
+    assert.deepEqual(texts(elements.slice(17, 21)), ['Start', 'House']);
     assert.ok(elements.at(-1).endsWith('>Fixture Plan - contours every 5 feet, coordinates in feet</text>'));
-    assert.equal(elements.length, 12 + 3 + 4 + 1 + 18 + 14 + 1);
+    assert.equal(elements.length, 12 + 5 + 4 + 1 + 18 + 14 + 1);
 });
 
 

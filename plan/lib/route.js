@@ -1,11 +1,13 @@
-// route.js - the road's horizontal alignment: the least-cost route search, curve smoothing, and polyline utilities
-// (a port of the Python planning tools')
+// route.js - the road's horizontal alignment: the least-cost route search (which follows the plan's existing roads
+// where that's cheaper than a new road), curve smoothing, and polyline utilities (a port of the Python planning
+// tools', but for the existing roads)
 
 import {
     crossSection, featurePolygons, featureStreams, groundElevation, groundGradient, pointInPolygons, sectionCut, sectionFill,
     sectionSlopeWidth, sectionWall, segmentIntersection
 } from './design.js';
 import {hypot, interp, linspace, pyRound} from './numeric.js';
+import {nearestLine, segmentNearest} from './roads.js';
 
 
 // The route search's 16 move directions ([dx, dy] lattice steps), in angle order
@@ -23,10 +25,18 @@ const headingCount = moves.length + 1;
 // heading states (so its turns have a radius). A move's cost is its length's road and its earthwork on the ground's
 // side slope, weighted by "slopeWeight", and its climb beyond the design grade, weighted by "gradeWeight" - the climb
 // must be absorbed by earthwork (soft, up to "softBand" over the design grade, less "gradeMargin") or it makes the end
-// unreachable (hard). "startHeading" is the heading at the start (the previous leg's final heading), or null. Returns
-// the route's "path" (an array of [x, y] points), the "lattice" spacing, and the final "heading" - or null if there's
-// no route.
-export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, startHeading = null, softBand = 0.03, gradeMargin = 0) {
+// unreachable (hard). "startHeading" is the heading at the start (the previous leg's final heading), or null.
+//
+// "roads" is the index of the plan's existing roads (roads.js), or null for an all-new road. A move along an existing
+// road costs its length's upgrade - there's no earthwork, grade limit, or culvert, and the road turns as it does - so
+// the route follows the existing roads where that's cheaper than a new road, and joins and leaves them where it's
+// cheapest.
+//
+// Returns the route's "path" (an array of [x, y] points), its points' "existing" flags (the move to the point is along
+// an existing road), the "lattice" spacing, and the final "heading" - or null if there's no route.
+export function routeSearch(
+    topo, design, start, end, gradeWeight, slopeWeight, startHeading = null, softBand = 0.03, gradeMargin = 0, roads = null
+) {
     // The lattice is as fine as the minimum radius' turns allow (a turn is 22.5 degrees a step) - a finer lattice finds
     // a cheaper road, on gentler ground
     const lattice = Math.max(topo.spacing * 0.75, design.minRadius * 0.47);
@@ -48,6 +58,26 @@ export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, 
         }
     }
 
+    // The nodes on the existing roads - those within the tolerance of a road's line. A move is along an existing road
+    // if it's between two of them and it's on the road in between, too (so it isn't a move from one road to another, or
+    // across a switchback).
+    const roadTolerance = lattice * roadToleranceLattice;
+    const roadNodes = new Uint8Array(nodeCount);
+    for (const segment of roads?.segments ?? []) {
+        const rowEnd = Math.min(nY - 1, Math.floor((Math.max(segment.y1, segment.y2) + roadTolerance) / lattice));
+        const colEnd = Math.min(nX - 1, Math.floor((Math.max(segment.x1, segment.x2) + roadTolerance) / lattice));
+        for (let row = Math.max(0, Math.ceil((Math.min(segment.y1, segment.y2) - roadTolerance) / lattice)); row <= rowEnd; row++) {
+            for (let col = Math.max(0, Math.ceil((Math.min(segment.x1, segment.x2) - roadTolerance) / lattice)); col <= colEnd; col++) {
+                if (segmentNearest(segment, col * lattice, row * lattice)[0] <= roadTolerance) {
+                    roadNodes[row * nX + col] = 1;
+                }
+            }
+        }
+    }
+    const isRoadMove = (x1, y1, x2, y2) => [0.25, 0.5, 0.75].every(
+        (fraction) => nearestLine(roads, x1 + fraction * (x2 - x1), y1 + fraction * (y2 - y1), roadTolerance) !== null
+    );
+
     // A move is at most two lattice steps, so only the nodes near a stream segment can cross it
     const margin = 3 * lattice;
     const latticeFirst = (v1, v2) => Math.max(0, Math.floor((Math.min(v1, v2) - margin) / lattice));
@@ -56,6 +86,7 @@ export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, 
     // Precompute each move's cost from every node - a turning move is limited to the switchback grade
     const moveCosts = [];
     const moveTurnCosts = [];
+    const moveRoads = [];
     const section = new Float64Array(6);
     for (const [dx, dy] of moves) {
         const length = Math.sqrt(dx * dx + dy * dy) * lattice;
@@ -63,6 +94,7 @@ export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, 
         const uy = dy * lattice / length;
         const costs = new Float64Array(nodeCount).fill(Infinity);
         const turnCosts = new Float64Array(nodeCount).fill(Infinity);
+        const roadMoves = new Uint8Array(nodeCount);
         const excessCost = (groundGrade, limitGrade) => {
             const excess = Math.max(0, groundGrade - (limitGrade - gradeMargin)) * length;
             const soft = Math.min(excess, softBand * length);
@@ -81,6 +113,14 @@ export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, 
                 const inside = x2 >= 0 && y2 >= 0 && x2 <= topo.width && y2 <= topo.height;
                 const inLattice = row2 >= 0 && row2 < nY && col2 >= 0 && col2 < nX;
                 if (!inside || !inLattice || blocked[node] || blocked[row2 * nX + col2]) {
+                    continue;
+                }
+
+                // A move along an existing road is the road's upgrade
+                if (roadNodes[node] && roadNodes[row2 * nX + col2] && isRoadMove(x1, y1, x2, y2)) {
+                    roadMoves[node] = 1;
+                    costs[node] = length * design.costExisting;
+                    turnCosts[node] = costs[node];
                     continue;
                 }
 
@@ -103,7 +143,7 @@ export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, 
             }
         }
 
-        // Stream crossings need a culvert (a turning move's cost doesn't include it)
+        // Stream crossings need a culvert (a turning move's cost doesn't include it, and an existing road has its own)
         for (const {points} of streams) {
             for (let ixPoint = 1; ixPoint < points.length; ixPoint++) {
                 const point1 = points[ixPoint - 1];
@@ -116,7 +156,8 @@ export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, 
                         const y1 = row * lattice;
                         const x2 = x1 + dx * lattice;
                         const y2 = y1 + dy * lattice;
-                        if (segmentIntersection(x1, y1, x2, y2, point1.x, point1.y, point2.x, point2.y) !== null) {
+                        if (!roadMoves[row * nX + col] &&
+                            segmentIntersection(x1, y1, x2, y2, point1.x, point1.y, point2.x, point2.y) !== null) {
                             costs[row * nX + col] += design.costCulvert;
                         }
                     }
@@ -125,6 +166,7 @@ export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, 
         }
         moveCosts.push(costs);
         moveTurnCosts.push(turnCosts);
+        moveRoads.push(roadMoves);
     }
 
     // The nearest nodes to the start and end points
@@ -155,12 +197,21 @@ export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, 
             break;
         }
 
-        // Straight ahead and one direction either side - or from the start, any direction
+        // Straight ahead and one direction either side - or from the start, any direction. On an existing road (the
+        // move to the node was along it), the next move along it is in any direction - the road turns as it does.
         const noHeading = heading === moves.length;
-        const headings = noHeading ? moves.keys() : [(heading + moves.length - 1) % moves.length, heading, (heading + 1) % moves.length];
+        const onRoad = !noHeading && moveRoads[heading][node - moves[heading][1] * nX - moves[heading][0]] === 1;
+        const headings = noHeading || onRoad ? moves.keys() :
+            [(heading + moves.length - 1) % moves.length, heading, (heading + 1) % moves.length];
         for (const nextHeading of headings) {
-            const straight = noHeading || heading === nextHeading;
-            const moveCost = straight ? moveCosts[nextHeading][node] : moveTurnCosts[nextHeading][node] + turnPenalty;
+            const turn = noHeading ? 0 : Math.min(
+                (nextHeading - heading + moves.length) % moves.length, (heading - nextHeading + moves.length) % moves.length
+            );
+            const roadMove = moveRoads[nextHeading][node] === 1;
+            if (turn > 1 && !roadMove) {
+                continue;
+            }
+            const moveCost = turn === 0 ? moveCosts[nextHeading][node] : moveTurnCosts[nextHeading][node] + (roadMove ? 0 : turnPenalty);
             if (moveCost === Infinity) {
                 continue;
             }
@@ -180,14 +231,60 @@ export function routeSearch(topo, design, start, end, gradeWeight, slopeWeight, 
 
     // Trace the path - it starts and ends at the start and end points
     const path = [];
+    const existing = [];
     for (let state = finalState; state !== -1; state = parent[state]) {
         const node = Math.floor(state / headingCount);
         path.push([(node % nX) * lattice, Math.floor(node / nX) * lattice]);
+        existing.push(parent[state] !== -1 && moveRoads[state % headingCount][Math.floor(parent[state] / headingCount)] === 1);
     }
     path.reverse();
+    existing.reverse();
     path[0] = [start[0], start[1]];
     path[path.length - 1] = [end[0], end[1]];
-    return {path, lattice, 'heading': finalState % headingCount};
+    return {path, existing, lattice, 'heading': finalState % headingCount};
+}
+
+
+// The distance from an existing road's line that the route search's nodes are on the road within, in lattice spacings
+const roadToleranceLattice = 0.75;
+
+
+// Follow the existing roads of a route search's path (an array of [x, y] points, and its points' "existing" flags) -
+// the path's runs along existing roads are moved onto the roads' lines ("roads" is the existing roads' index, and
+// "lattice" is the search's lattice spacing). A run is an existing road where it's "minLength" long, at least, less
+// the "transition" at each end where it joins a new road - the junction's curve is new road. Returns the path's
+// "points" and its existing roads' "ranges" ([station, end station] arrays, along the points).
+export function followRoads(path, existing, roads, lattice, minLength, transition) {
+    const points = path.map(([x, y]) => [x, y]);
+    const last = path.length - 1;
+    const runs = [];
+    for (let ix = 1; ix <= last; ix++) {
+        if (existing[ix]) {
+            // The run of moves along an existing road - from the point before the first to the last's point
+            const ixStart = ix - 1;
+            while (ix < last && existing[ix + 1]) {
+                ix += 1;
+            }
+            const run = path.slice(ixStart, ix + 1);
+            const runLength = polylineStations(run.map((point) => point[0]), run.map((point) => point[1])).at(-1);
+            const trimStart = ixStart === 0 ? 0 : transition;
+            const trimEnd = ix === last ? 0 : transition;
+            if (runLength - trimStart - trimEnd >= minLength) {
+                runs.push([ixStart, ix, trimStart, trimEnd]);
+
+                // The run's points are the road's - but for the path's start and end points
+                for (let ixPoint = Math.max(1, ixStart); ixPoint <= Math.min(last - 1, ix); ixPoint++) {
+                    const nearest = nearestLine(roads, path[ixPoint][0], path[ixPoint][1], lattice);
+                    points[ixPoint] = [nearest.x, nearest.y];
+                }
+            }
+        }
+    }
+    const stations = polylineStations(points.map((point) => point[0]), points.map((point) => point[1]));
+    return {
+        points,
+        'ranges': runs.map(([ixStart, ixEnd, trimStart, trimEnd]) => [stations[ixStart] + trimStart, stations[ixEnd] - trimEnd])
+    };
 }
 
 
@@ -297,23 +394,63 @@ export function turnRadius(x, y) {
 
 
 // Resample a polyline (an array of [x, y] points) and smooth it (keeping the endpoints) until its curves meet the
-// minimum radius - returns the smoothed polyline's "x" and "y" coordinate arrays
-export function smoothCurves(points, interval, minRadius) {
-    let {x, y} = resamplePolyline(points.map((point) => point[0]), points.map((point) => point[1]), interval);
+// minimum radius. The polyline's existing roads (the "ranges" of its stations - [station, end station] arrays) are
+// kept as they are - an existing road's curves are its own. Where a new road meets an existing road's end at a
+// corner, the corner is the junction's curve: the existing road's end is smoothed with the new road, and it's new
+// road (up to four of the minimum radius of it). Returns the smoothed polyline's "x" and "y" coordinate arrays, and
+// the existing roads' "ranges" of the smoothed polyline's stations.
+export function smoothCurves(points, interval, minRadius, ranges = []) {
+    const resampled = resamplePolyline(points.map((point) => point[0]), points.map((point) => point[1]), interval);
+    let {x, y} = resampled;
+
+    // The existing roads' points - a range's first and last points, and the points between them
+    const fixed = new Uint8Array(x.length);
+    const fixedRanges = [];
+    for (const [start, end] of ranges) {
+        const ixStart = resampled.stations.findIndex((stationValue) => stationValue >= start - 1e-6);
+        const ixEnd = resampled.stations.findLastIndex((stationValue) => stationValue <= end + 1e-6);
+        if (ixStart !== -1 && ixStart < ixEnd) {
+            fixed.fill(1, ixStart, ixEnd + 1);
+            fixedRanges.push({'ends': [ixStart, ixEnd], 'junctions': [0, 0]});
+        }
+    }
+    const junctionLimit = Math.ceil(4 * minRadius / interval);
+
     for (let ixSmooth = 0; ixSmooth < 400; ixSmooth++) {
         const radius = turnRadius(x, y);
+
+        // An existing road's end at a corner with the new road is the junction's curve
+        for (const {ends, junctions} of fixedRanges) {
+            for (const [end, step] of [[0, 1], [1, -1]]) {
+                const ix = ends[end];
+                if (ends[0] <= ends[1] && ix >= 2 && ix < radius.length - 2 && junctions[end] < junctionLimit &&
+                    radius[ix] < minRadius * 1.1) {
+                    fixed[ix] = 0;
+                    ends[end] += step;
+                    junctions[end] += 1;
+                }
+            }
+        }
+
         let radiusMin = Infinity;
         for (let ix = 2; ix < radius.length - 2; ix++) {
-            radiusMin = Math.min(radiusMin, radius[ix]);
+            if (!fixed[ix]) {
+                radiusMin = Math.min(radiusMin, radius[ix]);
+            }
         }
         if (radiusMin >= minRadius * 1.1) {
             break;
         }
-        const smooth = (values) => values.map(
-            (value, ix) => (ix === 0 || ix === values.length - 1 ? value : (values[ix - 1] + 2 * value + values[ix + 1]) * 0.25)
-        );
+        const smooth = (values) => values.map((value, ix) => (
+            ix === 0 || ix === values.length - 1 || fixed[ix] ? value : (values[ix - 1] + 2 * value + values[ix + 1]) * 0.25
+        ));
         x = smooth(x);
         y = smooth(y);
     }
-    return {x, y};
+    const stations = polylineStations(x, y);
+    return {
+        x,
+        y,
+        'ranges': fixedRanges.filter(({ends}) => ends[0] < ends[1]).map(({ends}) => [stations[ends[0]], stations[ends[1]]])
+    };
 }

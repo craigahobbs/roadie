@@ -78,6 +78,8 @@ export function planView(plan, topo, analyses, ixOption, width, outlines) {
         } else if (type === 'road') {
             elements.push(svgPolyline(coords, 'white', 3.5));
             elements.push(svgPolyline(coords, roadFeatureColor, 1.5));
+        } else if (type === 'trail') {
+            elements.push(svgPolyline(coords, roadFeatureColor, 1));
         } else if (type === 'rock') {
             elements.push(svgPolygon(coords, 'rgba(110,110,110,0.35)', '#555555', 1));
         } else {

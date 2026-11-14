@@ -22,7 +22,7 @@ const optionColors = ['#d6246e', '#e07b00', '#7b3fc4', '#0a8f8f', '#7a8a00', '#1
 
 
 // The features' colors
-const featureColors = {'stream': '#2a6fdb', 'road': '#6e675f', 'rock': '#555555', 'exclusion': '#d0312d'};
+const featureColors = {'stream': '#2a6fdb', 'road': '#6e675f', 'trail': '#6e675f', 'rock': '#555555', 'exclusion': '#d0312d'};
 
 
 // The smallest terrain cell that's drawn, in pixels - a finer grid's cells are drawn several together
@@ -136,15 +136,17 @@ export function planPlot(plan, topo, width = 1400, box = null) {
         elements.push(svgText(`${level}`, x, y, 9, 'middle', '#5a4020', false));
     }
 
-    // The features - a stream or a road is a line, and a rock outcrop or an exclusion area is a dashed outline
+    // The features - a stream or a road is a line, a trail is a dotted line, and a rock outcrop or an exclusion area is
+    // a dashed outline
     for (const feature of topo.features) {
         const {type, points} = feature;
-        const line = type === 'stream' || type === 'road';
+        const line = type !== 'rock' && type !== 'exclusion';
         const coords = [];
         for (const point of line ? points : [...points, points[0]]) {
             coords.push(planX(point.x), planY(point.y));
         }
-        elements.push(svgPolyline(coords, featureColors[type], type === 'stream' ? 2 : 1.2, line ? null : '5 3'));
+        const dashes = line ? (type === 'trail' ? '2 3' : null) : '5 3';
+        elements.push(svgPolyline(coords, featureColors[type], type === 'stream' ? 2 : 1.2, dashes));
         const ixInside = [];
         for (let ix = 0; ix < points.length; ix++) {
             if (isInside(points[ix])) {
@@ -155,7 +157,8 @@ export function planPlot(plan, topo, width = 1400, box = null) {
             // A line's name is at its middle point within the plot, and an area's is at its first
             const ixName = ixInside[line ? Math.floor(ixInside.length / 2) : 0] * 2;
             const [x, y] = [coords[ixName], coords[ixName + 1]];
-            elements.push(svgText(feature.name, x, y - 6, type === 'road' ? 9 : 11, 'middle', featureColors[type], false));
+            const fontSize = type === 'road' || type === 'trail' ? 9 : 11;
+            elements.push(svgText(feature.name, x, y - 6, fontSize, 'middle', featureColors[type], false));
         }
     }
 

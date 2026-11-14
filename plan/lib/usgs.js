@@ -96,10 +96,11 @@ export const streamsUrl = 'https://hydro.nationalmap.gov/arcgis/rest/services/nh
 const streamTypes = new Set([460, 336, 558]);
 
 
-// The National Map's transportation dataset's roads and trails - its highways, local roads, four-wheel-drive roads, and
+// The National Map's transportation dataset's roads (its highways, local roads, and four-wheel-drive roads) and its
 // trails
 export const roadsUrl = 'https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer';
-const roadLayers = [29, 30, 31, 32, 35, 37];
+const roadLayers = [29, 30, 31, 32, 35];
+const trailLayers = [37];
 
 
 // Find the streams of a box of the Earth ([west, south, east, north], in degrees) - "getJson" is a function that
@@ -112,10 +113,22 @@ export async function streamLines(getJson, box) {
 }
 
 
-// Find the roads and trails of a box of the Earth - returns the road line objects (like streamLines')
-export async function roadLines(getJson, box) {
+// Find the roads of a box of the Earth - returns the road line objects (like streamLines')
+export function roadLines(getJson, box) {
+    return transportationLines(getJson, box, roadLayers);
+}
+
+
+// Find the trails of a box of the Earth - returns the trail line objects (like streamLines')
+export function trailLines(getJson, box) {
+    return transportationLines(getJson, box, trailLayers);
+}
+
+
+// Find the lines of the transportation dataset's layers, a layer at a time
+async function transportationLines(getJson, box, layers) {
     const lines = [];
-    for (const layer of roadLayers) {
+    for (const layer of layers) {
         for (const {properties, points} of await layerLines(getJson, `${roadsUrl}/${layer}`, box, 'name')) {
             lines.push(lineObject(properties.name, points));
         }

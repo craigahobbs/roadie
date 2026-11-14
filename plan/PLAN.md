@@ -17,27 +17,38 @@ with review feedback, follow [Updating a plan](#updating-a-plan) instead.
 - The road plan model to write (`<plan>.json`)
 - The work directory for intermediate files (`<plan>.work/`)
 
-**Tools** (run with the planning tools and `make` commands given in your initial prompt):
+**Tools** (`plan.js` is the planning tools' command in your initial prompt - run it exactly as it's
+given there, with its full path, so it runs from any directory; don't change directories):
 
 | Command | Purpose |
 | --- | --- |
-| `plan.js site SITE.json PLAN.json` | Create the plan's site: its topography grid (USGS lidar terrain), start and end points, streams, roads, exclusion areas, and topographic map image |
+| `plan.js site SITE.json PLAN.json` | Create the plan's site: its topography grid (USGS lidar terrain), start and end points, streams, roads, trails, exclusion areas, and topographic map image |
 | `plan.js plot PLAN.json OUT.png [--box X1,Y1,X2,Y2]` | Plot the plan's terrain (shaded, with contours), features, and options, with the plan's coordinates along its sides - with `--box`, a part of the plan, for a closer look |
-| `plan.js locate PLAN.json [--xy] POINT...` | Convert latitudes and longitudes (`LATITUDE,LONGITUDE`) to the plan's coordinates - or, with `--xy`, the plan's coordinates (`X,Y`) to latitudes and longitudes - with the ground elevation there |
-| `plan.js route PLAN.json -n NAME [-v X,Y]... [options]` | Engineer an option: least-cost alignment search, profile design, and structures |
+| `plan.js locate PLAN.json [--xy] POINT...` | Convert latitudes and longitudes (`LATITUDE,LONGITUDE`) to the plan's coordinates - or, with `--xy`, the plan's coordinates (`X,Y`) to latitudes and longitudes - with the ground elevation there, and the nearest road and stream |
+| `plan.js feature PLAN.json TYPE [-n NAME] X,Y X,Y...` | Add a topographic feature - a `stream`, `road`, or `trail` line, or a `rock` or `exclusion` area polygon - or, with `--remove NAME`, remove the features of a name |
+| `plan.js route PLAN.json -n NAME [-v X,Y]... [options]` | Engineer an option: least-cost alignment search (it follows the plan's existing roads where that costs less than a new road), profile design, and structures |
 | `plan.js profile PLAN.json -n NAME [options]` | Re-design an existing option's profile and structures (after you edit its alignment) |
-| `make evaluate FILE=PLAN.json [DETAIL=1]` | Validate the model and compute each option's earthwork, structures, cost score, and design warnings |
+| `plan.js evaluate PLAN.json [--detail]` | Validate the model and compute each option's earthwork, structures, cost score, and design warnings |
+| `plan.js keep PLAN.json NAME...` | Keep the named options, in cost score order (the best first), and remove the others |
+| `plan.js describe PLAN.json DESCRIPTIONS.md` | Set the plan's and the options' descriptions from a Markdown file |
 | `plan.js doc [site \| plan]` | Print the road site model's schema documentation - or the road plan model's |
 
-Run `route` and `profile` with `-h` for all of their arguments. Use the Read tool to look at every
-image you make - the topographic map image and the plots.
+Run a command with `-h` for its arguments. Use the Read tool to look at every image you make - the
+topographic map image and the plots.
 
-When a site needs more than the tools do (a drainage to trace, a grade line to check, a batch of
-alignment edits), write helper scripts in the work directory's `scripts/` folder - Node.js modules
-that import the planning tools' and the viewer's modules (their directories are in your initial
-prompt) - run them with `node`, and list the steps that produced each file in the work directory's
-`README.md` - so a later update session can re-run them. Keep the work directory to inputs, outputs,
-and scripts: put throwaway check images in its `scratch/` folder and delete them when you finish.
+**The tools write the plan.** The plan file is large (its elevation grid is most of it), so don't
+read it whole, and don't change it with your own code: `feature` edits its features, `route`,
+`profile`, and `keep` its options, and `describe` its descriptions. The exceptions are an option's
+alignment points (Step 5) and a structure that a review requires (an update).
+
+When a site needs an analysis the tools don't do (a drainage to trace, a grade line to check), write
+a helper script in the work directory's `scripts/` folder - a Node.js module that imports the
+planning tools' and the viewer's modules (their directories are in your initial prompt) - and run it
+with `node`. A script that changes the plan (an alignment edit) writes it as the tools do -
+`planText(orderPlan(plan))`, from the planning tools' `planFile.js`. List the steps that produced the
+plan in the work directory's `README.md` - the commands, in order - so a later update session can
+re-run them. Keep the work directory to inputs, outputs, and scripts: put throwaway check images in
+its `scratch/` folder and delete them when you finish.
 
 
 ## Step 1: Read the site
@@ -60,12 +71,14 @@ and scripts: put throwaway check images in its `scratch/` folder and delete them
    - **The streams** (the USGS National Hydrography Dataset's) and the **roads and trails** (the USGS
      National Map's) within the site. The USGS streams were mapped at a coarser scale than the terrain,
      so `site` moves each stream to the bottom of its valley - the lowest ground within 100 feet
-     (30 meters) across it.
+     (30 meters) across it. The roads are existing roads that a road option may follow; the trails
+     are for reference.
    - **The topographic map image** (`<plan>.png`, the USGS topographic base map of the site) - the
      plan's `image`.
 
    Read its output: the grid's size and spacing, the elevation range, the elevation surveys used, the
-   feature counts, the start and end points' ground elevations, and any warnings. If it fails because
+   feature counts, the start and end points' ground elevations and their nearest road and stream (and
+   how far away each is), and any warnings. If it fails because
    the USGS has no 1 meter elevation models of the site (or they don't cover it), **stop and tell the
    user** - don't plan a road on other terrain. If a USGS service fails, wait and run it again.
 3. **Plot the site** (`plot PLAN.json <work>/site.png`) and Read the plot and the topographic map image.
@@ -90,12 +103,13 @@ and scripts: put throwaway check images in its `scratch/` folder and delete them
 ## Step 2: Verify the site
 
 The elevations are measured - don't edit them. Verify what the tools can't know, and correct the plan's
-features (edit `topography.features` in the plan JSON, in the plan's coordinates):
+features with `feature` (in the plan's coordinates - to correct a feature, remove it and add it again):
 
 1. **The start and end points.** Each must be where its label and description say - on the road it
    joins, at the building site - and on ground a road can reach (not in a stream bed or on a cliff).
-   The points are the user's: if one looks misplaced, don't move it - say so in your report and in the
-   plan's limitations.
+   `site` reports each point's nearest road and stream, and how far away they are (`locate --xy` does
+   it for any point). The points are the user's: if one looks misplaced, don't move it - say so in
+   your report and in the plan's limitations.
 2. **The streams.** `site` moved each stream to the bottom of its valley, but only within 100 feet
    (30 meters) of the USGS's line - a stream that was mapped farther from its valley is still off it.
    On the plot, each stream must lie along the bottom of its valley (the contours' V's). Where a stream
@@ -103,20 +117,26 @@ features (edit `topography.features` in the plan JSON, in the plan's coordinates
    its points to follow the valley's bottom. Add a `stream` for every unmapped draw that carries water
    in a storm (a valley of contour V's that drains more than a few acres) and that a road might cross -
    it needs a culvert there.
-3. **The roads.** The `road` features are existing roads and trails, for reference - a road option
-   that joins one follows it (Step 5). The terrain's shading shows road benches the USGS roads may
-   lack; add a `road` feature for one you'll use.
+3. **The roads.** The `road` features are existing roads: `route` follows them where that costs less
+   than a new road (Step 5). The `trail` features are for reference - a road doesn't follow a trail.
+   Remove a `road` the notes rule out (a private drive, a closed road), and add a `road` for an
+   existing road the USGS roads lack, where the terrain's shading shows its bench and the road could
+   follow it.
 4. **The exclusion areas.** The site's exclusion areas are in the plan. Add `exclusion` polygons for
    everything else the notes or the map say the road must avoid - buildings, wetlands, a neighbor's
-   land, setbacks - and `rock` polygons around rock outcrops and cliffs (the terrain's shading shows
-   cliffs as abrupt, rough bands; the topographic map may label them).
+   land, setbacks. Add a `rock` polygon only for rock that the notes or the topographic map identify
+   (a labeled outcrop, cliff, or quarry). Don't infer rock from steep ground, and don't search the
+   terrain for it: the route search and the cost score already charge steep side slopes for their
+   earthwork and walls.
 5. **The site's extent.** Every reasonable route must fit in the grid, with room for switchbacks. If one
    doesn't, set the site model's `margin` (the distance the site extends beyond the start and end
    points, in the plan's units) and run `site` again - it keeps the plan's options and other features.
    A finer or coarser grid is the site model's `spacing`.
 
-Plot the site again after correcting its features, and Read the plot. **Do not proceed until the
-plan's points and features match the terrain.**
+`feature` reports the size and extent of a feature it adds - check that they're what you meant. Plot
+the site again after correcting its features (`plot --box` around each one you added), and Read the
+plot. **Do not proceed until the plan's points and features match the terrain.** A site that needs no
+corrections is common - don't add features to have added some.
 
 
 ## Step 3: Set the design criteria
@@ -172,7 +192,7 @@ and editing alignments.
   slope.
 - **Avoid side slopes over about 60%.** A 1.5:1 fill can't daylight on ground steeper than 67%, and a
   1:1 cut can't daylight on ground steeper than 100% - those sections need full-bench cuts with end
-  haul, or retaining walls (expensive). The station table (`make evaluate DETAIL=1`) shows each
+  haul, or retaining walls (expensive). The station table (`evaluate --detail`) shows each
   station's side slope.
 - Balance cut and fill along the road (the mass haul): excavated material should become nearby fill.
   Import (borrow) and export (waste) cost extra, and haul beyond the free haul distance (500 ft /
@@ -218,42 +238,54 @@ and editing alignments.
    - Contour-following routes on moderate side slopes, around each side of hills and valleys.
    - Switchback locations on benches and spurs.
    - Drainage crossing points.
-   - **Existing roads** - when the start or end point is on an existing road, consider joining that
-     road sooner and following it to the point (often much less new construction).
+   - **Existing roads** - a road that follows them is often much less new construction. `route` finds
+     where to join and leave them.
    - Use the "divider" method to check feasibility: at the design grade, the minimum distance between
      adjacent contours is the contour interval / grade (for example, 10 ft / 0.11 = 91 ft). Step from
      contour to contour at this distance to sketch grade lines between control points.
-2. **Engineer an option for each distinct corridor** with `route`. Without via points, the tool finds
-   the least-cost corridor. Use `--via X,Y` (plan coordinates; repeatable, in order) to force other
-   corridors - choose via points on straight, gentle ground along the corridor, not at turns. Set
-   `--width` and `--surface` for the road type, and name each option descriptively (e.g., "West
-   Contour", "North Switchbacks"). If `route` warns that the profile can't reach the start or end
-   elevation, the alignment is too short or too steep for the grade limit - choose other via points
-   or a longer corridor. Check that via points don't make the route double back on itself.
+2. **Engineer the least-cost option first**: `route PLAN.json -n NAME`, without via points. It's the
+   cost-optimal road by the tools' cost model - where the plan has existing roads, the route follows
+   them (an existing road upgrade, with no earthwork) wherever that costs less than a new road, and
+   it's a new road between them. Set `--width` and `--surface` for the road type, and name each
+   option descriptively (e.g., "West Contour", "North Switchbacks"). `route` reports the option's
+   length, the existing roads it follows (their station ranges and names), its structures, its cost
+   score, and its design warnings.
 3. **Every option runs the full trip, from the start point to the end point** - the cost comparison
-   depends on it. An option that joins an existing road follows that road to the end point in its
-   alignment, with an `existingRoad` structure over that section: the section follows the ground and is
-   costed at the existing road upgrade rate, with no earthwork, and its as-built grades and curves
-   aren't checked. To route to a junction, route in a scratch copy of the plan whose `end` is the
-   junction, then extend the alignment along the existing road (closely spaced points, curves at the
-   minimum radius) and run `profile -n NAME --existing-road STATION,END` to design the new section's
-   profile up to the junction. Note the existing road's condition in the option's description - its
-   width, grade, and surface may not meet the design criteria.
-4. Consider variants where they change the comparison: a bridge versus a culvert fill
-   (`--bridge-fill`), asphalt versus gravel on steep routes, or a steeper design grade where the
-   criteria allow it.
-5. **Edit alignments by hand** when you see an improvement the tool missed (for example, nudging a
-   curve onto a bench or away from a steep side slope): edit the option's `alignment` x,y points in the
-   plan JSON (keep the points closely spaced, and keep curves at or above the minimum radius), then
-   run `profile` to re-design its profile and structures.
+   depends on it, and `route` always does. Where an option follows an existing road, it has an
+   `existingRoad` structure over that section: the section follows the ground and is costed at the
+   existing road upgrade rate, with no earthwork, and its as-built grades and curves aren't checked.
+   Note the existing roads' condition in the option's description - their width, grade, and surface
+   may not meet the design criteria - and that a new road beside them is the fallback.
+4. **Engineer the distinct alternatives** - the other corridors a reviewer would want compared with
+   the least-cost option:
+   - **Another corridor** - `--via X,Y` (plan coordinates; repeatable, in order) forces the route
+     through a point. Use one or two via points, on straight, gentle ground along the corridor, not
+     at turns - many via points pin the road to ground it would have avoided. Check that via points
+     don't make the route double back on itself.
+   - **An all-new road** - `--all-new` doesn't follow the plan's existing roads. Engineer it where the
+     least-cost option depends on existing roads that may not be usable.
+   - **Variants**, where they change the comparison: a bridge versus a culvert fill (`--bridge-fill`),
+     asphalt versus gravel on steep routes, or a steeper design grade where the criteria allow it.
+
+   If `route` warns that the profile can't reach the start or end elevation, the alignment is too
+   short or too steep for the grade limit - choose other via points or a longer corridor. Give a
+   corridor two or three attempts, not more: an alternative that costs several times the least-cost
+   option after that isn't viable - say so in the plan's description (with its cost score) and move
+   on. Don't conclude that ground is impassable from one failed attempt with many via points.
+5. **Edit alignments by hand** only for a local improvement the tool missed (for example, nudging a
+   curve onto a bench or away from a steep side slope): change the option's `alignment` x,y points
+   (keep the points closely spaced, and keep curves at or above the minimum radius), then run
+   `profile` to re-design its profile and structures - with `--existing-road STATION,END` for each
+   section that follows an existing road, if the stations changed. Moving long runs of an alignment
+   breaks its grades - use a via point instead.
 
 
 ## Step 6: Evaluate and refine
 
-1. Run `make evaluate FILE=<plan>.json` after every change. It reports each option's length, maximum
-   grade, earthwork, mass balance, cost breakdown, structures, and **design warnings**.
-   `DETAIL=1` adds a station table: ground and grade elevations, cut/fill depth, side slope, and each
-   side's slope type, width, and daylight.
+1. `route` and `profile` report an option's cost score and its design warnings' count - that's enough
+   to compare attempts. Run `evaluate PLAN.json` for the options' comparison table and each option's
+   cost breakdown, structures, and **design warnings**. `--detail` adds a station table: ground and
+   grade elevations, cut/fill depth, side slope, and each side's slope type, width, and daylight.
 2. **Resolve every design warning.** Excess grade, a radius below the minimum, slopes that don't
    daylight (add a wall or move the road), exclusion area crossings, stream crossings without a
    culvert or bridge, walls over the maximum height, and an alignment that misses the start or end
@@ -270,19 +302,29 @@ and editing alignments.
 
 ## Step 7: Finalize the road plan model
 
-1. Keep **one to four distinct, viable options**, best (lowest cost score) first. Drop options that
+1. Keep **one to four distinct, viable options**, best (lowest cost score) first: `keep PLAN.json
+   NAME...` removes the other options and puts the kept ones in cost score order. Drop options that
    are both more expensive and no better in any other way, and options with unresolvable warnings.
-2. Give the plan a `description` (Markdown lines): the site, the road's purpose (the site's notes), the
-   design criteria and why, the features you corrected or added, assumptions (road type, surface, ...),
-   and limitations (misplaced points, unmapped features, turnaround not modeled). The plan's elevation
-   surveys are its topography's `sources` - the viewer reports them. Don't write `~` for "about" in
-   descriptions - the viewer's Markdown renders `~...~` as strikethrough.
-3. Give each option a `description`: its corridor, its key engineering features (switchbacks, walls,
-   bridges, crossings), its trade-offs versus the other options, and anything a reviewer should
-   verify in the field.
-4. Keep the plan's `image` (the topographic map image, beside the plan JSON file) and its
+   An all-new road beside the existing roads that the least-cost option follows is one of those -
+   give its cost score in the plan's description instead of keeping it.
+2. Write the descriptions in a Markdown file in the work directory (`descriptions.md`) and set them
+   with `describe PLAN.json descriptions.md`. The text under its `# Plan` heading is the plan's
+   description, and the text under each `# Option: NAME` heading is that option's:
+   - **The plan's**: the site, the road's purpose (the site's notes), the design criteria and why,
+     the features you corrected or added, assumptions (road type, surface, ...), the options you
+     engineered and dropped (with their cost scores), and limitations (misplaced points, unmapped
+     features, turnaround not modeled). The plan's elevation surveys are its topography's `sources` -
+     the viewer reports them.
+   - **Each option's**: its corridor, its key engineering features (switchbacks, walls, bridges,
+     crossings, the existing roads it follows), its trade-offs versus the other options, and anything
+     a reviewer should verify in the field.
+
+   Describe only what the tools reported or you saw in a plot - the stations, lengths, and cost
+   scores are `evaluate`'s. Don't write `~` for "about" - the viewer's Markdown renders `~...~` as
+   strikethrough.
+3. Keep the plan's `image` (the topographic map image, beside the plan JSON file) and its
    `georeference` - the viewer shows the map and the start and end points' latitudes and longitudes.
-5. Run `make evaluate FILE=<plan>.json` one last time - the model must validate.
+4. Run `evaluate PLAN.json` one last time - the model must validate - and plot the plan.
 
 
 ## Step 8: Report
@@ -304,9 +346,11 @@ an existing road plan model, follow these steps instead of Steps 1-8. Your initi
 plan JSON file and its work directory. Ask the user for the feedback (pasted text or a file path)
 before making any changes.
 
-1. **Read the current plan.** Read the plan's `description` and each option's `description`, run
-   `make evaluate FILE=<plan>.json` to record the current length, maximum grade, earthwork, warnings,
-   and cost score of every option, and plot it (`plot`). Read the road site model (`<plan>.site.json`,
+1. **Read the current plan.** Read the plan's `description` (it's at the start of the plan file - read
+   those lines, not the whole file) and the work directory's `descriptions.md`, if the planning
+   session wrote it, run `evaluate PLAN.json` to record the current length, maximum grade, earthwork,
+   warnings, and cost score of every option, and plot it (`plot`). Read the road site model
+   (`<plan>.site.json`,
    beside the plan) and look in the work directory (start with its `README.md` and `scripts/`, if the
    planning session wrote them).
 2. **Save a copy** of the plan JSON in the work directory before editing it, named with today's date
@@ -317,8 +361,8 @@ before making any changes.
    - **Design criteria** - a different maximum grade (fire code 10%), minimum radius, road width,
      surface, or slopes: update `criteria` and each option's `section`.
    - **Site features** - new or corrected exclusion areas (setbacks, easements, wetland buffers,
-     property lines, tree protection zones), streams, or rock: edit the plan's `topography.features`
-     (plan coordinates - `locate` converts latitudes and longitudes).
+     property lines, tree protection zones), streams, roads, or rock: `feature` adds and removes
+     them (plan coordinates - `locate` converts latitudes and longitudes).
    - **The site** - a moved start or end point, a larger site, or a finer grid: edit the road site
      model and run `site` again (Step 1), and verify the site (Step 2). `site` replaces the topography,
      title, start, end, streams, roads, and the site's exclusion areas, and keeps the options and the
@@ -337,10 +381,12 @@ before making any changes.
    should be dropped.
 5. **Evaluate and refine** (Step 6) - resolve every design warning, and keep the options in cost
    order.
-6. **Update the descriptions.** Add a **revision history** to the end of the plan `description` - one
-   bullet per update with the date, the feedback source, and the changes made - and update each
-   option's `description` for its new numbers and features. Address each feedback item where it
-   applies (for example, "the 10% fire code grade adds a switchback near station 6+00").
+6. **Update the descriptions** (`describe`, Step 7 - start from the work directory's
+   `descriptions.md`, if the planning session wrote it). Add a **revision history** to the end of the
+   plan's description - one bullet per update with the date, the feedback source, and the changes
+   made - and update each option's description for its new numbers and features. Address each
+   feedback item where it applies (for example, "the 10% fire code grade adds a switchback near
+   station 6+00").
 7. **Report** a before-and-after table of every option (length, maximum grade, earthwork, walls and
    bridges, cost score), how each feedback item was addressed (or why it couldn't be), any new
    caveats, and the command to view the plan.

@@ -1,4 +1,4 @@
-import {arange, fma, hypot, interp, linspace, movingAverage, npRound, pairwiseSum, pyFixed, pyRepr, pyRound} from '../lib/numeric.js';
+import {arange, fma, hypot, interp, linspace, movingAverage, npRound, pairwiseSum, pyFixed, pyRound} from '../lib/numeric.js';
 import {expected, plain} from './roadFixtures.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -147,9 +147,3 @@ test('pyFixed', () => {
     assert.deepEqual([0.25, 0.75, -0.25, -0.04].map((value) => pyFixed(value, 1)), ['0.2', '0.8', '-0.2', '-0.0']);
 });
 
-
-test('pyRepr', () => {
-    const {'v': values, repr} = numeric.round;
-    assert.deepEqual(values.map((value) => (value === 1e-9 ? '1e-09' : pyRepr(value))), repr);
-    assert.deepEqual([100, 0, 69.9, -2.5].map((value) => pyRepr(value)), ['100.0', '0.0', '69.9', '-2.5']);
-});

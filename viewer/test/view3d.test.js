@@ -379,15 +379,16 @@ test('view3DParts, a zoomed view', () => {
     // The unzoomed view draws both streams - in steps of half a terrain cell
     assert.deepEqual(elementCounts(draw(streams, baseArgs).elements.slice(0, -5)).lines, {'#2a6fdb 2.5': 3 + 4});
 
-    // A road is a line, too - a rock outcrop and an exclusion area are dashed outlines
+    // A road and a trail are lines, too - a rock outcrop and an exclusion area are dashed outlines
     planValue.topography.features = [
         {'type': 'road', 'name': 'Mill Rd', 'points': [{'x': 30, 'y': 0}, {'x': 30, 'y': 20}]},
+        {'type': 'trail', 'points': [{'x': 20, 'y': 0}, {'x': 20, 'y': 20}]},
         {'type': 'rock', 'points': [{'x': 10, 'y': 10}, {'x': 20, 'y': 10}, {'x': 20, 'y': 20}]},
         {'type': 'exclusion', 'points': [{'x': 10, 'y': 30}, {'x': 20, 'y': 30}, {'x': 20, 'y': 20}]}
     ];
     const {elements: featureElements} = draw(scene(planValue), baseArgs);
     assert.deepEqual(elementCounts(featureElements.slice(0, -5)).lines, {
-        '#6e675f 1.5': 4, '#555555 1': 2 + 2 + 3, 'rgba(208,49,45,0.55) 1': 2 + 2 + 3
+        '#6e675f 1.5': 4, '#6e675f 1': 4, '#555555 1': 2 + 2 + 3, 'rgba(208,49,45,0.55) 1': 2 + 2 + 3
     });
     const dashed = (stroke) => featureElements.filter((element) => element.includes(`stroke="${stroke}"`)).
         map((element) => element.includes('stroke-dasharray="4 3"'));

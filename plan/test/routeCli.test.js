@@ -1,4 +1,4 @@
-import {blockedPlan, expected, hillPlan, planePlan} from './roadFixtures.js';
+import {blockedPlan, expected, hillPlan, planePlan, roadPlan} from './roadFixtures.js';
 import {routeCommands, routeUsage} from '../lib/routeCli.js';
 import assert from 'node:assert/strict';
 import {planText} from '../lib/planFile.js';
@@ -97,8 +97,9 @@ test('route, a switchback road', () => {
     assert.deepEqual(lines, [
         'The profile ends 17.6 feet below the end point - searching with stricter grades',
         'Option "Switchbacks": 783 feet long, 158 alignment points, max grade 11.0%, max cut 8.8, max fill 3.9',
-        'Structures: turnout at 366.6',
-        'Wrote plan.json - run "make evaluate FILE=plan.json" for the full analysis and cost'
+        'Structures: 1 turnout',
+        'Cost score: 73.0, design warnings: 0',
+        'Wrote plan.json - run "plan evaluate plan.json" for the full analysis and cost'
     ]);
 
     // The option is added to the plan - its alignment is from the start point to the end point, on the ground at both
@@ -136,8 +137,7 @@ test('route, via points, streams, rock, and an exclusion area', () => {
     assert.deepEqual(option.description, ['A road', 'Second line']);
     assert.deepEqual(option.section, {'width': 4.3, 'cutSlope': 1, 'fillSlope': 1.5, 'surface': 'gravel'});
     assert.equal(lines[0], 'Option "Hill Road": 900 meters long, 241 alignment points, max grade 9.0%, max cut 2.9, max fill 4.2');
-    assert.ok(lines[1].startsWith('Structures: turnout at 104.9, culvert at 134.1, bridge at 153.7, culvert at 212.3, '));
-    assert.ok(lines[1].includes(', culvert at 543.0, '));
+    assert.deepEqual(lines.slice(1, 3), ['Structures: 1 bridge, 7 culverts, 7 turnouts', 'Cost score: 545.8, design warnings: 0']);
     assert.deepEqual([...new Set(option.structures.map(({type}) => type))].sort(), ['bridge', 'culvert', 'turnout']);
     assert.ok('plan' in validatePlan(plan));
 });
@@ -156,9 +156,70 @@ test('route, the design arguments', () => {
     // held to the existing road's ground - so its maximum grade was 7.7%)
     assert.deepEqual(lines, [
         'Option "Wide": 304 meters long, 83 alignment points, max grade 7.0%, max cut 1.9, max fill 3.0',
-        'Structures: existingRoad at 0.0, culvert at 46.7, culvert at 70.4, culvert at 269.8',
-        'Wrote plan.json - run "make evaluate FILE=plan.json" for the full analysis and cost'
+        'Existing road: stations 0.0 to 30.0',
+        'Structures: 1 existing road, 3 culverts',
+        'Cost score: 176.2, design warnings: 0',
+        'Wrote plan.json - run "plan evaluate plan.json" for the full analysis and cost'
     ]);
+});
+
+
+test('route, existing roads', () => {
+    // An existing road, east and then north to the end point, costs less than a new road straight there - the route is
+    // a new road east to the existing road, and then it follows it. The existing road is from the minimum radius after
+    // the route joins it (the junction's curve is new road), to the end point.
+    let {result, plan} = run(roadPlan(), ['route', 'plan.json', '-n', 'Road']);
+    assert.deepEqual(result, {'code': 0, 'lines': [
+        'Option "Road": 569 feet long, 115 alignment points, max grade 0.3%, max cut 0.1, max fill 0.0',
+        'Existing road: stations 144.9 to 568.7 (Mill Rd)',
+        'Structures: 1 existing road, 1 culvert',
+        'Cost score: 23.5, design warnings: 0',
+        'Wrote plan.json - run "plan evaluate plan.json" for the full analysis and cost'
+    ]});
+    let [option] = plan.options;
+    assert.deepEqual(option.structures, [
+        {'type': 'culvert', 'station': 54.9, 'name': 'Sag cross drain'},
+        {'type': 'existingRoad', 'station': 144.9, 'endStation': 568.7, 'name': 'Existing road'}
+    ]);
+    assert.ok('plan' in validatePlan(plan));
+
+    // The alignment is along the existing road (east at y = 47, then north at x = 329), on the ground - but for the 11
+    // points of its corner, which the route's move across it cuts
+    const onRoad = option.alignment.filter(({x, y}) => (y === 47 && x >= 141) || (x === 329 && y >= 47));
+    assert.equal(onRoad.length, 33 + 52);
+    assert.equal(option.alignment.filter(({x, y}) => y !== 47 && x !== 329).length, 11);
+    assert.ok(onRoad.every(({x, y, z}) => x < 141 + 50 || Math.abs(z - (100 + 0.05 * y)) < 0.011));
+    assert.deepEqual(
+        [option.alignment[0], option.alignment.at(-1)],
+        [{'x': 47, 'y': 47, 'z': 102.34}, {'x': 329, 'y': 352.5, 'z': 117.62}]
+    );
+
+    // Through a via point on the existing road, it's the same road
+    assert.deepEqual(run(roadPlan(), ['route', 'plan.json', '-n', 'Road', '-v', '188,47']).plan, plan);
+
+    // An all-new road is straight to the end point
+    ({result, plan} = run(roadPlan(), ['route', 'plan.json', '-n', 'Road', '--all-new']));
+    assert.deepEqual(result.lines.slice(0, 3), [
+        'Option "Road": 418 feet long, 85 alignment points, max grade 4.3%, max cut 0.2, max fill 0.0',
+        'Structures: 1 turnout',
+        'Cost score: 21.1, design warnings: 0'
+    ]);
+    ([option] = plan.options);
+    assert.deepEqual(option.structures, [{'type': 'turnout', 'station': 184, 'endStation': 234, 'side': 'left'}]);
+
+    // The existing road arguments are the road's existing roads - the route doesn't follow the plan's
+    ({result, plan} = run(roadPlan(), ['route', 'plan.json', '-n', 'Road', '--existing-road', '0,30']));
+    assert.deepEqual(result.lines.slice(0, 3), [
+        'Option "Road": 418 feet long, 85 alignment points, max grade 3.8%, max cut 0.1, max fill 0.0',
+        'Existing road: stations 0.0 to 30.0',
+        'Structures: 1 existing road, 1 turnout'
+    ]);
+    assert.equal(plan.options[0].alignment.length, 85);
+
+    // A plan whose existing road has no name
+    const unnamed = roadPlan();
+    delete unnamed.topography.features[0].name;
+    assert.equal(run(unnamed, ['route', 'plan.json', '-n', 'Road']).result.lines[1], 'Existing road: stations 144.9 to 568.7');
 });
 
 
@@ -175,9 +236,10 @@ test('route, an option is replaced', () => {
         'The profile ends 19.0 feet below the end point - searching with stricter grades',
         'Option "Test": 100 feet long, 22 alignment points, max grade 11.0%, max cut 19.0, max fill 0.0',
         'Structures: none',
+        'Cost score: 27.9, design warnings: 1',
         'WARNING: the profile end is -19.0 feet from the ground - the grade limit can\'t be met on this alignment ' +
             '(try other via points or a longer route)',
-        'Wrote plan.json - run "make evaluate FILE=plan.json" for the full analysis and cost'
+        'Wrote plan.json - run "plan evaluate plan.json" for the full analysis and cost'
     ]);
 
     // The option keeps its place and its description - its structures are the new road's
@@ -204,8 +266,10 @@ test('profile, an option\'s existing roads', () => {
     assert.deepEqual(plan.options, options);
     assert.deepEqual(lines, [
         'Option "Test": 100 feet long, 21 alignment points, max grade 220.1%, max cut 9.5, max fill 0.0',
-        'Structures: existingRoad at 50.5',
-        'Wrote plan.json - run "make evaluate FILE=plan.json" for the full analysis and cost'
+        'Existing road: stations 50.5 to 100.0',
+        'Structures: 1 existing road',
+        'Cost score: 8.1, design warnings: 1',
+        'Wrote plan.json - run "plan evaluate plan.json" for the full analysis and cost'
     ]);
     assert.deepEqual(plan.options[0].structures, [{'type': 'existingRoad', 'station': 50.5, 'endStation': 100, 'name': 'Existing road'}]);
     assert.deepEqual(plan.options[0].description, ['Kept']);
@@ -221,7 +285,9 @@ test('profile, an option\'s existing roads', () => {
         {'type': 'existingRoad', 'station': 20, 'endStation': 40, 'name': 'Existing road'},
         {'type': 'existingRoad', 'station': 90, 'endStation': 100, 'name': 'Existing road'}
     ]);
-    assert.equal(lines[1], 'Structures: existingRoad at 20.0, existingRoad at 90.0');
+    assert.deepEqual(lines.slice(1, 4), [
+        'Existing road: stations 20.0 to 40.0', 'Existing road: stations 90.0 to 100.0', 'Structures: 2 existing roads'
+    ]);
 });
 
 
@@ -233,8 +299,9 @@ test('profile, an edited alignment', () => {
     assert.deepEqual(plan.options, options);
     assert.deepEqual(plan.options[1].description, ['New']);
     assert.equal(plan.options[1].alignment.length, 34);
-    assert.equal(lines.length, 4);
-    assert.ok(lines[2].startsWith('WARNING: the profile end is -9.4 feet from the ground - '));
+    assert.deepEqual(lines.slice(1, 3), ['Structures: 1 turnout', 'Cost score: 17.3, design warnings: 5']);
+    assert.equal(lines.length, 5);
+    assert.ok(lines[3].startsWith('WARNING: the profile end is -9.4 feet from the ground - '));
 
     // An option's empty description isn't kept
     ({result, plan} = runExpected(profilePlan(), 'profile-curve-keep'));
@@ -254,9 +321,10 @@ test('profile, a road down a slope too steep for the grade limit', () => {
     assert.deepEqual(lines, [
         'Option "Down": 100 feet long, 21 alignment points, max grade 11.0%, max cut 0.0, max fill 19.0',
         'Structures: none',
+        'Cost score: 37.1, design warnings: 3',
         'WARNING: the profile end is +19.0 feet from the ground - the grade limit can\'t be met on this alignment ' +
             '(try other via points or a longer route)',
-        'Wrote plan.json - run "make evaluate FILE=plan.json" for the full analysis and cost'
+        'Wrote plan.json - run "plan evaluate plan.json" for the full analysis and cost'
     ]);
 });
 
@@ -310,7 +378,7 @@ test('route and profile, invalid arguments', () => {
     for (const args of [['-v', '50'], ['-v', '50,north'], ['--grade-weight', 'heavy'], ['--slope-weight', '']]) {
         assert.equal(run(profilePlan(), ['route', 'plan.json', '-n', 'Test', ...args]).result, null, args.join(' '));
     }
-    for (const args of [['-v', '50,50'], ['--grade-weight', '2'], ['--slope-weight', '2']]) {
+    for (const args of [['-v', '50,50'], ['--grade-weight', '2'], ['--slope-weight', '2'], ['--all-new']]) {
         assert.equal(run(profilePlan(), ['profile', 'plan.json', '-n', 'Test', ...args]).result, null, args.join(' '));
     }
 });

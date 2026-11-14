@@ -1,6 +1,6 @@
 import {
     elevationDataset, elevationModels, fetchBytes, fetchJson, productsUrl, roadLines, roadsUrl, streamLines, streamsUrl, topoMapImageUrl,
-    topoMapUrl
+    topoMapUrl, trailLines
 } from '../lib/usgs.js';
 import {testItem, testLine} from './terrainHelpers.js';
 import assert from 'node:assert/strict';
@@ -242,9 +242,9 @@ test('streamLines, pages', async () => {
 test('roadLines', async () => {
     assert.equal(roadsUrl, 'https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer');
 
-    // The roads are the box's highways, local roads, four-wheel-drive roads, and trails - a layer at a time
+    // The roads are the box's highways, local roads, and four-wheel-drive roads - a layer at a time
     const layers = [];
-    const lines = await roadLines((url) => {
+    const getJson = (url) => {
         const [, layer] = url.match(/\/MapServer\/(\d+)\/query\?/);
         layers.push(layer);
         assert.ok(url.endsWith(
@@ -255,16 +255,22 @@ test('roadLines', async () => {
             testLine({'name': `Road ${layer}`}, [[-105.28, 40], [-105.279, 40.001]]),
             ...(layer === '37' ? [testLine({'name': null}, [[-105.27, 40], [-105.269, 40.001]])] : [])
         ]});
-    }, [-105.29, 39.99, -105.2, 40.01]);
-    assert.deepEqual(layers, ['29', '30', '31', '32', '35', '37']);
-    assert.deepEqual(lines, [
+    };
+    const box = [-105.29, 39.99, -105.2, 40.01];
+    assert.deepEqual(await roadLines(getJson, box), [
         {'name': 'Road 29', 'points': [[-105.28, 40], [-105.279, 40.001]]},
         {'name': 'Road 30', 'points': [[-105.28, 40], [-105.279, 40.001]]},
         {'name': 'Road 32', 'points': [[-105.28, 40], [-105.279, 40.001]]},
-        {'name': 'Road 35', 'points': [[-105.28, 40], [-105.279, 40.001]]},
+        {'name': 'Road 35', 'points': [[-105.28, 40], [-105.279, 40.001]]}
+    ]);
+    assert.deepEqual(layers, ['29', '30', '31', '32', '35']);
+
+    // The trails are their own lines - a road option doesn't follow them
+    assert.deepEqual(await trailLines(getJson, box), [
         {'name': 'Road 37', 'points': [[-105.28, 40], [-105.279, 40.001]]},
         {'points': [[-105.27, 40], [-105.269, 40.001]]}
     ]);
+    assert.deepEqual(layers, ['29', '30', '31', '32', '35', '37']);
 });
 
 

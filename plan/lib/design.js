@@ -44,6 +44,7 @@ export function createDesign(plan, args) {
         'costWall': rates.retainingWall * scale2,
         'costLength': width * (rates[args.surface] + rates.clearing + rates.erosionControl) * scale2 + rates.drainage * scale,
         'costCulvert': rates.culvertEnds + rates.culvert * (feet ? 1.5 * scale : 0.45) * scale * width * 3,
+        'costExisting': width * rates.existingRoad * scale2,
         'shrink': rates.shrink,
 
         // Turnouts - a single-lane road has them

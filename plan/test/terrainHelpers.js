@@ -135,9 +135,9 @@ export function testItem(survey, tile, date, format = 'GeoTIFF') {
 
 
 // Create the services' JSON responses function (testIo's "pages") - "items" are the product service's elevation model
-// items, and "streams" and "roads" are the hydrography and transportation services' GeoJSON features (the roads are
-// the local roads layer's). A service whose response is an Error fails.
-export function testPages({items = [], streams = [], roads = []} = {}) {
+// items, and "streams", "roads", and "trails" are the hydrography and transportation services' GeoJSON features (the
+// roads are the local roads layer's). A service whose response is an Error fails.
+export function testPages({items = [], streams = [], roads = [], trails = []} = {}) {
     return (url) => {
         let response;
         if (url.startsWith('https://tnmaccess.nationalmap.gov/')) {
@@ -145,7 +145,7 @@ export function testPages({items = [], streams = [], roads = []} = {}) {
         } else if (url.startsWith('https://hydro.nationalmap.gov/')) {
             response = Array.isArray(streams) ? {'type': 'FeatureCollection', 'features': streams} : streams;
         } else {
-            const features = url.includes('/MapServer/32/') ? roads : [];
+            const features = url.includes('/MapServer/32/') ? roads : (url.includes('/MapServer/37/') ? trails : []);
             response = Array.isArray(roads) ? {'type': 'FeatureCollection', features} : roads;
         }
         return response instanceof Error ? Promise.reject(response) : response;

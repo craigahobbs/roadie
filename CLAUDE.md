@@ -48,6 +48,11 @@ Run `make` in `viewer/` or `plan/` for a subproject's own targets (e.g.
 - The planning tools' tests never use the network - the USGS services and elevation models are faked
   (`plan/test/terrainHelpers.js`). To check the tools against the real services, plan a site in the scratchpad
   (`node plan/bin/plan.js site <site.json> <plan.json>`, then `route` and `plot`).
+- The planning tools, not the planning session's model, do the plan's engineering and write the plan file
+  (`route` follows existing roads, `feature`, `keep`, and `describe` edit the plan) - so that sessions on different
+  models get the same roads, with fewer tokens. When a session writes code for something every plan needs, make
+  it a tool, and keep the tools' reports short (they're a session's context). Keep PLAN.md and the session's
+  allowed commands (`plan/Makefile`) in step with the tools.
 - The road site model is defined and validated with Schema Markdown, like the road plan model (`plan/lib/site.js`).
 - Keep the README's viewer section and key table in sync with the viewer's controls.
 - `FILE` and `OUTPUT` paths are relative to the directory `make` runs in - the top-level makefile makes them absolute
