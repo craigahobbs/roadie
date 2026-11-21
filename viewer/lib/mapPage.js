@@ -35,17 +35,25 @@ const backdrops = {'contours': 'Contours', 'map': 'Topographic map', 'relief': '
 const markColors = {'area': '#d0312d', 'road': '#7a5a1e', 'place': '#7b3fc4'};
 
 
-// The map's size, in pixels, when its element has none, the distance within which a point is hit, the movement that's a
-// drag (not a click), the most shaded relief pixels on a side, and the most a map is zoomed out and in (multiples of
-// the zoom that fits the site)
+// The map's size, in pixels, when its element has none (its height is a proportion of its width), and its smallest
+// size, the distance within which a point is hit, the movement that's a drag (not a click), the most shaded relief
+// pixels on a side, and the most a map is zoomed out and in (multiples of the zoom that fits the site)
 const defaultWidth = 1000;
+const defaultProportion = 0.65;
+const minSize = [320, 240];
 const hitPixels = 8;
 const dragPixels = 4;
 const reliefPixels = 1500;
 const zoomLimits = [0.5, 64];
 
 
-// The map page - the loaded plan's site, and its config's marks. Its "Done" sets the loaded plan's config's marks.
+// The selection panel's text when no mark is selected
+const noSelectionHtml = '<p class="sageroad-map-hint">Select a mark to rename or delete it.</p>';
+
+
+// The map page - the loaded plan's site, and its config's marks. Its "Done" sets the loaded plan's config's marks. The
+// page fills the window - its controls are above the map, and the selected mark's panel is beside it - so the map is
+// the window's room that's left, and it doesn't change size as a mark is selected.
 export class MapPage {
     constructor(app, globals) {
         this.app = app;
@@ -57,6 +65,7 @@ export class MapPage {
 
     close() {
         this.closed = true;
+        this.app.document.body.classList.toggle('sageroad-map-window', false);
     }
 
 
@@ -98,7 +107,10 @@ export class MapPage {
             `<option value="${backdrop}"${backdrop === 'map' && this.imageURL === null ? ' disabled' : ''}>${escapeHtml(name)}</option>`
         ));
         app.render('Edit Map', [
-            '<h1>Edit Map</h1>',
+            '<div class="sageroad-map-page">',
+            '<div class="sageroad-map-header"><h1>Edit Map</h1>' +
+                '<p class="sageroad-actions"><button type="button" id="sageroad-map-done" class="sageroad-button">Done</button>' +
+                `<a class="sageroad-button" href="${escapeHtml(argsURL(globals))}">Cancel</a></p></div>`,
             '<p>The plan config\'s marks - the areas the road must avoid, the existing roads that the USGS doesn\'t map (a track, a ' +
                 'driveway), and the places the road must pass through. A dashed mark is one a run found for the notes - edit it ' +
                 'to correct it. Run the plan again to engineer its road options with the marks.</p>',
@@ -106,17 +118,19 @@ export class MapPage {
                 `<label>Backdrop: <select id="sageroad-map-backdrop">${backdropOptions.join('')}</select></label>` +
                 `${toolButtons.join('')}</p>`,
             '<p id="sageroad-map-hint" class="sageroad-map-hint"></p>',
+            '<div class="sageroad-map-main">',
             '<div id="sageroad-map" class="sageroad-map">' +
                 '<svg id="sageroad-map-svg" class="sageroad-map-svg" xmlns="http://www.w3.org/2000/svg">' +
                 '<g id="sageroad-map-view"><g id="sageroad-map-backdrop-layer"></g><g id="sageroad-map-features"></g></g>' +
                 '<g id="sageroad-map-marks"></g></svg></div>',
-            '<div id="sageroad-map-selection"></div>',
-            '<p class="sageroad-actions"><button type="button" id="sageroad-map-done" class="sageroad-button">Done</button>' +
-                `<a class="sageroad-button" href="${escapeHtml(argsURL(globals))}">Cancel</a></p>`
+            `<div id="sageroad-map-selection" class="sageroad-map-selection">${noSelectionHtml}</div>`,
+            '</div>',
+            '</div>'
         ].join('\n'));
+        const {document} = app;
+        document.body.classList.toggle('sageroad-map-window', true);
 
         // The controls
-        const {document} = app;
         this.svg = document.getElementById('sageroad-map-svg');
         document.getElementById('sageroad-map-backdrop').addEventListener('change', (event) => this.setBackdrop(event.target.value));
         for (const button of document.querySelectorAll('[data-tool]')) {
@@ -134,7 +148,7 @@ export class MapPage {
 
         // The map - it fits the site
         this.resize();
-        this.view = {'x': this.topo.width / 2, 'y': this.topo.height / 2, 'scale': this.fitScale()};
+        this.fit();
         this.renderFeatures();
         this.setBackdrop('contours');
         this.setTool('select');
@@ -142,18 +156,30 @@ export class MapPage {
     }
 
 
-    // The map's size, in pixels - its element's width (or the default), and a height of its proportion
+    // The map's size, in pixels - its element's (or the default width, and a height of its proportion). A map that
+    // fits the site (it isn't moved or zoomed) fits it again.
     resize() {
         if (this.closed || this.svg === undefined) {
             return;
         }
-        const width = Math.max(320, this.app.document.getElementById('sageroad-map').clientWidth || defaultWidth);
-        this.size = [width, Math.round(width * 0.65)];
+        const element = this.app.document.getElementById('sageroad-map');
+        const width = Math.max(minSize[0], element.clientWidth || defaultWidth);
+        const height = Math.max(minSize[1], element.clientHeight || Math.round(width * defaultProportion));
+        this.size = [width, height];
         this.svg.setAttribute('width', `${width}`);
-        this.svg.setAttribute('height', `${this.size[1]}`);
+        this.svg.setAttribute('height', `${height}`);
         if (this.view !== undefined) {
+            if (this.view.isFit) {
+                this.fit();
+            }
             this.renderView();
         }
+    }
+
+
+    // Fit the site in the map - its center is the map's
+    fit() {
+        this.view = {'x': this.topo.width / 2, 'y': this.topo.height / 2, 'scale': this.fitScale(), 'isFit': true};
     }
 
 
@@ -285,7 +311,7 @@ export class MapPage {
         const element = document.getElementById('sageroad-map-selection');
         const mark = this.selected !== null ? this.marks[this.selected] : null;
         if (mark === null) {
-            element.innerHTML = '';
+            element.innerHTML = noSelectionHtml;
             return;
         }
         const {found} = mark;
@@ -393,7 +419,8 @@ export class MapPage {
             this.view = {
                 ...drag.view,
                 'x': drag.view.x - (point[0] - drag.start[0]) / drag.view.scale,
-                'y': drag.view.y + (point[1] - drag.start[1]) / drag.view.scale
+                'y': drag.view.y + (point[1] - drag.start[1]) / drag.view.scale,
+                'isFit': false
             };
             this.renderView();
         }
@@ -446,7 +473,7 @@ export class MapPage {
         const fit = this.fitScale();
         const scale = Math.max(fit * zoomLimits[0], Math.min(fit * zoomLimits[1], this.view.scale * Math.exp(-event.deltaY * 0.002)));
         const [width, height] = this.size;
-        this.view = {scale, 'x': anchorX - (point[0] - width / 2) / scale, 'y': anchorY + (point[1] - height / 2) / scale};
+        this.view = {scale, 'x': anchorX - (point[0] - width / 2) / scale, 'y': anchorY + (point[1] - height / 2) / scale, 'isFit': false};
         this.renderView();
     }
 

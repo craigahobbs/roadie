@@ -86,7 +86,8 @@ criteria, and marks), and what can be done with it:
   avoid (a property line's setback, an easement), the existing roads that the USGS doesn't map (a
   track - the shaded relief shows one's worn trough), and the places the road must pass through.
   The map's backdrop is the site's contours, its topographic map, or its shaded relief, with its
-  streams, roads, and road options. Scroll to zoom, and drag to move. Draw an area's corners or a
+  streams, roads, and road options. The page fills the window - the map fits the site, and the
+  selected mark is beside it. Scroll to zoom, and drag to move. Draw an area's corners or a
   road's points with clicks (double-click or Enter finishes, Backspace removes the last point), or
   click a place. Select a mark to rename or delete it, or drag its points. A mark that a run found
   for the notes is dashed - edit it to correct it (it's yours then). **Done** makes the marks the
@@ -113,10 +114,13 @@ criteria, and marks), and what can be done with it:
   size, and modified date. **Delete** a model, or **Update** it (download it again), and see a
   download's progress (**Stop** stops it). **Download Models** lists the models of Ollama's library -
   filter them by how recent they are, whether your computer runs them (**Compatible** - a local
-  model needs about a byte of memory for each of its parameters), and their type (local, cloud, or
-  MLX - a Mac with Apple silicon's), sort them, and download one of a model's sizes. It starts with
-  the compatible local models of the last 6 months, the most recently modified first. A download
-  stops if the page is closed or reloaded - you're asked first.
+  model needs about a byte of memory for each of its parameters), their type (local, cloud, or
+  MLX - a Mac with Apple silicon's), and their capability (**Vision** - a model that reads images,
+  **Chat** - one that answers questions, which an embedding or decision model doesn't, or **All**),
+  sort them, and download one of a model's sizes. Each model's capabilities are listed (vision,
+  tools, thinking, ...). It starts with the compatible local models that read images, of the last 6
+  months, the most recently modified first. A download stops if the page is closed or reloaded -
+  you're asked first.
 
 Ollama answers the application's page when it runs on this computer (`http://127.0.0.1:11434`) - the
 page asks Ollama itself, for its models, their downloads, and a run's questions.

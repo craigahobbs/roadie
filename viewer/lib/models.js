@@ -94,7 +94,7 @@ export async function ollamaModels(fetchFn) {
     const valid = models.filter((model) => typeof model?.name === 'string');
     const result = await Promise.all(valid.map(async (model) => {
         // An older Ollama's model list doesn't have the models' capabilities
-        const capabilities = Array.isArray(model.capabilities) ? model.capabilities : await modelCapabilities(fetchFn, model.name);
+        const capabilities = Array.isArray(model.capabilities) ? model.capabilities : await ollamaModelCapabilities(fetchFn, model.name);
         return {
             'id': model.name,
             'parameters': parameterCount(model.details?.parameter_size),
@@ -110,7 +110,7 @@ export async function ollamaModels(fetchFn) {
 
 
 // Get a model's capabilities ("completion", "vision", ...) - null if Ollama doesn't say
-async function modelCapabilities(fetchFn, id) {
+async function ollamaModelCapabilities(fetchFn, id) {
     try {
         const response = await fetchFn(`${ollamaHost}/api/show`, {
             'method': 'POST', 'headers': {'content-type': 'application/json'}, 'body': JSON.stringify({'model': id})
@@ -178,9 +178,10 @@ export async function ollamaPull(fetchFn, id, signal, progressFn) {
 
 
 // Get the models to download - null if the list can't be fetched. A model has its name, description, modified date
-// ("2025-03-12"), download count, and variants: each has its ID ("gemma3:27b"), its size tag ("27b"), and its parameter
-// count, and it may run in Ollama's cloud ("cloud") or need a Mac with Apple silicon ("mlx"). Invalid models and
-// variants are left out.
+// ("2025-03-12"), download count, capabilities ("vision", "tools", "thinking", "embedding", "decision", "audio" - none,
+// if the list doesn't say), and variants: each has its ID ("gemma3:27b"), its size tag ("27b"), and its parameter count,
+// and it may run in Ollama's cloud ("cloud") or need a Mac with Apple silicon ("mlx"). Invalid models and variants are
+// left out.
 export async function availableModels(fetchFn) {
     let models;
     try {
@@ -210,7 +211,8 @@ export async function availableModels(fetchFn) {
         }));
         if (variants.length > 0) {
             const {name, description, modified, downloads} = model;
-            result.push({name, description, modified, downloads, variants});
+            const capabilities = Array.isArray(model.capabilities) ? model.capabilities.filter(isString) : [];
+            result.push({name, description, modified, downloads, capabilities, variants});
         }
     }
     return result;
@@ -220,6 +222,23 @@ export async function availableModels(fetchFn) {
 // The model types - a variant runs on this computer ("Local"), in Ollama's cloud ("Cloud"), or needs a Mac with Apple
 // silicon ("MLX")
 export const modelTypes = ['All', 'Local', 'Cloud', 'MLX'];
+
+
+// The model capabilities - a model reads images ("Vision"), answers questions ("Chat" - an embedding or decision model
+// doesn't), or any ("All")
+export const modelCapabilities = ['Vision', 'Chat', 'All'];
+
+
+// Get whether a model to download has a capability
+export function modelCapable(model, capability) {
+    const isChat = !model.capabilities.includes('embedding') && !model.capabilities.includes('decision');
+    if (capability === 'Chat') {
+        return isChat;
+    } else if (capability === 'Vision') {
+        return isChat && model.capabilities.includes('vision');
+    }
+    return true;
+}
 
 
 // The model sorts
@@ -265,10 +284,10 @@ export function variantType(variant) {
 
 
 // Filter and sort the models to download - "recent" is the months since a model was modified (0 is any), "type" is
-// its variants' type, "compatible" is true for the variants this computer runs ("info" is its system information - if
-// it's null, they're all compatible), and "sort" is its sort. A model's variants are those of the type that are
-// compatible. "today" is today's date.
-export function filterModels(models, {recent, type, compatible, sort}, today, info) {
+// its variants' type, "capability" is its capability, "compatible" is true for the variants this computer runs ("info"
+// is its system information - if it's null, they're all compatible), and "sort" is its sort. A model's variants are
+// those of the type that are compatible. "today" is today's date.
+export function filterModels(models, {recent, type, capability, compatible, sort}, today, info) {
     let minModified = null;
     if (recent > 0) {
         const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - recent, today.getUTCDate()));
@@ -279,7 +298,8 @@ export function filterModels(models, {recent, type, compatible, sort}, today, in
         const variants = model.variants.filter((variant) => (
             (type === 'All' || variantType(variant) === type) && (!compatible || info === null || variantCompatible(variant, info))
         ));
-        if (variants.length > 0 && (minModified === null || model.modified >= minModified)) {
+        const isRecent = minModified === null || model.modified >= minModified;
+        if (variants.length > 0 && isRecent && modelCapable(model, capability)) {
             filtered.push({...model, variants});
         }
     }
