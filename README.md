@@ -113,10 +113,13 @@ criteria, and marks), and what can be done with it:
   size, and modified date. **Delete** a model, or **Update** it (download it again), and see a
   download's progress (**Stop** stops it). **Download Models** lists the models of Ollama's library -
   filter them by how recent they are, whether your computer runs them (**Compatible** - a local
-  model needs about a byte of memory for each of its parameters), and their type (local, cloud, or
-  MLX - a Mac with Apple silicon's), sort them, and download one of a model's sizes. It starts with
-  the compatible local models of the last 6 months, the most recently modified first. A download
-  stops if the page is closed or reloaded - you're asked first.
+  model needs about a byte of memory for each of its parameters), their type (local, cloud, or
+  MLX - a Mac with Apple silicon's), and their capability (**Vision** - a model that reads images,
+  **Chat** - one that answers questions, which an embedding or decision model doesn't, or **All**),
+  sort them, and download one of a model's sizes. Each model's capabilities are listed (vision,
+  tools, thinking, ...). It starts with the compatible local models that read images, of the last 6
+  months, the most recently modified first. A download stops if the page is closed or reloaded -
+  you're asked first.
 
 Ollama answers the application's page when it runs on this computer (`http://127.0.0.1:11434`) - the
 page asks Ollama itself, for its models, their downloads, and a run's questions.

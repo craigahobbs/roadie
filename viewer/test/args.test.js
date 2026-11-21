@@ -25,6 +25,7 @@ test('sageRoadArguments', () => {
             ['recent', 'int', 6, true],
             ['compatible', 'bool', true, true],
             ['modelType', 'string', 'Local', true],
+            ['capability', 'string', 'Vision', true],
             ['modelSort', 'string', 'Modified', true]
         ]
     );
@@ -102,7 +103,8 @@ test('argsParse validates types and applies defaults', () => {
     const args = argsParse({'vFile': 'a.json', 'vOption': 1.5, 'vTilt': 50, 'vExplore': 1, 'vX': 'bad'});
     assert.deepEqual(args, {
         'file': 'a.json', 'option': 0, 'azimuth': 30, 'tilt': 50, 'exaggeration': 1.5, 'zoom': 1, 'explore': true, 'doc': false,
-        'map': false, 'models': false, 'download': false, 'recent': 6, 'compatible': true, 'modelType': 'Local', 'modelSort': 'Modified'
+        'map': false, 'models': false, 'download': false, 'recent': 6, 'compatible': true, 'modelType': 'Local', 'capability': 'Vision',
+        'modelSort': 'Modified'
     });
 
     // The MarkdownUp viewer's "smooth" argument is ignored, and dropped from links
@@ -114,7 +116,8 @@ test('argsParse', () => {
     // The defaults
     assert.deepEqual(argsParse({}), {
             'option': 0, 'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 1, 'explore': false, 'doc': false, 'map': false,
-            'models': false, 'download': false, 'recent': 6, 'compatible': true, 'modelType': 'Local', 'modelSort': 'Modified'
+            'models': false, 'download': false, 'recent': 6, 'compatible': true, 'modelType': 'Local', 'capability': 'Vision',
+            'modelSort': 'Modified'
         });
 
     // Valid values
@@ -126,7 +129,7 @@ test('argsParse', () => {
         {
             'file': 'plans/a.json', 'option': 3, 'azimuth': 120.5, 'tilt': 60, 'exaggeration': 2.5, 'zoom': 4, 'x': 1.5, 'y': -2, 'z': 0,
             'explore': true, 'doc': false, 'map': false, 'models': false, 'download': false, 'recent': 6, 'compatible': true,
-            'modelType': 'Local', 'modelSort': 'Modified'
+            'modelType': 'Local', 'capability': 'Vision', 'modelSort': 'Modified'
         }
     );
 
@@ -135,7 +138,8 @@ test('argsParse', () => {
         argsParse({'vFile': 5, 'vOption': '1', 'vExplore': 'yes', 'vDoc': 2, 'vAzimuth': null, 'vZoom': true}),
         {
             'option': 0, 'azimuth': 30, 'tilt': 35, 'exaggeration': 1.5, 'zoom': 1, 'explore': false, 'doc': false, 'map': false,
-            'models': false, 'download': false, 'recent': 6, 'compatible': true, 'modelType': 'Local', 'modelSort': 'Modified'
+            'models': false, 'download': false, 'recent': 6, 'compatible': true, 'modelType': 'Local', 'capability': 'Vision',
+            'modelSort': 'Modified'
         }
     );
 });

@@ -27,19 +27,25 @@ function showText({body}) {
 }
 
 
-// The models to download - Ollama Chat's list
+// The models to download - Ollama Chat's list - most read images, one doesn't say, and one doesn't answer questions
 const available = [
-    {'name': 'gemma3', 'description': 'Gemma <3>', 'modified': '2026-10-01', 'downloads': 3000000, 'variants': [
-        {'id': 'gemma3:4b', 'size': '4b', 'parameters': 4000000000},
-        {'id': 'gemma3:27b-cloud', 'size': '27b-cloud', 'parameters': 27000000000, 'cloud': true}
-    ]},
-    {'name': 'qwen3-vl', 'description': 'Qwen 3 VL', 'modified': '2026-11-10', 'downloads': 1000, 'variants': [
+    {'name': 'gemma3', 'description': 'Gemma <3>', 'modified': '2026-10-01', 'downloads': 3000000, 'capabilities': ['vision', 'tools'],
+        'variants': [
+            {'id': 'gemma3:4b', 'size': '4b', 'parameters': 4000000000},
+            {'id': 'gemma3:27b-cloud', 'size': '27b-cloud', 'parameters': 27000000000, 'cloud': true}
+        ]},
+    {'name': 'qwen3-vl', 'description': 'Qwen 3 VL', 'modified': '2026-11-10', 'downloads': 1000, 'capabilities': ['vision'], 'variants': [
         {'id': 'qwen3-vl:8b-mlx', 'size': '8b-mlx', 'parameters': 8000000000, 'mlx': true}
     ]},
-    {'name': 'llama3.2-vision', 'description': 'Llama 3.2 Vision', 'modified': '2026-09-01', 'downloads': 5000, 'variants': [
-        {'id': 'llama3.2-vision:11b', 'size': '11b', 'parameters': 11000000000},
-        {'id': 'llama3.2-vision:90b', 'size': '90b', 'parameters': 90000000000}
-    ]}
+    {'name': 'llama3.2-vision', 'description': 'Llama 3.2 Vision', 'modified': '2026-09-01', 'downloads': 5000, 'capabilities': ['vision'],
+        'variants': [
+            {'id': 'llama3.2-vision:11b', 'size': '11b', 'parameters': 11000000000},
+            {'id': 'llama3.2-vision:90b', 'size': '90b', 'parameters': 90000000000}
+        ]},
+    {'name': 'qwen3', 'description': 'Qwen 3', 'modified': '2026-11-01', 'downloads': 2000, 'capabilities': [],
+        'variants': [{'id': 'qwen3:8b', 'size': '8b', 'parameters': 8000000000}]},
+    {'name': 'nomic-embed-text', 'description': 'Nomic Embed', 'modified': '2026-11-01', 'downloads': 100, 'capabilities': ['embedding'],
+        'variants': [{'id': 'nomic-embed-text:latest', 'size': 'latest', 'parameters': 137000000}]}
 ];
 
 
@@ -286,8 +292,8 @@ test('downloading a model', async (context) => {
 
 
 test('the download page', async (context) => {
-    // The models to download - by default, the local models modified in the last 6 months that this computer runs, the
-    // most recently modified first
+    // The models to download - by default, the local models that read images, modified in the last 6 months, that this
+    // computer runs, the most recently modified first
     const {browser, ollama} = ollamaBrowser(context, '#var.vDownload=true', {
         'models': [{...gemma, 'name': 'gemma3:4b'}], 'files': {[availableModelsURL]: JSON.stringify(available), 'getSystemInfo': systemText}
     });
@@ -299,9 +305,9 @@ test('the download page', async (context) => {
     assert.equal(document.querySelector('#sageroad p a').getAttribute('href'), '#var.vModels=true');
     const filters = () => document.querySelector('.sageroad-filters');
     const filterLinks = () => [...filters().querySelectorAll('a')].map((link) => [link.textContent, link.getAttribute('href')]);
-    assert.equal(filters().innerHTML.split('<br>').length, 4);
+    assert.equal(filters().innerHTML.split('<br>').length, 5);
     assert.equal(filters().textContent, 'Recent: 1 month | 3 months | 6 months | AllShow: Compatible | All - this computer has 16.0 GB ' +
-        'of memoryType: All | Local | Cloud | MLXSort: Downloads | Modified | Name');
+        'of memoryType: All | Local | Cloud | MLXCapability: Vision | Chat | AllSort: Downloads | Modified | Name');
     assert.deepEqual(filterLinks(), [
         ['1 month', '#var.vDownload=true&var.vRecent=1'],
         ['3 months', '#var.vDownload=true&var.vRecent=3'],
@@ -310,14 +316,16 @@ test('the download page', async (context) => {
         ['All', '#var.vDownload=true&var.vModelType=\'All\''],
         ['Cloud', '#var.vDownload=true&var.vModelType=\'Cloud\''],
         ['MLX', '#var.vDownload=true&var.vModelType=\'MLX\''],
+        ['Chat', '#var.vCapability=\'Chat\'&var.vDownload=true'],
+        ['All', '#var.vCapability=\'All\'&var.vDownload=true'],
         ['Downloads', '#var.vDownload=true&var.vModelSort=\'Downloads\''],
         ['Name', '#var.vDownload=true&var.vModelSort=\'Name\'']
     ]);
     const availableElement = () => document.getElementById('sageroad-available');
     assert.deepEqual([...availableElement().querySelectorAll('p:not(.sageroad-filters), h2')].map((element) => element.textContent), [
         '2 models',
-        'gemma3', 'Gemma <3>', 'Downloads: 3.0M - Modified: 2026-10-01', '4bInfo',
-        'llama3.2-vision', 'Llama 3.2 Vision', 'Downloads: 5.0K - Modified: 2026-09-01', '11bInfo'
+        'gemma3', 'Gemma <3>', 'Downloads: 3.0M - Modified: 2026-10-01 - Capabilities: vision, tools', '4bInfo',
+        'llama3.2-vision', 'Llama 3.2 Vision', 'Downloads: 5.0K - Modified: 2026-09-01 - Capabilities: vision', '11bInfo'
     ]);
     const buttons = () => [...availableElement().querySelectorAll('button')].map((button) => (
         [button.dataset.download, button.title, button.disabled]
@@ -342,16 +350,33 @@ test('the download page', async (context) => {
     assert.equal(app.downloads.size, 1);
 
     // All the models - each filter's links keep the others
-    window.location.hash = '#var.vDownload=true&var.vRecent=0&var.vCompatible=false&var.vModelType=\'All\'&var.vModelSort=\'Name\'';
+    window.location.hash = '#var.vDownload=true&var.vRecent=0&var.vCompatible=false&var.vModelType=\'All\'&var.vCapability=\'All\'&' +
+        'var.vModelSort=\'Name\'';
     await flush();
+    const allArgs = 'var.vCapability=\'All\'&var.vCompatible=false&var.vDownload=true&var.vModelSort=\'Name\'&var.vModelType=\'All\'';
     assert.deepEqual(filterLinks().slice(0, 4), [
-        ['1 month', '#var.vCompatible=false&var.vDownload=true&var.vModelSort=\'Name\'&var.vModelType=\'All\'&var.vRecent=1'],
-        ['3 months', '#var.vCompatible=false&var.vDownload=true&var.vModelSort=\'Name\'&var.vModelType=\'All\'&var.vRecent=3'],
-        ['6 months', '#var.vCompatible=false&var.vDownload=true&var.vModelSort=\'Name\'&var.vModelType=\'All\''],
-        ['Compatible', '#var.vDownload=true&var.vModelSort=\'Name\'&var.vModelType=\'All\'&var.vRecent=0']
+        ['1 month', `#${allArgs}&var.vRecent=1`],
+        ['3 months', `#${allArgs}&var.vRecent=3`],
+        ['6 months', `#${allArgs}`],
+        ['Compatible', '#var.vCapability=\'All\'&var.vDownload=true&var.vModelSort=\'Name\'&var.vModelType=\'All\'&var.vRecent=0']
     ]);
-    assert.deepEqual(buttons().map(([id]) => id),
-        ['gemma3:4b', 'gemma3:27b-cloud', 'llama3.2-vision:11b', 'llama3.2-vision:90b', 'qwen3-vl:8b-mlx']);
+    assert.deepEqual(buttons().map(([id]) => id), [
+        'gemma3:4b', 'gemma3:27b-cloud', 'llama3.2-vision:11b', 'llama3.2-vision:90b', 'nomic-embed-text:latest', 'qwen3:8b',
+        'qwen3-vl:8b-mlx'
+    ]);
+    const nomic = [...availableElement().querySelectorAll('h2')].find((element) => element.textContent === 'nomic-embed-text');
+    assert.equal(nomic.nextElementSibling.nextElementSibling.textContent,
+        'Downloads: 0.1K - Modified: 2026-11-01 - Capabilities: embedding');
+
+    // The models that answer questions - those that don't read images, too, but not an embedding model
+    window.location.hash = '#var.vDownload=true&var.vCapability=\'Chat\'';
+    await flush();
+    assert.deepEqual([...availableElement().querySelectorAll('p:not(.sageroad-filters), h2')].map((element) => element.textContent), [
+        '3 models',
+        'qwen3', 'Qwen 3', 'Downloads: 2.0K - Modified: 2026-11-01', '8bInfo',
+        'gemma3', 'Gemma <3>', 'Downloads: 3.0M - Modified: 2026-10-01 - Capabilities: vision, tools', '4bInfo',
+        'llama3.2-vision', 'Llama 3.2 Vision', 'Downloads: 5.0K - Modified: 2026-09-01 - Capabilities: vision', '11bInfo'
+    ]);
 
     // The recent month's models - one
     window.location.hash = '#var.vDownload=true&var.vRecent=1&var.vModelType=\'All\'';
@@ -360,10 +385,10 @@ test('the download page', async (context) => {
         slice(0, 2), ['1 model', 'qwen3-vl']);
 
     // Invalid filters are the defaults
-    window.location.hash = '#var.vDownload=true&var.vRecent=2&var.vModelType=\'Big\'&var.vModelSort=\'Size\'';
+    window.location.hash = '#var.vDownload=true&var.vRecent=2&var.vModelType=\'Big\'&var.vCapability=\'Smart\'&var.vModelSort=\'Size\'';
     await flush();
     assert.deepEqual(filterLinks().map(([text]) => text),
-        ['1 month', '3 months', 'All', 'All', 'All', 'Cloud', 'MLX', 'Downloads', 'Name']);
+        ['1 month', '3 months', 'All', 'All', 'All', 'Cloud', 'MLX', 'Chat', 'All', 'Downloads', 'Name']);
 });
 
 
@@ -374,8 +399,8 @@ test('the download page without the system information', async (context) => {
     await startApp(browser);
     await flush();
     const filters = browser.document.querySelector('.sageroad-filters');
-    assert.equal(filters.textContent, 'Recent: 1 month | 3 months | 6 months | AllType: All | Local | Cloud | MLXSort: Downloads | ' +
-        'Modified | Name');
+    assert.equal(filters.textContent, 'Recent: 1 month | 3 months | 6 months | AllType: All | Local | Cloud | MLXCapability: Vision | ' +
+        'Chat | AllSort: Downloads | Modified | Name');
     assert.deepEqual([...browser.document.querySelectorAll('#sageroad-available button')].map((button) => button.dataset.download),
         ['gemma3:4b', 'llama3.2-vision:11b', 'llama3.2-vision:90b']);
 
@@ -387,7 +412,7 @@ test('the download page without the system information', async (context) => {
     await startApp(unknown);
     await flush();
     assert.equal(unknown.document.querySelector('.sageroad-filters').textContent, 'Recent: 1 month | 3 months | 6 months | AllShow: ' +
-        'Compatible | AllType: All | Local | Cloud | MLXSort: Downloads | Modified | Name');
+        'Compatible | AllType: All | Local | Cloud | MLXCapability: Vision | Chat | AllSort: Downloads | Modified | Name');
     assert.deepEqual([...unknown.document.querySelectorAll('#sageroad-available button')].map((button) => button.dataset.download),
         ['gemma3:4b', 'llama3.2-vision:11b', 'llama3.2-vision:90b']);
 });

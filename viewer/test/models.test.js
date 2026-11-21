@@ -1,6 +1,6 @@
 import {
-    availableModels, availableModelsURL, countText, filterModels, modelInfoURL, ollamaDelete, ollamaHost, ollamaModels, ollamaPull,
-    parameterCount, sizeText, systemInfo, variantCompatible, variantType
+    availableModels, availableModelsURL, countText, filterModels, modelCapable, modelInfoURL, ollamaDelete, ollamaHost, ollamaModels,
+    ollamaPull, parameterCount, sizeText, systemInfo, variantCompatible, variantType
 } from '../lib/models.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -182,21 +182,24 @@ test('ollamaPull', async () => {
 
 // The models to download - Ollama Chat's list
 const available = [
-    {'name': 'gemma3', 'description': 'Gemma 3', 'modified': '2026-10-01', 'downloads': 3000, 'variants': [
+    {'name': 'gemma3', 'description': 'Gemma 3', 'modified': '2026-10-01', 'downloads': 3000,
+        'capabilities': ['vision', 'tools'], 'variants': [
         {'id': 'gemma3:4b', 'size': '4b', 'parameters': 4000000000},
         {'id': 'gemma3:27b-cloud', 'size': '27b-cloud', 'parameters': 27000000000, 'cloud': true}
     ]},
-    {'name': 'qwen3-vl', 'description': 'Qwen 3 VL', 'modified': '2026-11-10', 'downloads': 1000, 'variants': [
+    {'name': 'qwen3-vl', 'description': 'Qwen 3 VL', 'modified': '2026-11-10', 'downloads': 1000,
+        'capabilities': ['vision'], 'variants': [
         {'id': 'qwen3-vl:8b-mlx', 'size': '8b-mlx', 'parameters': 8000000000, 'mlx': true}
     ]},
-    {'name': 'alpha', 'description': 'Alpha', 'modified': '2026-11-10', 'downloads': 3000, 'variants': [
+    {'name': 'alpha', 'description': 'Alpha', 'modified': '2026-11-10', 'downloads': 3000, 'capabilities': [], 'variants': [
         {'id': 'alpha:1b', 'size': '1b', 'parameters': 1000000000}
     ]}
 ];
 
 
 test('availableModels', async () => {
-    // The models - their variants' cloud and MLX flags are booleans
+    // The models - their variants' cloud and MLX flags are booleans, and their capabilities are strings (none, if the list
+    // doesn't say)
     const invalid = [
         5, {'name': 'x', 'description': 'X', 'modified': '2026-01-01', 'downloads': 1, 'variants': [{'id': 'x:1b', 'size': '1b'}]},
         {'name': 'y', 'description': 'Y', 'modified': '2026-01-01', 'downloads': '1', 'variants': []},
@@ -207,7 +210,7 @@ test('availableModels', async () => {
     ];
     const withInvalid = [
         {...available[0], 'variants': [...available[0].variants, null, {'id': 5, 'size': '5b', 'parameters': 5}, {'id': 's', 'size': 6}]},
-        ...invalid, ...available.slice(1)
+        ...invalid, {...available[1], 'capabilities': ['vision', 5, null]}, {...available[2], 'capabilities': 'vision'}
     ];
     const {fetchFn, calls} = fakeFetch({[availableModelsURL]: textResponse(JSON.stringify(withInvalid))});
     const models = await availableModels(fetchFn);
@@ -217,7 +220,12 @@ test('availableModels', async () => {
         ['qwen3-vl', [['qwen3-vl:8b-mlx', false, true]]],
         ['alpha', [['alpha:1b', false, false]]]
     ]);
-    assert.deepEqual(Object.keys(models[0]), ['name', 'description', 'modified', 'downloads', 'variants']);
+    assert.deepEqual(Object.keys(models[0]), ['name', 'description', 'modified', 'downloads', 'capabilities', 'variants']);
+    assert.deepEqual(models.map(({capabilities}) => capabilities), [['vision', 'tools'], ['vision'], []]);
+    const unsaid = {...available[2]};
+    delete unsaid.capabilities;
+    const unsaidModels = await availableModels(fakeFetch({[availableModelsURL]: textResponse(JSON.stringify([unsaid]))}).fetchFn);
+    assert.deepEqual(unsaidModels.map(({capabilities}) => capabilities), [[]]);
 
     // The list can't be fetched, or it isn't a list
     for (const response of [new TypeError('Failed to fetch'), errorResponse(404, ''), textResponse('<html>'), textResponse('{}')]) {
@@ -229,7 +237,7 @@ test('availableModels', async () => {
 test('variantType and filterModels', () => {
     assert.deepEqual(available.flatMap(({variants}) => variants.map(variantType)), ['Local', 'Cloud', 'MLX', 'Local']);
     const today = new Date('2026-11-19T12:00:00Z');
-    const names = (filters) => filterModels(available, filters, today).map(({name, variants}) => (
+    const names = (filters) => filterModels(available, {'capability': 'All', ...filters}, today).map(({name, variants}) => (
         `${name} ${variants.map(({size}) => size).join(',')}`
     ));
 
@@ -247,10 +255,17 @@ test('variantType and filterModels', () => {
     assert.deepEqual(names({'recent': 1, 'type': 'All', 'sort': 'Name'}), ['alpha 1b', 'qwen3-vl 8b-mlx']);
     assert.deepEqual(names({'recent': 3, 'type': 'All', 'sort': 'Name'}), ['alpha 1b', 'gemma3 4b,27b-cloud', 'qwen3-vl 8b-mlx']);
 
+    // The models of a capability - that read images, or answer questions
+    assert.deepEqual(names({'recent': 0, 'type': 'All', 'capability': 'Vision', 'sort': 'Name'}),
+        ['gemma3 4b,27b-cloud', 'qwen3-vl 8b-mlx']);
+    assert.deepEqual(names({'recent': 0, 'type': 'Local', 'capability': 'Vision', 'sort': 'Name'}), ['gemma3 4b']);
+    assert.deepEqual(names({'recent': 0, 'type': 'All', 'capability': 'Chat', 'sort': 'Name'}),
+        ['alpha 1b', 'gemma3 4b,27b-cloud', 'qwen3-vl 8b-mlx']);
+
     // Models of the same name keep their order
     const twins = [{...available[2], 'description': 'One'}, {...available[2], 'description': 'Two'}];
-    assert.deepEqual(filterModels(twins, {'recent': 0, 'type': 'All', 'sort': 'Name'}, today).map(({description}) => description),
-        ['One', 'Two']);
+    const twinFilters = {'recent': 0, 'type': 'All', 'capability': 'All', 'sort': 'Name'};
+    assert.deepEqual(filterModels(twins, twinFilters, today).map(({description}) => description), ['One', 'Two']);
 });
 
 
@@ -292,7 +307,8 @@ test('variantCompatible', () => {
 test('filterModels, compatible', () => {
     // The compatible variants - a model without any is left out
     const today = new Date('2026-11-19T12:00:00Z');
-    const names = (compatible, info) => filterModels(available, {'recent': 0, 'type': 'All', compatible, 'sort': 'Name'}, today, info).
+    const filters = (compatible) => ({'recent': 0, 'type': 'All', 'capability': 'All', compatible, 'sort': 'Name'});
+    const names = (compatible, info) => filterModels(available, filters(compatible), today, info).
         map(({name, variants}) => `${name} ${variants.map(({size}) => size).join(',')}`);
     const small = {'memory': 2000000000, 'mlx': false};
     assert.deepEqual(names(true, small), ['alpha 1b', 'gemma3 27b-cloud']);
@@ -302,4 +318,16 @@ test('filterModels, compatible', () => {
     const all = ['alpha 1b', 'gemma3 4b,27b-cloud', 'qwen3-vl 8b-mlx'];
     assert.deepEqual(names(false, small), all);
     assert.deepEqual(names(true, null), all);
+});
+
+
+test('modelCapable', () => {
+    // A model that answers questions - an embedding or decision model doesn't, even if it reads images
+    const capable = (capabilities) => ['Vision', 'Chat', 'All'].map((capability) => modelCapable({capabilities}, capability));
+    assert.deepEqual(capable([]), [false, true, true]);
+    assert.deepEqual(capable(['tools', 'thinking']), [false, true, true]);
+    assert.deepEqual(capable(['vision', 'tools']), [true, true, true]);
+    assert.deepEqual(capable(['embedding']), [false, false, true]);
+    assert.deepEqual(capable(['vision', 'decision']), [false, false, true]);
+    assert.deepEqual(capable(['vision', 'embedding']), [false, false, true]);
 });

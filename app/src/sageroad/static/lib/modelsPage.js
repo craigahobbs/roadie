@@ -3,8 +3,8 @@
 
 import {argsLink, argsURL} from './args.js';
 import {
-    availableModels, countText, filterModels, modelInfoURL, modelSorts, modelTypes, ollamaDelete, ollamaDownloadURL, sizeText,
-    systemInfo
+    availableModels, countText, filterModels, modelCapabilities, modelInfoURL, modelSorts, modelTypes, ollamaDelete, ollamaDownloadURL,
+    sizeText, systemInfo
 } from './models.js';
 import {escapeHtml, number} from './format.js';
 
@@ -160,7 +160,7 @@ export class ModelsPage {
 
 
 // The models to download page - Ollama's library's models, filtered by how recent they are, whether this computer runs
-// them, and their type, and sorted
+// them, their type, and their capability, and sorted
 export class DownloadPage {
     constructor(app, globals, args) {
         this.app = app;
@@ -170,15 +170,17 @@ export class DownloadPage {
             'recent': [0, 1, 3, 6].includes(args.recent) ? args.recent : 6,
             'compatible': args.compatible,
             'type': modelTypes.includes(args.modelType) ? args.modelType : 'Local',
+            'capability': modelCapabilities.includes(args.capability) ? args.capability : 'Vision',
             'sort': modelSorts.includes(args.modelSort) ? args.modelSort : 'Modified'
         };
         app.render('Download Models', [
             `<p>${argsLink(globals, 'Back', {'models': true})}</p>`,
             '<h1>Download Models</h1>',
-            '<p>The models of Ollama\'s library. A model that reads images can find the notes\' places on the site\'s map - its ' +
-                'Info page says if it does. A local model runs on this computer, and needs about a byte of memory for each of its ' +
-                'parameters - a compatible model is one this computer runs. A cloud model runs on Ollama\'s servers - sign in to ' +
-                'Ollama to use one. An MLX model needs a Mac with Apple silicon.</p>',
+            '<p>The models of Ollama\'s library. A model that reads images (Vision) can find the notes\' places on the site\'s ' +
+                'map, and a model that answers questions (Chat) can read the notes - an embedding or decision model can\'t. A ' +
+                'local model runs on this computer, and needs about a byte of memory for each of its parameters - a compatible ' +
+                'model is one this computer runs. A cloud model runs on Ollama\'s servers - sign in to Ollama to use one. An MLX ' +
+                'model needs a Mac with Apple silicon.</p>',
             '<div id="sageroad-available"><p>Getting the list of Ollama\'s models…</p></div>'
         ].join('\n'));
         this.renderAvailable();
@@ -202,7 +204,7 @@ export class DownloadPage {
             const linkFilters = {...filters, [name]: value};
             return argsLink(globals, text, {
                 'download': true, 'recent': linkFilters.recent, 'compatible': linkFilters.compatible, 'modelType': linkFilters.type,
-                'modelSort': linkFilters.sort
+                'capability': linkFilters.capability, 'modelSort': linkFilters.sort
             });
         }).join(' | ');
         const memoryText = info !== null && info.memory > 0 ? ` - this computer has ${sizeText(info.memory)} of memory` : '';
@@ -211,6 +213,7 @@ export class DownloadPage {
             `<strong>Recent:</strong> ${filterLinks('recent', [1, 3, 6, 0], ['1 month', '3 months', '6 months', 'All'])}`,
             ...(showHtml !== null ? [`${showHtml}${memoryText}`] : []),
             `<strong>Type:</strong> ${filterLinks('type', modelTypes)}`,
+            `<strong>Capability:</strong> ${filterLinks('capability', modelCapabilities)}`,
             `<strong>Sort:</strong> ${filterLinks('sort', modelSorts)}`
         ].join('<br>');
     }
@@ -237,7 +240,7 @@ export class DownloadPage {
             ...(downloaded === null ? [`<p class="sageroad-notice">${ollamaMissingHtml('its models can\'t be downloaded')}</p>`] : []),
             `<p>${number(filtered.length, 0)} model${filtered.length === 1 ? '' : 's'}</p>`
         ];
-        for (const {name, description, modified, downloads, variants} of filtered) {
+        for (const {name, description, modified, downloads, capabilities, variants} of filtered) {
             const buttons = variants.map(({id, size}) => {
                 const isDownloaded = downloadedIds.has(id);
                 const isDownloading = app.downloads.has(id);
@@ -249,7 +252,8 @@ export class DownloadPage {
             html.push(
                 `<h2>${escapeHtml(name)}</h2>`,
                 `<p>${escapeHtml(description)}</p>`,
-                `<p><strong>Downloads:</strong> ${countText(downloads)} - <strong>Modified:</strong> ${escapeHtml(modified)}</p>`,
+                `<p><strong>Downloads:</strong> ${countText(downloads)} - <strong>Modified:</strong> ${escapeHtml(modified)}` +
+                    `${capabilities.length === 0 ? '' : ` - <strong>Capabilities:</strong> ${escapeHtml(capabilities.join(', '))}`}</p>`,
                 `<p class="sageroad-actions">${buttons.join('')}${externalLink(modelInfoURL(name), 'Info')}</p>`
             );
         }

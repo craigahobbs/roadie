@@ -29,6 +29,8 @@ export const sageRoadArguments = [
         'description': 'Show only the models to download that this computer runs'},
     {'name': 'modelType', 'type': 'string', 'default': 'Local', 'explicit': true,
         'description': 'The models to download\'s type - "All", "Local", "Cloud", or "MLX"'},
+    {'name': 'capability', 'type': 'string', 'default': 'Vision', 'explicit': true,
+        'description': 'The models to download\'s capability - "Vision", "Chat", or "All"'},
     {'name': 'modelSort', 'type': 'string', 'default': 'Modified', 'explicit': true,
         'description': 'The models to download\'s sort - "Downloads", "Modified", or "Name"'}
 ];
