@@ -46,10 +46,12 @@ const sectionCellLimit = 6000000;
 // dynamic programming - the minimum earthwork cost within the grade limits. Within an existing road (the "existing"
 // station mask, or null), the profile follows the ground. Returns the "profile" (the grade elevations), the "ground"
 // elevations, and the ground's "sideSlope" (its rise per unit of offset to the left) at the stations - and the index
-// of the first existing road station that the grade limits can't reach ("unreachable" - the profile breaks grade
-// there), or null. A profile that the grade limits can't take to the end's ground ends at the nearest level they can,
-// and a profile that they can't keep within the design's maximum depth of the ground is "deep" (it isn't a road's) -
-// unless "isDeep" is false: there's then no profile (null), which is much less work to find than how deep it is.
+// of the first existing road station that the grade limits can't reach ("unreachable"), or null. A profile that can't
+// reach an existing road isn't a road's, so its design stops there: its "profile" is null (the rest of its design is
+// most of its work, and nothing's made of it). A profile that the grade limits can't take to the end's ground ends at
+// the nearest level they can, and a profile that they can't keep within the design's maximum depth of the ground is
+// "deep" (it isn't a road's) - unless "isDeep" is false: there's then no profile (null), which is much less work to
+// find than how deep it is.
 // "cellLimit" is the most station level cells whose cross sections the design keeps (it's faster, and the same).
 export function designProfile(topo, design, x, y, stations, existing = null, cellLimit = sectionCellLimit, isDeep = true) {
     // The profile is within the maximum cut and fill depth of the ground - its design's work is the stations times the
@@ -164,8 +166,8 @@ function designProfileDepth(topo, design, x, y, stations, existing, depthLimit, 
 
     // Find the least-cost profile for a cut and fill balance price - a positive balance makes fill more expensive and
     // cut cheaper (to reduce borrow), and a negative balance the reverse. Returns the profile's true cost and its
-    // levels' indexes - or null, if the grade limits can't keep the profile within the depth limit (or reach an
-    // existing road within it).
+    // levels' indexes - or null, if the grade limits can't keep the profile within the depth limit, or reach an
+    // existing road (within no depth limit, its station is the profile's "unreachable" station).
     const back = new Int32Array(cells[count]);
     const queue = new Int32Array(levelCount);
     const totals = [new Float64Array(levelCount).fill(Infinity), new Float64Array(levelCount).fill(Infinity)];
@@ -239,15 +241,10 @@ function designProfileDepth(topo, design, x, y, stations, existing, depthLimit, 
             }
 
             // The grade limit can't reach the existing road's ground? Within a depth limit, a deeper limit may - with no
-            // limit, the profile breaks grade at the junction (it's the profile's unreachable station).
-            const level = groundLevel[ix];
-            if (isExisting[ix] && total[level] === Infinity) {
-                if (depthLimit !== Infinity) {
-                    return null;
-                }
-                unreachable = unreachable === null ? ix : unreachable;
-                back[cell + level] = ixMin;
-                total[level] = previous[ixMin] + stationCost(ix, level);
+            // limit, it's the profile's unreachable station, and there's no profile.
+            if (isExisting[ix] && total[groundLevel[ix]] === Infinity) {
+                unreachable = depthLimit === Infinity ? ix : null;
+                return null;
             }
         }
 
@@ -297,7 +294,7 @@ function designProfileDepth(topo, design, x, y, stations, existing, depthLimit, 
     for (const balance of [0, design.costBorrow * 0.5, design.costBorrow, -design.costWaste * 0.5, -design.costWaste]) {
         const result = solve(balance);
         if (result === null) {
-            return null;
+            return unreachable !== null ? {'profile': null, ground, sideSlope, unreachable} : null;
         }
         if (best === null || result[0] < best[0]) {
             best = result;
@@ -338,5 +335,5 @@ function designProfileDepth(topo, design, x, y, stations, existing, depthLimit, 
             profile[ix] = ground[ix];
         }
     }
-    return {profile, ground, sideSlope, unreachable};
+    return {profile, ground, sideSlope, 'unreachable': null};
 }

@@ -8,11 +8,13 @@ import {resamplePolyline} from '../lib/route.js';
 import test from 'node:test';
 
 
-// Design a named alignment's profile and structures - returns the structures
+// Design a named alignment's profile and structures - returns the structures. An alignment that can't reach its
+// existing road has no profile - its structures are of the Python planning tools' profile, which broke grade there.
 function structuresFixture(name) {
     const [, , , , existingRoads = []] = alignments[name];
     const {topo, design, x, y, stations, existing} = alignmentFixture(...alignments[name]);
-    const {profile, sideSlope} = designProfile(topo, design, x, y, stations, existing);
+    const designed = designProfile(topo, design, x, y, stations, existing);
+    const {profile, sideSlope} = designed.profile !== null ? designed : expected[name];
     return designStructures(topo, design, x, y, stations, profile, sideSlope, existingRoads);
 }
 

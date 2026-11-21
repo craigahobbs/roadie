@@ -19,7 +19,7 @@ function grades(profile, interval) {
 
 
 // The alignments' existing road stations that the grade limit can't reach - the Python planning tools' profiles broke
-// grade there, too
+// grade there. A road's doesn't, so there's no profile.
 const unreachables = {'profile-existing': 10, 'profile-existing-start': 14};
 
 
@@ -31,7 +31,7 @@ test('designProfile, the Python planning tools\' profiles', () => {
         // profiles across the valley's 80 foot fill, and those that can't reach their existing roads' ground)
         const unreachable = unreachables[name] ?? null;
         const deep = unreachable !== null || name.startsWith('profile-valley');
-        assert.deepEqual(plain(designed), {profile, ground, sideSlope, unreachable, deep}, name);
+        assert.deepEqual(plain(designed), {'profile': unreachable !== null ? null : profile, ground, sideSlope, unreachable, deep}, name);
     }
 });
 
@@ -77,22 +77,21 @@ test('designProfile, the depth limit', () => {
 
 test('designProfile, an existing road', () => {
     // The existing road's second half follows the ground (no grade limit) - the new road's first half is held to the
-    // design grade, which can't reach the existing road: the profile breaks grade to meet it at the junction, its
-    // unreachable station
+    // design grade, which can't reach the existing road: the junction is its unreachable station. It isn't a road's
+    // profile, so its design stops there - there's no profile, but its ground and side slopes are every station's.
     const {alignment, designed} = profileFixture('profile-existing');
-    const {profile, ground} = designed;
-    assert.equal(designed.unreachable, 10);
     assert.equal(alignment.existing.reduce((sum, mask) => sum + mask, 0), 11);
-    assert.deepEqual(plain(profile.slice(10)), plain(ground.slice(10)));
-    assert.ok(Math.max(...grades(profile.slice(0, 10), 5)) <= alignment.design.grade + 1e-9);
-    assert.ok(Math.abs(profile[0] - ground[0]) <= 1);
-    assert.ok(grades(profile, 5)[9] > 1);
+    assert.equal(designed.unreachable, 10);
+    assert.equal(designed.profile, null);
+    assert.equal(designed.deep, true);
+    assert.equal(designed.ground.length, 21);
+    assert.equal(designed.sideSlope.length, 21);
+    assert.deepEqual(plain([designed.ground[0], designed.ground[10], designed.ground[20]]), [100, 115, 130]);
 
-    // An existing road at the start, and one the grade limit can't reach from it
+    // An existing road at the start, and one the grade limit can't reach from it - its first station
     const start = profileFixture('profile-existing-start').designed;
     assert.equal(start.unreachable, 14);
-    assert.deepEqual(plain(start.profile.slice(0, 7)), plain(start.ground.slice(0, 7)));
-    assert.deepEqual(plain(start.profile.slice(14, 17)), plain(start.ground.slice(14, 17)));
+    assert.equal(start.profile, null);
 
     // All of the road is an existing road
     const all = profileFixture('profile-existing-all').designed;
@@ -100,16 +99,14 @@ test('designProfile, an existing road', () => {
     assert.deepEqual(plain(all.profile), plain(all.ground));
 
     // A new road up a slope too steep for the depth limit, then an existing road - the grade limit can't reach the
-    // existing road within a depth limit, so the new road is designed without one, and breaks grade at the junction
-    for (const [rise, depth] of [[2.6, 112.054], [8, 355.054]]) {
+    // existing road within a depth limit, or without one: the junction is its unreachable station
+    for (const rise of [2.6, 8]) {
         const steep = alignmentFixture(planePlan({rise}), designArgs(), [[50, 0], [50, 100]], 5, [[50, 100]]);
         const steepDesigned = designProfile(steep.topo, steep.design, steep.x, steep.y, steep.stations, steep.existing);
         assert.equal(plain(steep.existing).join(''), '000000000011111111111');
         assert.equal(steepDesigned.unreachable, 10);
         assert.equal(steepDesigned.deep, true);
-        assert.deepEqual(plain(steepDesigned.profile.slice(10)), plain(steepDesigned.ground.slice(10)));
-        assert.ok(Math.max(...grades(steepDesigned.profile.slice(0, 10), 5)) <= steep.design.grade + 1e-9);
-        assert.ok(Math.abs(steepDesigned.ground[9] - steepDesigned.profile[9] - depth) < 0.001, `${rise}`);
+        assert.equal(steepDesigned.profile, null);
 
         // Unless a deep profile isn't designed - there's none
         assert.equal(designProfile(steep.topo, steep.design, steep.x, steep.y, steep.stations, steep.existing, undefined, false), null);
