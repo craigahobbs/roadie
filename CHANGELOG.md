@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.9 (2026-11-21)
+
+- [6fdc9e7](https://github.com/craigahobbs/sageroad/commit/6fdc9e7) - Stop a profile's design at an existing road it can't reach
+
 ## 1.0.8 (2026-11-21)
 
 - [4a20380](https://github.com/craigahobbs/sageroad/commit/4a20380) - Fit the map page to the window
