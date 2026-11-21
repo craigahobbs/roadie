@@ -522,7 +522,60 @@ button.sageroad-link {
 }
 
 
-/* The map page - its tools, and its map */
+/* The map page - it fills the window: its controls, then its map and the selected mark's panel beside it, which take
+   the room that's left (the map's size is set to its element's, which doesn't depend on its content) */
+body.sageroad-map-window {
+    margin: 0;
+    overflow: hidden;
+}
+.sageroad-map-page {
+    box-sizing: border-box;
+    height: 100vh;
+    height: 100dvh;
+    padding: 1.5em;
+    display: flex;
+    flex-direction: column;
+}
+.sageroad-map-page > * {
+    flex: none;
+}
+.sageroad-map-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6em 1.5em;
+}
+.sageroad-map-header > .sageroad-actions {
+    margin-top: 0;
+}
+.sageroad-map-page > .sageroad-map-main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 1em;
+    margin-top: 0.6em;
+}
+.sageroad-map-selection {
+    flex: none;
+    width: 18em;
+    overflow-y: auto;
+}
+.sageroad-map-selection h2 {
+    font-size: 1.3rem;
+}
+.sageroad-map-selection input[type="text"] {
+    width: 11em;
+}
+@media (max-width: 45em) {
+    .sageroad-map-page > .sageroad-map-main {
+        flex-direction: column;
+    }
+    .sageroad-map-selection {
+        width: auto;
+        height: 8em;
+    }
+}
 .sageroad-map-tools button[aria-pressed="true"] {
     background: #1f4e8c;
     color: white;
@@ -532,13 +585,19 @@ button.sageroad-link {
     opacity: 0.7;
 }
 .sageroad-map {
-    max-width: 100%;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
     overflow: hidden;
+    border: 1px solid #c8c2b6;
 }
 .sageroad-map-svg {
+    position: absolute;
+    left: 0;
+    top: 0;
     display: block;
     background: #f7f4ee;
-    border: 1px solid #c8c2b6;
     cursor: crosshair;
     touch-action: none;
     user-select: none;

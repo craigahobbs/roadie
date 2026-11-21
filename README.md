@@ -86,7 +86,8 @@ criteria, and marks), and what can be done with it:
   avoid (a property line's setback, an easement), the existing roads that the USGS doesn't map (a
   track - the shaded relief shows one's worn trough), and the places the road must pass through.
   The map's backdrop is the site's contours, its topographic map, or its shaded relief, with its
-  streams, roads, and road options. Scroll to zoom, and drag to move. Draw an area's corners or a
+  streams, roads, and road options. The page fills the window - the map fits the site, and the
+  selected mark is beside it. Scroll to zoom, and drag to move. Draw an area's corners or a
   road's points with clicks (double-click or Enter finishes, Backspace removes the last point), or
   click a place. Select a mark to rename or delete it, or drag its points. A mark that a run found
   for the notes is dashed - edit it to correct it (it's yours then). **Done** makes the marks the

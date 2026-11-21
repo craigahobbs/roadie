@@ -101,6 +101,11 @@ test('the map page', async (context) => {
     const {document, window} = browser;
     assert.equal(window.location.hash, '#var.vMap=true');
     assert.equal(document.title, 'Edit Map');
+    assert.equal(document.body.classList.contains('sageroad-map-window'), true);
+    assert.deepEqual([...document.querySelectorAll('.sageroad-map-header h1, .sageroad-map-header .sageroad-button')].map(
+        (element) => element.textContent
+    ), ['Edit Map', 'Done', 'Cancel']);
+    assert.equal(document.getElementById('sageroad-map-selection').textContent, 'Select a mark to rename or delete it.');
     assert.deepEqual([svg.getAttribute('width'), svg.getAttribute('height')], ['1000', '650']);
     assert.deepEqual(marks(browser), [['polygon text', 'Barn'], ['polyline text', 'Track'], ['circle text', 'Gate']]);
     assert.ok(document.querySelector('#sageroad-map-marks polygon').getAttribute('stroke-dasharray') === '6 4');
@@ -169,7 +174,7 @@ test('the map page', async (context) => {
     clickMap(browser, page, [200, 280]);
     assert.equal(document.querySelector('#sageroad-map-selection h2').textContent, 'Existing road');
     clickMap(browser, page, [250, 200]);
-    assert.equal(document.getElementById('sageroad-map-selection').innerHTML, '');
+    assert.equal(document.getElementById('sageroad-map-selection').textContent, 'Select a mark to rename or delete it.');
 
     // Draw an area - a click near the last corner (a double-click's) isn't another, Backspace removes the last, and a
     // double-click finishes it
@@ -211,7 +216,8 @@ test('the map page', async (context) => {
 
     // Delete the last place - a click where it was adds it again
     document.getElementById('sageroad-map-delete').click();
-    assert.deepEqual([page.marks.length, page.selected, document.getElementById('sageroad-map-selection').innerHTML], [6, null, '']);
+    assert.deepEqual([page.marks.length, page.selected, document.getElementById('sageroad-map-selection').textContent],
+        [6, null, 'Select a mark to rename or delete it.']);
     clickMap(browser, page, [220, 100]);
     assert.deepEqual([page.marks.length, page.marks[6].name, page.selected], [7, 'Place 3', 6]);
     document.getElementById('sageroad-map-delete').click();
@@ -251,15 +257,29 @@ test('the map page', async (context) => {
     fire(browser, svg, 'wheel', {'clientX': 310, 'clientY': 220, 'deltaY': 10000});
     assert.equal(Math.round(page.view.scale * 100) / 100, 1.03);
 
-    // The map is resized with its window
-    Object.defineProperty(document.getElementById('sageroad-map'), 'clientWidth', {'value': 800, 'configurable': true});
+    // The map is resized with its window - it's its element's size (its height is a proportion of its width, if its
+    // element has none), and the moved and zoomed map keeps its view
+    const mapElement = document.getElementById('sageroad-map');
+    const viewMoved = {...page.view};
+    Object.defineProperty(mapElement, 'clientWidth', {'value': 800, 'configurable': true});
     fire(browser, window, 'resize');
     assert.deepEqual([svg.getAttribute('width'), svg.getAttribute('height')], ['800', '520']);
+    Object.defineProperty(mapElement, 'clientHeight', {'value': 500, 'configurable': true});
+    fire(browser, window, 'resize');
+    assert.deepEqual([svg.getAttribute('width'), svg.getAttribute('height')], ['800', '500']);
+    assert.deepEqual(page.view, viewMoved);
+
+    // A map smaller than the smallest is the smallest
+    Object.defineProperty(mapElement, 'clientWidth', {'value': 200, 'configurable': true});
+    Object.defineProperty(mapElement, 'clientHeight', {'value': 100, 'configurable': true});
+    fire(browser, window, 'resize');
+    assert.deepEqual([svg.getAttribute('width'), svg.getAttribute('height')], ['320', '240']);
 
     // Done - the marks are the loaded plan's config's: the author's edits, the unchanged road as it was, and the new marks
     document.getElementById('sageroad-map-done').click();
     await flush();
     assert.equal(window.location.hash, '#var=');
+    assert.equal(document.body.classList.contains('sageroad-map-window'), false);
     const {site} = app.loaded;
     assert.deepEqual([app.loaded.changed, app.loaded.saved], [true, false]);
     assert.deepEqual(site.exclusions.map((area) => [area.name, area.found]), [['Barn', undefined], ['Exclusion 2', undefined]]);
@@ -339,6 +359,17 @@ test('the map page, a plan without a site, and Cancel', async (context) => {
     await noneApp.page.load();
     noneApp.page.resize();
     noneApp.page.keyDown({'key': 'Enter'});
+
+    // A map that fits the site (it isn't moved or zoomed) fits it again when it's resized - the site's taller than it's
+    // wide, so its height fits
+    const {browser: fitted, page: fittedPage} = await startMap(context);
+    const fittedMap = fitted.document.getElementById('sageroad-map');
+    Object.defineProperty(fittedMap, 'clientWidth', {'value': 1200, 'configurable': true});
+    Object.defineProperty(fittedMap, 'clientHeight', {'value': 400, 'configurable': true});
+    fire(fitted, fitted.window, 'resize');
+    const {topo} = fittedPage;
+    assert.deepEqual(fittedPage.view, {'x': topo.width / 2, 'y': topo.height / 2, 'scale': 400 / topo.height * 0.95, 'isFit': true});
+    assert.deepEqual(fittedPage.toScreen([topo.width / 2, topo.height / 2]), [600, 200]);
 
     // Cancel - the marks aren't the loaded plan's, and Done without changes doesn't change the loaded plan
     const {browser: cancel, app: cancelApp, page} = await startMap(context);
