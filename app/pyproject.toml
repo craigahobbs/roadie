@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sageroad"
-version = "1.0.7"
+version = "1.0.8"
 description = "SageRoad engineers low-volume roads on USGS lidar terrain and views the resulting road plans"
 readme = "PYPI.md"
 license = "MIT"

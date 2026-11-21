@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.8 (2026-11-21)
+
+- [4a20380](https://github.com/craigahobbs/sageroad/commit/4a20380) - Fit the map page to the window
+
+- [272cadb](https://github.com/craigahobbs/sageroad/commit/272cadb) - Filter and show the models to download by their capabilities
+
 ## 1.0.7 (2026-11-20)
 
 - [d7b4101](https://github.com/craigahobbs/sageroad/commit/d7b4101) - Make a plan in a worker, so the page stays responsive

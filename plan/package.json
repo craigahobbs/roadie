@@ -1,7 +1,7 @@
 {
     "type": "module",
     "name": "sageroad-plan",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "private": true,
     "description": "The SageRoad road planning tools",
     "scripts": {
